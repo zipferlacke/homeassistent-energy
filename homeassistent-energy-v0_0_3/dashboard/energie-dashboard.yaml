@@ -1,0 +1,59 @@
+# energie-dashboard.yaml
+#
+# ACHTUNG: Das ist KEIN Package. Diese Datei gehoert NICHT nach
+# config/packages/ — dort scheitert sie mit
+#   "Invalid package definition ...: expected dict ... @ data['title']"
+#
+# Sie ist die Lovelace-Konfiguration eines Dashboards:
+#   Einstellungen -> Dashboards -> Dashboard anlegen -> oeffnen
+#   -> Stift -> Drei-Punkte-Menue -> Raw-Konfigurationseditor
+#   -> Inhalt dieser Datei einfuegen -> Speichern
+#
+# Drei Ansichten: Live, Energie, Wallbox.
+#
+# Hier stehen bewusst keine Entitaeten. Die werden in der Seitenleiste unter
+# "wuefl Energie" zugeordnet und gelten dann fuer alle Karten. Wer eine
+# einzelne Karte abweichend belegen will, traegt den Wert im Karteneditor
+# ein — der schlaegt die zentrale Zuordnung.
+
+title: Energie
+
+views:
+  - title: Live
+    path: live
+    icon: mdi:home-lightning-bolt
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        cards:
+          - type: custom:wuefl-energy-live-card
+            title: Zuhause
+            show_totals: true
+
+  - title: Energie
+    path: energie
+    icon: mdi:chart-areaspline
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        cards:
+          - type: custom:wuefl-energy-history-card
+            title: Energie
+            default_period: day
+
+  - title: Wallbox
+    path: wallbox
+    icon: mdi:ev-station
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        cards:
+          # Je Fahrzeug eine Karte. slot verweist auf die Wallbox aus der
+          # zentralen Zuordnung; nicht belegte Plätze einfach weglassen.
+          - type: custom:wuefl-wallbox-card
+            slot: 1
+          - type: custom:wuefl-wallbox-card
+            slot: 2

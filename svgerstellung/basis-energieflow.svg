@@ -1,0 +1,380 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="113.907 65.184 736.536 736.017" width="1260" height="900" role="img" aria-labelledby="svg-title" xmlns:bx="https://boxy-svg.com" preserveAspectRatio="none">
+  <title id="svg-title">Energiefluss im Haus</title>
+  <defs>
+    <mask id="wand-maske" maskUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="100%" height="100%" fill="#ffffff"/>
+      <g fill="green">
+        <path style="fill: inherit; stroke:inherit" d="M 614.278 396.882 L 592.466 406.432 L 586.528 389.929 L 602.329 369.589 L 613.143 381.076 L 614.278 396.882 Z"/>
+        <path style="fill:inherit; stroke: inherit;" d="M 713.664 366.563 L 705.748 369.918 L 706.113 367.248 L 711.116 365.086 L 713.664 366.563 Z"/>
+        <path style="fill:inherit;stroke:inherit" d="M 591.56 410.189 L 614.02 400.288 L 614.142 408.513 L 593.996 417.447 L 591.56 410.189 Z"/>
+      </g>
+    </mask>
+    <bx:export>
+      <bx:file format="svg" path="energieflow.svg" normalization="{&quot;removeForeignMetadata&quot;:true}" excluded="true"/>
+      <bx:file format="png" path="energieflow.png" excluded="true"/>
+      <bx:file format="svg" path="Energiefluss im Haus.svg"/>
+      <bx:file format="png" path="Energiefluss im Haus.png"/>
+    </bx:export>
+  </defs>
+  <style>
+    svg {
+      color-scheme: light dark;
+
+      /* ---------- Farben ---------- */
+      --c-line:      light-dark(#20262c, #e6ebf0);
+      --c-line-soft: light-dark(#5a656e, #93a0ab);
+      --c-wall:      light-dark(#c3ccd3, #55626d);
+      --c-wall-2:    light-dark(#aeb8c0, #46525c);
+      --c-window:    light-dark(#dceaf2, #2a3b47);
+      --c-door:      light-dark(#9aa5ad, #3a444d);
+      --c-roof:      light-dark(#8a949d, #3f4a54);
+      --c-carport:   light-dark(#b6c0c8, #4a565f);
+      --c-ground:    light-dark(#c9d1d7, #39434d);
+      --c-panel:     light-dark(#2f4a5c, #16323f);
+      --c-accent:    light-dark(#1c7fb8, hsl(123, 77%, 61%));
+      --c-car:       light-dark(#2f8fc4, #2a6f96);
+      --c-car-light: light-dark(#59aad6, #3d87ab);
+      --c-car-dark:  light-dark(#1d6a94, #1d4f6b);
+      --c-accent-2:  light-dark(#12909c, #35c4d0);
+      --c-device:    light-dark(#f2f5f7, #253039);
+      --c-device-2:  light-dark(#c8cfd4, #1b242b);
+      --c-device-3:  light-dark(#e2e7ea, #202a32);
+      --c-sockel:    light-dark(#1a1d20, #0b0e11);
+      --c-cable:     light-dark(#111517, #dfe6ec);
+      --c-text:      light-dark(#12181d, #eef3f7);
+      --c-text-soft: light-dark(#5c666f, #9fabb5);
+
+      /* ---------- Linien ---------- */
+      --w-line: 1.4;
+      --w-line-soft: 1;
+      --w-cable: 1.4;
+
+      /* ---------- Ladestand Batterie (0 bis 1) ---------- */
+      --soc: 1.00;
+
+      font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      background: light-dark(#fbfcfd, #10151a);
+
+      .face {
+        stroke: var(--c-line);
+        stroke-width: var(--w-line);
+        stroke-linejoin: round;
+      }
+
+      #scene {
+        #ground { fill: var(--c-ground); fill-opacity: .16; stroke: none; }
+
+        #house {
+          .wall    { fill: var(--c-wall); }
+          .wall-2  { fill: var(--c-wall-2); }
+          .roof    { fill: var(--c-roof); }
+          .window  { fill: var(--c-window); stroke-width: var(--w-line-soft); }
+          .door    { fill: var(--c-door); stroke-width: var(--w-line-soft); }
+          .mullion {
+            fill: none;
+            stroke: var(--c-line);
+            stroke-width: var(--w-line-soft);
+          }
+          .knob    { fill: var(--c-line); stroke: none; }
+        }
+
+        #carport .wall {
+          fill: var(--c-carport);
+          stroke-width: var(--w-line-soft);
+        }
+
+        #carport-roof {
+          fill: var(--c-carport);
+          stroke-width: var(--w-line-soft);
+        }
+
+        #car {
+          .face  { stroke-width: var(--w-line-soft); stroke-linejoin: round; }
+          .far   { fill: var(--c-car-dark); }
+          .shell { fill: var(--c-car-light); }
+          .body  { fill: var(--c-car); }
+          .glass { fill: var(--c-accent-2); fill-opacity: .55; }
+          .wheel { fill: var(--c-sockel); stroke: var(--c-line); stroke-width: 1; }
+          .rim   { fill: var(--c-line-soft); stroke: none; }
+        }
+
+        #moto {
+          .frame {
+            fill: none;
+            stroke: var(--c-line);
+            stroke-width: 3.4;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+          }
+          .tank { fill: var(--c-car); stroke: var(--c-line); stroke-width: 1.2; }
+          .wheel {
+            fill: none;
+            stroke: var(--c-line);
+            stroke-width: 3.2;
+          }
+        }
+      }
+
+      /* Dachstreifen mit der Solarleitung dahinter - liegt ueber der Leitung */
+      #glass {
+        .face {
+          fill-opacity: var(--o-glass);
+          stroke-width: var(--w-line-soft);
+        }
+        #roof-strip { fill: var(--c-roof); }
+      }
+
+      .device {
+        .face  { stroke-width: var(--w-line-soft); }
+        .top   { fill: var(--c-device); }
+        .side  { fill: var(--c-device-2); }
+        .front { fill: var(--c-device-3); }
+        .plate { fill: var(--c-sockel); stroke: none; }
+        .sockel-top   { fill: var(--c-sockel); }
+        .sockel-side  { fill: var(--c-sockel); fill-opacity: .8; }
+        .sockel-front { fill: var(--c-sockel); fill-opacity: .9; }
+        .icon {
+          fill: none;
+          stroke: var(--c-accent);
+          stroke-width: 1.7;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        .soc
+        .fan { stroke: var(--c-line); stroke-width: 2; fill: none; }
+        .fan-disc { stroke: none; }
+      }
+
+      #solar {
+        #solar-surface { fill: url(#grad-solar); stroke: none; }
+        .panel {
+          fill: var(--c-panel);
+          fill-opacity: var(--o-panel);
+          stroke: var(--c-accent);
+          stroke-width: .9;
+        }
+      }
+
+      #soc-track { fill: var(--c-line-soft); fill-opacity: .3; stroke: none; }
+      #soc-fill {
+        fill: var(--c-accent);
+        stroke: none;
+        transform-box: fill-box;
+        transform-origin: 50% 100%;
+        transform: scaleY(var(--soc));
+      }
+
+      .label {
+        .cable {
+          fill: none;
+          stroke: var(--c-cable);
+          stroke-width: var(--w-cable);
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        .node { fill: var(--c-cable); stroke: none; }
+
+        /* fuer spaeter: verdeckte Kabelstuecke abschwaechen */
+        .verdeckt { opacity: var(--o-verdeckt); }
+        .name { fill: var(--c-text); font-size: 26px; font-weight: 600; }
+        .val {
+          fill: var(--c-text);
+          font-size: 21px;
+          font-weight: 500;
+          font-variant-numeric: tabular-nums;
+        }
+        .cap { fill: var(--c-text-soft); font-size: 21px; }
+        .sum { fill: var(--c-text-soft); font-size: 16px; }
+      }
+    }
+  </style>
+  <g id="scene">
+    <title>Szene</title>
+    <g id="carport" style="" transform="matrix(0.963742, 0, 0, 0.962223, 14.535222, 18.824194)">
+      <title>Carport</title>
+      <path id="carport-wall" class="face wall" d="M 535.76 290.138 L 730.839 358.646 L 730.839 465.53 L 522.023 373.988 L 535.76 290.138 Z" style=""/>
+      <g id="moto" style="" transform="matrix(1, 0, 0.454779, 1, -205.626785, 0.787811)">
+        <title>Motorrad</title>
+        <circle class="wheel" cx="653.605" cy="428.113" r="9.5" style="stroke-width: 2px; fill: rgb(190, 193, 194);"/>
+        <circle class="wheel" cx="686.305" cy="447.013" r="9.5" style="stroke-width: 2px; fill: rgb(190, 193, 194);"/>
+        <path class="frame" d="M 653.605 427.013 Q 656.205 411.713 666.905 418.113 L 673.705 423.513 Q 680.005 420.413 683.905 426.513 L 686.305 445.313" style="stroke-width: 2px;"/>
+        <path class="tank" d="M 661.105 418.413 Q 666.905 412.813 675.605 421.813 L 674.705 426.313 L 662.505 420.913 Z" style="stroke-width: 2px; fill: rgb(190, 193, 194);"/>
+      </g>
+      <g id="car" transform="matrix(1, 0, 0, 1, -1.61722, -2.531156)">
+        <title>Auto</title>
+        <path class="face far" d="M 590.853 433.354 C 590.053 420.954 594.486 415.687 604.153 417.554 C 611.953 414.554 620.453 415.454 629.653 420.254 L 644.153 428.854 C 653.886 435.587 661.253 444.687 666.253 456.154 L 674.453 462.354 C 679.638 467.54 681.956 471.93 682.953 478.754 L 682.952 483.323 L 590.853 433.954 L 590.853 433.354 Z" style="fill: rgb(223, 223, 223);"/>
+        <path class="face shell" d="M 547.153 458.554 C 546.353 446.154 550.82 440.887 560.553 442.754 C 568.286 439.754 576.753 440.654 585.953 445.454 L 600.553 454.054 C 610.22 460.787 617.586 469.887 622.653 481.354 L 630.853 487.554 C 636.52 491.754 642.606 504.808 638.904 510.647 L 682.957 483.084 C 685.61 478.781 680.12 466.554 674.453 462.354 L 666.253 456.154 C 661.253 444.687 653.886 435.587 644.153 428.854 L 629.653 420.254 C 620.453 415.454 611.953 414.554 604.153 417.554 C 594.486 415.687 590.053 420.954 590.853 433.354 L 547.153 458.554 Z" style="fill: rgb(223, 223, 223);"/>
+        <path class="face body" d="M 547.153 458.554 C 546.353 446.154 550.82 440.887 560.553 442.754 C 568.286 439.754 576.753 440.654 585.953 445.454 L 600.553 454.054 C 610.22 460.787 617.586 469.887 622.653 481.354 L 630.853 487.554 C 636.52 491.754 639.005 498.127 639.591 501.952 C 640.467 505.531 640.057 509.186 638.756 510.598 L 547.153 459.154 L 547.153 458.554 Z" style="fill: rgb(223, 223, 223);"/>
+        <path class="face glass" d="M 563.453 442.754 Q 573.653 441.354 585.953 447.654 L 600.553 456.354 Q 612.653 464.754 619.253 477.754 L 662.853 452.554 Q 656.353 439.554 644.153 431.154 L 629.653 422.454 Q 617.253 416.154 607.053 417.554 Z" style="fill: rgb(255, 255, 255);"/>
+        <circle class="wheel" cx="567.853" cy="468.554" r="10" style="fill: rgb(223, 223, 223);"/>
+        <circle class="rim" cx="567.853" cy="468.554" r="4" style="fill: rgb(223, 223, 223);"/>
+        <circle class="wheel" cx="621.427" cy="498.332" r="10" style="fill: rgb(223, 223, 223);"/>
+        <circle class="rim" cx="621.427" cy="498.332" r="4" style="fill: rgb(145, 145, 145);"/>
+      </g>
+      <path id="carport-roof" class="face roof" d="M 437.433 346.662 L 616.251 406.505 L 730.839 358.642 L 528.629 286.804 L 437.433 346.662 Z" style="fill: rgb(136, 142, 147);"/>
+    </g>
+    <g id="house" style="" transform="matrix(0.963742, 0, 0, 0.962223, 14.535222, 18.824194)">
+      <title>Haus</title>
+      <path id="house-wall-left" class="face wall" d="M 185.305 501.831 L 427.805 641.831 L 427.805 487.831 L 185.305 347.831 Z" style=""/>
+      <path id="house-wall-gable" class="face wall-2" d="M 621.805 529.831 L 427.805 641.831 L 427.805 487.831 L 524.805 277.831 L 621.805 375.831 Z" style=""/>
+      <path id="window-big" class="face window" d="M 289.105 481.131 L 347.305 514.731 L 347.305 472.731 L 289.105 439.131 Z" style=""/>
+      <path id="window-small" class="face window" d="M 296.399 538.542 L 330.311 558.12 L 330.311 521.72 L 296.399 502.142 Z" style=""/>
+      <path class="mullion" d="M 318.205 497.931 L 318.205 455.931 M 289.105 460.131 L 347.305 493.731 M 313.305 548.331 L 313.305 511.931" style=""/>
+      <path id="door" class="face door" d="M 216.311 520.32 L 250.299 539.942 L 250.299 464.342 L 216.311 444.72 Z" style=""/>
+      <circle class="knob" cx="244.005" cy="498.731" r="2.6" style=""/>
+      <path id="roof-main" class="face roof" d="M 272.656 132.185 L 524.745 277.721 L 413.875 518.046 L 161.786 372.509 Z" style="fill: rgb(136, 142, 147);"/>
+    </g>
+    <g id="ha-box" class="device" style="" transform="matrix(0.963742, 0, 0, 0.962223, 14.535222, 18.824194)">
+      <title>Steuerelement</title>
+      <path class="face top" d="M 512.603 498.172 L 488.241 484.108 L 564.016 440.361 L 588.378 454.426 Z" style="stroke-width: 1; stroke: none; fill: url(&quot;#gradient-0&quot;);"/>
+      <path class="face side" d="M 563.746 452.932 L 511.164 483.289 L 511.164 417.509 L 563.913 389.212 L 563.746 452.932 Z" style=""/>
+      <path class="face front" d="M 504.099 473.419 L 495.261 470.965 L 495.261 421.456 L 504.099 423.911 Z" style="stroke-width: 1; fill: rgb(32, 38, 44);"/>
+      <path class="face front" d="M 511.098 483.265 L 497.159 479.444 L 497.159 414.032 L 511.165 417.509 L 511.098 483.265 Z" style=""/>
+      <path class="face top" d="M 550.737 386.25 L 563.782 389.022 L 511.165 417.509 L 497.159 414.025 L 550.737 386.25 Z" style=""/>
+      <ellipse style="fill: rgb(28, 127, 184);" cx="538.218" cy="438.402" rx="24.644" ry="18.289" transform="matrix(0.859941, -0.510393, 0, 1.16287, 74.702417, 201.148675)"/>
+      <path class="icon" d="M 550.482 439.606 L 550.354 426.263 L 538.222 419.167 L 524.781 438.606 L 524.595 453.335 L 550.482 439.606 Z" style="fill: rgb(230, 230, 230); stroke: rgb(230, 230, 230);"/>
+      <path class="icon" d="M 538.451 428.914 L 538.346 448.257 M 538.542 438.955 L 543.115 433.886 M 537.708 444.232 L 533.525 441.819" style="stroke-width: 3px;"/>
+    </g>
+  </g>
+  <g id="labels">
+    <title>Komponenten</title>
+    <g id="label-solar" class="label">
+      <title>Solar</title>
+      <g id="solar" style="" transform="matrix(0.963742, 0, 0, 0.962223, 14.535222, 18.824194)">
+        <title>solar-modul</title>
+        <path id="solar-surface" d="M 267.761 164.176 L 490.911 293.004 L 403.464 483.073 L 180.314 354.245 Z" style="fill: rgb(163, 167, 169);"/>
+        <path class="panel" data-row="0" data-col="0" d="M 271.794 176.852 L 307.07 197.218 L 268.989 279.988 L 233.713 259.622 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="0" data-col="1" d="M 314.865 201.718 L 350.142 222.083 L 312.061 304.854 L 276.784 284.488 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="0" data-col="2" d="M 357.936 226.583 L 393.213 246.949 L 355.132 329.719 L 319.855 309.353 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="0" data-col="3" d="M 401.007 251.449 L 436.284 271.815 L 398.203 354.585 L 362.926 334.219 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="0" data-col="4" d="M 444.078 276.315 L 479.355 296.68 L 441.274 379.451 L 405.997 359.085 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="1" data-col="0" d="M 229.951 267.798 L 265.228 288.164 L 227.147 370.934 L 191.87 350.569 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="1" data-col="1" d="M 273.022 292.664 L 308.299 313.03 L 270.218 395.8 L 234.941 375.434 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="1" data-col="2" d="M 316.093 317.53 L 351.37 337.896 L 313.289 420.666 L 278.012 400.3 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="1" data-col="3" d="M 359.164 342.395 L 394.441 362.761 L 356.36 445.531 L 321.083 425.166 Z" style="stroke: rgb(6, 18, 25);"/>
+        <path class="panel" data-row="1" data-col="4" d="M 402.236 367.261 L 437.512 387.627 L 399.431 470.397 L 364.155 450.031 Z" style="stroke: rgb(6, 18, 25);"/>
+      </g>
+      <path id="kabel-solar" class="cable" d="M 441.77 390.823 L 459.183 399.223 L 427.433 466.599 L 436.297 470.031 L 496.092 431.936" style="fill: none; stroke: var(--c-cable); stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round;">
+        <title>kabel-solar</title>
+      </path>
+      <g id="label-solar-text" transform="matrix(1, 0, 0, 1, -29.966263, 6.284605)">
+        <title>Text</title>
+        <text class="name" style="white-space: pre;" y="123.894" x="355.913">Solar</text>
+        <text class="val" style="white-space: pre;" y="155.894" x="355.913">9 kW</text>
+        <text class="cap" style="font-size: 16px; white-space: pre;" y="155.894" x="421.913"><title>solar-gesamt</title>(12 kW)</text>
+      </g>
+    </g>
+    <g id="label-wallbox" class="label">
+      <title>Wallbox</title>
+      <g id="wallbox" class="device" transform="matrix(1.108197, 0, -0.006353, 1.07379, -107.851021, -40.87104)" style="">
+        <title>wallbox-geraet</title>
+        <path class="face side" d="M 744.279 439.904 L 739.733 442.529 L 739.733 419.37 L 744.279 416.745 Z" style="stroke-width: 0.996; fill: rgb(32, 38, 44);"/>
+        <path class="face side" d="M 743.064 444.297 L 736.314 448.193 L 736.314 415.993 L 743.064 412.097 Z" style=""/>
+        <path class="face front" d="M 736.172 448.159 L 712.045 434.231 L 712.045 402.031 L 736.172 415.959 Z" style=""/>
+        <path class="face top" d="M 718.793 398.296 L 743.027 412.286 L 736.627 415.981 L 712.393 401.991 Z" style=""/>
+        <path class="icon" d="M 726.642 417.795 L 720.432 423.395 L 726.791 427.095 L 720.585 432.995" style="stroke-width: 2.64803px;"/>
+      </g>
+      <path id="kabel-wallbox" class="cable" d="M 707.965 397.618 L 707.82 367.362 L 716.722 370.924 L 716.752 365.432 L 711.324 363.405 L 597.312 411.676 L 597.43 387.947 L 614.068 398.613 L 559.354 422.623" style="fill: none; stroke: var(--c-cable); stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round;" mask="url(#wand-maske)">
+        <title>kabel-wallbox</title>
+      </path>
+      <g id="label-wallbox-text" transform="matrix(1, 0, 0, 1, -35.829105, 40.928642)">
+        <title>Text</title>
+        <text class="name" style="white-space: pre; font-size: 26px;" y="165.204" x="585.948">Wallbox</text>
+        <text class="car" style="white-space: pre; font-size: 21px;" y="199.204" x="585.948"><title>auto-1-name</title>Auto 1</text>
+        <text class="car-val" style="white-space: pre; font-size: 21px;" y="199.204" x="660.617">30%</text>
+        <text class="val" style="white-space: pre; font-size: 21px;" y="199.204" x="727.948"><title>wallbox-1-aktuell</title>5 kW</text>
+        <text class="sum" style="font-size: 16px; white-space: pre;" y="199.204" x="784.948"><title>wallbox-1-gesamt</title>(10 kW)</text>
+        <text class="car" style="white-space: pre; font-size: 21px;" y="229.204" x="585.948"><title>auto-2-name</title>Auto 2</text>
+        <text class="car-val" style="white-space: pre; font-size: 21px;" y="229.204" x="660.617">30%</text>
+        <text class="val" style="white-space: pre; font-size: 21px;" y="229.204" x="727.948"><title>wallbox-2-aktuell</title>5 kW</text>
+        <text class="sum" style="font-size: 16px; white-space: pre;" y="229.204" x="784.948"><title>wallbox-2-gesamt</title>(10 kW)</text>
+        <text class="car" style="white-space: pre; font-size: 21px;" y="259.204" x="585.948"><title>auto-3-name</title>Auto 3</text>
+        <text class="car-sum" style="white-space: pre; font-size: 21px;" y="259.204" x="660.617">30%</text>
+        <text class="val" style="white-space: pre; font-size: 21px;" y="259.204" x="727.948"><title>wallbox-3-aktuell</title>5 kW</text>
+        <text class="sum" style="font-size: 16px; white-space: pre;" y="259.204" x="784.948"><title>wallbox-3-gesamt</title>(10 kW)</text>
+      </g>
+    </g>
+    <g id="label-netz" class="label">
+      <title>Netz</title>
+      <path class="cable" d="M 637.976 552.977 L 617.644 542.8 L 573.247 570.843 L 554.295 562.543 L 552.663 459.212" style="stroke-width: 3px;"/>
+      <g id="label-netz-text" transform="matrix(1, 0, 0, 1, -12.302921, 0.977773)">
+        <title>Text</title>
+        <text class="name" style="white-space: pre;" y="571.286" x="653.208">Netz</text>
+        <text class="val" style="white-space: pre;" y="603.286" x="653.208"><title>netz-aktuell</title>einspeisen 1 kW</text>
+        <text class="sum-out" style="white-space: pre;" y="631.286" x="653.208"><title>netz-gesamt-bezogen</title>bezogen 5 kW</text>
+        <text class="sum-out" style="white-space: pre;" y="653.286" x="653.208"><title>netz-gesamt-eingespeist</title>eingespeist 1 kW</text>
+      </g>
+    </g>
+    <g id="label-batterie" class="label">
+      <title>Batterie</title>
+      <g id="battery" class="device" style="" transform="matrix(0.963742, 0, 0, 0.962223, 14.535222, 18.824194)">
+        <title>batterie-geraet</title>
+        <path class="face sockel-side" d="M 410.303 631.505 L 398.197 638.495 L 398.197 628.695 L 410.303 621.705 Z" style="fill-opacity: 1;"/>
+        <path class="face sockel-front" d="M 398.203 638.495 L 356.997 614.705 L 356.997 604.905 L 398.203 628.695 Z" style="fill-opacity: 1;"/>
+        <path class="face sockel-top" d="M 369.1 597.911 L 410.306 621.7 L 398.2 628.689 L 356.994 604.9 Z" style=""/>
+        <path class="face side" d="M 413.906 623.811 L 399.394 632.189 L 399.394 560.789 L 413.906 552.411 Z" style=""/>
+        <path class="face front" d="M 399.4 632.2 L 350.9 604.2 L 350.9 532.8 L 399.4 560.8 Z" style=""/>
+        <path class="face top" d="M 365.406 524.411 L 413.906 552.411 L 399.394 560.789 L 350.894 532.789 Z" style=""/>
+        <g id="soc" transform="matrix(1, 0.577, 0, 1, 359.127, 596.95)">
+          <title>batterie-ladestand</title>
+          <rect id="soc-track" x="0" y="-50.4" width="9" height="50.4" rx="4.5" style="">
+            <title>batterie-ladestand-skala</title>
+          </rect>
+          <rect id="soc-fill" x="0" y="-50.4" width="9" height="50.4" rx="4.5">
+            <title>batterie-ladestand-balken</title>
+          </rect>
+        </g>
+        <path class="icon" d="M 389.943 568.163 L 377.36 579.261 L 375.03 581.316 L 390.537 590.007 L 375.64 603.865" style="stroke-width: 3px;"/>
+      </g>
+      <path class="cable" d="M 414.135 579.448 L 421.074 582.396 L 421.682 506.857 L 427.452 510.022 L 496.716 471.199" style="stroke-width: 3px;"/>
+      <g id="label-batterie-text" transform="matrix(1, 0, 0, 1, 52.030758, 31.20332)">
+        <title>Text</title>
+        <text class="name" style="white-space: pre;" y="632.389" x="172.122"><title>batterie-ladestand</title>Batterie 30%</text>
+        <text class="val" style="white-space: pre;" y="664.389" x="172.122"><title>batterie-aktuell</title>entlädt 5 kW</text>
+        <text class="sum-out" style="white-space: pre;" y="692.389" x="172.122"><title>batterie-gesamt-entladen</title>entladen 10 kW</text>
+        <text class="sum-in" style="white-space: pre;" y="714.389" x="172.122"><title>batterie-gesamt-geladen</title>geladen 8 kW</text>
+      </g>
+    </g>
+    <g id="label-waermepumpe" class="label">
+      <title>Wärmepumpe</title>
+      <g id="heatpump" class="device" transform="matrix(0.963742, 0, 0, 0.962223, 16.757767, 22.803905)" style="">
+        <title>waermepumpe-geraet</title>
+        <path class="face sockel-side" d="M 540.596 598.449 L 484.821 630.649 L 484.821 620.849 L 540.596 588.649 Z" style="">
+          <title>sockel-seite</title>
+        </path>
+        <path class="face sockel-front" d="M 484.821 630.649 L 460.571 616.649 L 460.571 606.849 L 484.821 620.849 Z" style="">
+          <title>sockel-vorne</title>
+        </path>
+        <path class="face sockel-top" d="M 516.346 574.649 L 540.596 588.649 L 484.821 620.849 L 460.571 606.849 Z" style="">
+          <title>sockel-oben</title>
+        </path>
+        <path class="face side" d="M 547.871 588.649 L 484.821 625.049 L 484.821 580.249 L 547.871 543.849 Z" style=""/>
+        <path class="face front" d="M 484.821 625.049 L 453.296 606.849 L 453.296 562.049 L 484.821 580.249 Z" style=""/>
+        <path class="icon fan-disc" d="M 516.962 584.717 C 516.962 576.212 522.934 565.87 530.3 561.617 C 537.666 557.364 543.637 560.812 543.637 569.317 C 543.637 577.822 537.666 588.164 530.3 592.417 C 522.934 596.67 516.962 593.222 516.962 584.717 Z" style="fill: rgb(32, 38, 44); stroke: none;">
+          <title>luefter</title>
+        </path>
+        <path class="icon fan" d="M 530.3 577.017 L 530.187 565.213 M 530.3 577.017 L 539.515 577.925 M 530.3 577.017 L 520.366 589.374" style="stroke: rgb(28, 127, 184); stroke-width: 3px;">
+          <title>luefter-blaetter</title>
+        </path>
+        <path class="face top" d="M 516.346 525.649 L 547.871 543.849 L 484.821 580.249 L 453.296 562.049 Z" style=""/>
+      </g>
+      <path class="cable" d="M 511.512 529.429 L 511.376 482.813" style="stroke-width: 3px;"/>
+      <g id="label-waermepumpe-text" transform="matrix(1, 0, 0, 1, -6.514157, -14.574307)">
+        <title>Text</title>
+        <text class="name" style="white-space: pre;" y="683.63" x="428.405">Wärmepumpe</text>
+        <text class="val" style="white-space: pre;" y="715.63" x="428.405"><title>waermepumpe-aktuell</title>5 kW</text>
+        <text class="sum" style="font-size: 16px; white-space: pre;" y="715.63" x="494.405"><title>waermepumpe-gesamt</title>(7,5kw)</text>
+      </g>
+    </g>
+    <g id="label-haushalt" class="label" transform="matrix(1, 0, 0, 1, -15.526525, 34.369705)">
+      <title>Haushalt</title>
+      <g id="group-3" transform="matrix(1, 0, 0, 1, -269.319366, -159.397491)">
+        <title>Text</title>
+        <text class="name" style="white-space: pre;" y="683.63" x="428.405">Haushalt</text>
+        <text class="val" style="white-space: pre;" y="715.63" x="428.405"><title>waermepumpe-aktuell</title>5 kW</text>
+        <text class="sum" style="font-size: 16px; white-space: pre;" y="715.63" x="494.405"><title>waermepumpe-gesamt</title>(7,5kw)</text>
+      </g>
+    </g>
+  </g>
+</svg>
