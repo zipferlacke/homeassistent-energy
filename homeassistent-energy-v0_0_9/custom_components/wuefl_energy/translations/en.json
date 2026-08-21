@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up wuefl Energy",
+        "description": "Nothing to configure here. This step only creates the entry the integration needs to reliably load its helper entities (charging rules, charging mode per wallbox). You maintain the actual sensor mapping afterwards in the \"Zuordnung\" view of the dashboard."
+      }
+    },
+    "abort": {
+      "already_configured": "wuefl Energy is already set up."
+    }
+  }
+}

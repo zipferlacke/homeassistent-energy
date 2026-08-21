@@ -1,0 +1,188 @@
+"""wuefl Energie – zentrale Zuordnung der Entitäten.
+
+Für Sensoren von echter Hardware hält die Integration nur die Zuordnung
+fest. Für die vier anlagenweiten Laderegler und die drei Regler je Wallbox
+gibt es dagegen keine echte Hardware, die sie liefern könnte — die legt die
+Integration deshalb selbst an, als ganz normale switch-/number-/select-
+Entitäten mit entity_category "config". Automatisch, sobald mindestens eine
+Wallbox existiert; automatisch wieder weg, sobald keine mehr existiert.
+
+Geladen werden diese drei Plattformen über einen Config Entry, nicht über
+die ältere Discovery-Methode (async_load_platform). Der Unterschied ist
+kein Stilbruch, sondern eine Zuverlässigkeitsfrage: async_forward_entry_setups
+wartet garantiert, bis alle Plattformen fertig eingerichtet sind, bevor die
+Funktion zurückkehrt — die Discovery-Methode hatte diese Garantie nicht und
+lief in der Praxis in ein Timeout, unabhängig davon, wie lange gewartet
+wurde. Ein Config Entry entsteht automatisch beim ersten Start, sobald
+"wuefl_energy:" in der configuration.yaml steht — dafür ist nichts in der
+Oberfläche zu klicken.
+
+Alles andere hält die Integration nur als Zuordnung fest und stellt sie den
+Karten über zwei WebSocket-Befehle bereit. Gepflegt wird sie in der Ansicht
+"Zuordnung" im Dashboard.
+"""
+from __future__ import annotations
+
+import logging
+
+import voluptuous as vol
+
+from homeassistant.components import websocket_api
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
+
+from .specs import compute_internal, required_specs
+
+_LOGGER = logging.getLogger(__name__)
+
+DOMAIN = "wuefl_energy"
+STORAGE_KEY = "wuefl_energy.config"
+STORAGE_VERSION = 1
+EVENT_UPDATED = "wuefl_energy_updated"
+PLATFORMS = ("switch", "number", "select")
+
+# Die Integration wird mit einer leeren Zeile in configuration.yaml aktiviert.
+CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Any(dict, None)}, extra=vol.ALLOW_EXTRA)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Nur für die klassische YAML-Zeile zuständig: legt beim ersten Start
+    automatisch einen Config Entry an, falls noch keiner existiert. Die
+    eigentliche Einrichtung passiert danach in async_setup_entry.
+    """
+    if DOMAIN in config and not hass.config_entries.async_entries(DOMAIN):
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": SOURCE_IMPORT}, data={}
+            )
+        )
+
+    websocket_api.async_register_command(hass, websocket_get_config)
+    websocket_api.async_register_command(hass, websocket_save_config)
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Speicher laden, Grundgerüst anlegen, alle drei Helfer-Plattformen
+    laden und erst danach abgleichen — async_forward_entry_setups kehrt
+    garantiert erst zurück, wenn switch/number/select fertig sind.
+    """
+    store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    data = await store.async_load() or {}
+
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN].update({
+        "store": store,
+        "config": data,
+        "add_entities": {},  # Plattform -> async_add_entities-Funktion
+        "entities": {p: {} for p in PLATFORMS},  # Plattform -> unique_id -> Entität
+    })
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await async_sync_entities(hass)
+
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if ok:
+        hass.data.pop(DOMAIN, None)
+    return ok
+
+
+def _build_entity(platform: str, spec: dict):
+    if platform == "switch":
+        from .switch import WueflSwitch
+        return WueflSwitch(spec)
+    if platform == "number":
+        from .number import WueflNumber
+        return WueflNumber(spec)
+    if platform == "select":
+        from .select import WueflSelect
+        return WueflSelect(spec)
+    return None
+
+
+async def async_sync_entities(hass: HomeAssistant) -> None:
+    """Legt fehlende Helfer an und entfernt nicht mehr benötigte.
+
+    Läuft einmal beim Start und danach nach jedem Speichern der Zuordnung:
+    eine neue Wallbox bekommt ihre drei Regler sofort, eine gelöschte
+    verliert sie genauso sofort — inklusive Eintrag in der Entitäts-
+    Registry, damit nichts als "nicht verfügbar" liegen bleibt.
+    """
+    if DOMAIN not in hass.data:
+        return
+
+    specs = required_specs(hass.data[DOMAIN]["config"])
+    registry = er.async_get(hass)
+
+    for platform, wanted_list in specs.items():
+        current = hass.data[DOMAIN]["entities"][platform]
+        add_entities = hass.data[DOMAIN]["add_entities"].get(platform)
+        wanted = {item["unique_id"]: item for item in wanted_list}
+
+        new_entities = []
+        for unique_id, spec in wanted.items():
+            if unique_id in current:
+                continue
+            entity = _build_entity(platform, spec)
+            if entity is None:
+                continue
+            current[unique_id] = entity
+            new_entities.append(entity)
+        if new_entities and add_entities:
+            add_entities(new_entities)
+        elif new_entities:
+            _LOGGER.warning(
+                "wuefl Energie: Plattform %s noch nicht bereit, %d Helfer warten",
+                platform, len(new_entities),
+            )
+
+        for unique_id in list(current):
+            if unique_id in wanted:
+                continue
+            entity = current.pop(unique_id)
+            entity_id = entity.entity_id
+            hass.async_create_task(entity.async_remove(force_remove=True))
+            if entity_id and registry.async_get(entity_id):
+                registry.async_remove(entity_id)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/get"})
+@callback
+def websocket_get_config(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Aktuelle Zuordnung an die Karten liefern, samt der von der Integration
+    selbst verwalteten Entitäts-IDs (Feld "internal")."""
+    config = hass.data.get(DOMAIN, {}).get("config", {})
+    connection.send_result(msg["id"], {**config, "internal": compute_internal(config)})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/save",
+        vol.Required("config"): dict,
+    }
+)
+@websocket_api.async_response
+async def websocket_save_config(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Zuordnung sichern, Helfer abgleichen, offene Karten benachrichtigen."""
+    if DOMAIN not in hass.data:
+        connection.send_error(msg["id"], "not_ready", "Integration noch nicht eingerichtet")
+        return
+
+    config = msg["config"]
+    hass.data[DOMAIN]["config"] = config
+    await hass.data[DOMAIN]["store"].async_save(config)
+
+    await async_sync_entities(hass)
+
+    # Die Karten hören auf dieses Ereignis und laden neu, ohne Seitenwechsel.
+    hass.bus.async_fire(EVENT_UPDATED)
+
+    connection.send_result(msg["id"], {"saved": True})

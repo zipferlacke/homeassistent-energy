@@ -12,7 +12,8 @@ import {
   adoptSheet, asList, power, energy, num, sum, breakdown,
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtEuro, esc, icon, registerCard,
   weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
-  entityIds, statesChanged, COLORS, WueflFormEditor, sel,
+  entityIds, statesChanged, pvForecast, todayTotals, todaySum,
+  COLORS, WueflFormEditor, sel,
 } from './wuefl-energy-shared.js';
 
 const SVG_URL = '/local/wuefl_energy/energieflow.svg';
@@ -20,12 +21,12 @@ const SVG_URL = '/local/wuefl_energy/energieflow.svg';
 /* Kabel sind im SVG alle vom Gerät zum Anschlusskasten gezeichnet.
    "inbound" heißt: Strom fließt in dieser Richtung, also normal abspielen. */
 const PARTS = {
-  solar:       { label: 'label-solar', cable: '#kabel-solar' },
-  netz:        { label: 'label-netz', cable: '#label-netz .cable' },
-  batterie:    { label: 'label-batterie', cable: '#label-batterie .cable' },
-  wallbox:     { label: 'label-wallbox', cable: '#kabel-wallbox' },
-  waermepumpe: { label: 'label-waermepumpe', cable: '#label-waermepumpe .cable' },
-  haushalt:    { label: 'label-haushalt', cable: null },
+  solar:       { label: 'label-solar', cable: '#kabel-solar', device: '#solar' },
+  netz:        { label: 'label-netz', cable: '#label-netz .cable', device: '#netz' },
+  batterie:    { label: 'label-batterie', cable: '#label-batterie .cable', device: '#battery' },
+  wallbox:     { label: 'label-wallbox', cable: '#kabel-wallbox', device: '#wallbox' },
+  waermepumpe: { label: 'label-waermepumpe', cable: '#label-waermepumpe .cable', device: '#heatpump' },
+  haushalt:    { label: 'label-haushalt', cable: null, device: '#house' },
 };
 
 const CSS = `
@@ -50,56 +51,125 @@ const CSS = `
 
   & svg { display: block; height: auto; width: 100%; }
 
-  /* Aktive Geräte: das blaue Icon atmet */
-  & .device .icon { transition: opacity .3s ease; }
-  & .device.is-active .icon { animation: breathe 1.9s ease-in-out infinite; }
+  /* Text steht in foreignObject-<div>s, ganz normales CSS – kein
+     Tspan-Jonglieren mehr für Zeilenumbruch und Abstand. */
+  & .wuefl-label {
+    color: var(--c-text, #1a1a1a);
+    font: 15px/1.35 var(--paper-font-body1_-_font-family, inherit);
 
-  /* Solarfläche schimmert, solange erzeugt wird */
-  & #solar-surface { fill: var(--c-panel); transition: fill .4s ease; }
-  & #solar.is-active #solar-surface { fill: url(#grad-solar); }
-  & #solar.is-active .panel { animation: breathe 2.6s ease-in-out infinite; }
-
-  /* Fenster leuchten, wenn der Haushalt Strom zieht */
-  & #window-big, & #window-small { transition: fill-opacity .4s ease; }
-  & #house.is-active #window-big, & #house.is-active #window-small {
-    animation: windows 3.4s ease-in-out infinite;
+    & .name { display: block; font-size: 17px; font-weight: 700; margin-bottom: 2px; }
+    & .row {
+      align-items: baseline; display: flex; gap: 9px; white-space: nowrap;
+      &.sub { color: var(--c-text-soft, #6b6b6b); font-size: 13px; margin-top: 1px; }
+    }
+    & .cap, & .sum { color: var(--c-text-soft, #6b6b6b); font-size: 13px; }
+    & .strings { color: var(--c-text-soft, #6b6b6b); display: flex; flex-direction: column;
+                 font-size: 13px; gap: 1px; margin-top: 2px; }
+    & .cars { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
+    & .car-row {
+      column-gap: 10px; display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto; white-space: nowrap;
+      & .car { overflow: hidden; text-overflow: ellipsis; }
+      & .sum { text-align: right; }
+    }
   }
 
-  & .flow {
-    animation: dash var(--dur, 1.4s) linear infinite;
+  /* Farbe läuft ausschließlich über --c-highlight: die SVG bezieht Icons,
+     Ladestandsbalken und Netz-Symbol alle daraus. Die Karte setzt sie je
+     Gerätegruppe, mehr braucht es nicht. */
+  & .device .icon, & .device .fan {
+    transition: stroke .25s ease, filter .25s ease;
+  }
+
+  /* Blinken UND ein Leuchten (drop-shadow) dazu – reines Ein/Aus der
+     Deckkraft wirkte zu technisch, mit Schein sieht es nach Betrieb aus. */
+  & .device.is-active .icon,
+  & .device.is-active .fan {
+    animation: blink var(--beat, 2.4s) ease-in-out infinite;
+    filter: drop-shadow(0 0 5px var(--c-highlight));
+  }
+  & #house.is-active .window {
+    animation: blink-fill var(--beat, 2.4s) ease-in-out infinite;
+    fill: var(--c-highlight);
+  }
+
+  /* Solar: die Fläche ist dauerhaft orange (kein Blinken mehr) und schimmert
+     über den in der SVG hinterlegten Verlauf "solar-shimmer" von selbst. */
+  & #solar-surface { transition: opacity .3s ease; }
+
+  /* Kabel: laufende Punkte, per pathLength auf ein sauberes Vielfaches der
+     Musterlänge normiert (in JS gesetzt) – damit die Punktreihe exakt
+     aufgeht, unabhängig von der tatsächlichen Pfadlänge, und nirgends ein
+     Rest-Stück ohne Punkt oder ein sichtbarer Sprung beim Schleifen-Ende
+     entsteht. Ein-/Ausblenden läuft über Deckkraft mit Übergang statt
+     display:none, damit nichts abrupt abbricht.
+  */
+  & .flow, & .flow-fat {
+    animation: dots var(--dur, 1.4s) linear infinite;
     fill: none;
-    stroke-dasharray: 3 12;
+    opacity: 0;
     stroke-linecap: round;
-    stroke-width: 4;
+    transition: opacity .5s ease;
   }
-  & .flow-fat {
-    animation: dash var(--dur, 1.4s) linear infinite;
-    fill: none;
-    opacity: .9;
-    stroke-dasharray: 3 57;
-    stroke-linecap: round;
-    stroke-width: 7;
-  }
+  & .flow.on, & .flow-fat.on { opacity: var(--flow-op, 1); }
+  & .flow { stroke-dasharray: 0 14; stroke-width: 4; }
+  & .flow-fat { stroke-dasharray: 0 42; stroke-width: 7.5; }
   & .flow.rev, & .flow-fat.rev { animation-direction: reverse; }
 }
 
-@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
-@keyframes windows { 0%, 100% { fill-opacity: .95; } 50% { fill-opacity: .45; } }
-@keyframes dash { to { stroke-dashoffset: -15; } }
+@keyframes blink {
+  0%, 8% { opacity: .15; }
+  22%, 76% { opacity: 1; }
+  92%, 100% { opacity: .15; }
+}
+@keyframes blink-fill {
+  0%, 8% { fill-opacity: .15; }
+  22%, 76% { fill-opacity: 1; }
+  92%, 100% { fill-opacity: .15; }
+}
+@keyframes dots { to { stroke-dashoffset: -14; } }
 
 @media (prefers-reduced-motion: reduce) {
   .scene .device.is-active .icon,
-  .scene #solar.is-active .panel,
-  .scene #house.is-active #window-big,
-  .scene #house.is-active #window-small,
+  .scene .device.is-active .fan,
+  .scene #house.is-active .window,
   .scene .flow, .scene .flow-fat { animation: none; }
 }
 
 .money {
   display: grid;
   gap: .55rem;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
   margin-top: .75rem;
+
+  /* Bilanz ist die Aussage, Bezug und Einspeisung sind die Herleitung –
+     deshalb stehen sie klein darunter statt als gleichwertige Kacheln. */
+  & .split {
+    display: flex; flex-wrap: wrap; gap: .1rem .7rem; margin-top: .15rem;
+
+    & span { font-size: var(--w-fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    & .in { color: var(--w-batt-out); }
+    & .out { color: var(--w-danger); }
+  }
+
+  & .hint {
+    align-items: center; display: inline-flex; gap: .3rem;
+    & ha-icon { --mdc-icon-size: 15px; opacity: .65; }
+  }
+}
+
+.explain {
+  background: var(--w-bg-soft);
+  border-left: 3px solid var(--w-accent);
+  border-radius: var(--w-radius);
+  color: var(--w-text-soft);
+  font-size: var(--w-fs-sm);
+  line-height: 1.5;
+  margin-top: .55rem;
+  padding: .6rem .75rem;
+
+  & p { margin: 0 0 .4rem; }
+  & p:last-child { margin: 0; }
 }
 
 .forecast {
@@ -133,19 +203,6 @@ dialog.fc {
 }
 `;
 
-/* Farbverlauf für die Solarfläche – im SVG referenziert, aber nicht definiert.
-   stop-color steht im style-Attribut, weil Browser var() in
-   Präsentationsattributen nicht auswerten. */
-const SOLAR_GRADIENT = `
-<linearGradient id="grad-solar" gradientUnits="objectBoundingBox"
-                x1="0" y1="0" x2="0.55" y2="0.55" spreadMethod="reflect">
-  <stop offset="0" style="stop-color: var(--c-panel)"/>
-  <stop offset="0.5" style="stop-color: var(--c-accent)"/>
-  <stop offset="1" style="stop-color: var(--c-panel)"/>
-  <animateTransform attributeName="gradientTransform" type="translate"
-                    values="-0.55 -0.55; 0.55 0.55" dur="4.5s" repeatCount="indefinite"/>
-</linearGradient>`;
-
 class WueflEnergyLiveCard extends HTMLElement {
   #own = {};
   #central = {};
@@ -159,6 +216,9 @@ class WueflEnergyLiveCard extends HTMLElement {
   #watch = [];
   #watchPlot = [];
   #plotDirty = true;
+  #explain = null;
+  #today = {};
+  #todayTimer = null;
 
   static getConfigElement() { return document.createElement('wuefl-energy-live-card-editor'); }
   static getStubConfig() { return { title: 'Zuhause', show_totals: true }; }
@@ -189,14 +249,35 @@ class WueflEnergyLiveCard extends HTMLElement {
 
   async #loadCentral() {
     const all = await centralConfig(this.#hass);
-    this.#central = { ...(all.live ?? {}), ...(all.price ?? {}) };
-    this.#central.wallboxes = [all.wallbox_1, all.wallbox_2, all.wallbox_3].filter(
-      (w) => w && Object.keys(w).length,
-    );
+    this.#central = { ...(all.live ?? {}), wallboxes: all.wallboxes ?? [] };
     this.#apply();
     this.#render();
     // Erst jetzt steht fest, welche Wetter-Entität gilt.
     this.#loadForecast();
+    this.#loadToday();
+  }
+
+  /**
+   * Was ist seit Mitternacht zusammengekommen? Kommt aus der Statistik, nicht
+   * aus eigenen Tagessensoren — deshalb muss in der Zuordnung nur der
+   * Gesamtzähler stehen. Stündlich reicht als Takt völlig.
+   */
+  async #loadToday() {
+    const c = this.#config;
+    this.#today = await todayTotals(this.#hass, [
+      ...asList(c.pv_energy_total), ...asList(c.grid_import_total),
+      ...asList(c.grid_export_total), ...asList(c.battery_in_total),
+      ...asList(c.battery_out_total), ...asList(c.house_energy_total),
+      ...asList(c.heatpump_energy_total), ...asList(c.wallbox_energy_total),
+    ]);
+    this.#render();
+
+    clearTimeout(this.#todayTimer);
+    this.#todayTimer = setTimeout(() => this.#loadToday(), 300_000);
+  }
+
+  disconnectedCallback() {
+    clearTimeout(this.#todayTimer);
   }
 
   #apply() {
@@ -230,6 +311,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       </div>
       <div class="scene"><div class="state">Grafik wird geladen …</div></div>
       <div class="money"></div>
+      <div class="explain" hidden></div>
       <div class="forecast" hidden>
         <div class="fhead"><span>Heute: Strompreis und PV-Prognose</span><span class="legend"></span></div>
         <div class="plot plotbox"></div>
@@ -253,6 +335,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       fcBody: card.querySelector('.fc-body'),
       scene: card.querySelector('.scene'),
       money: card.querySelector('.money'),
+      explainBox: card.querySelector('.explain'),
       forecast: card.querySelector('.forecast'),
       plot: card.querySelector('.plot'),
       legend: card.querySelector('.legend'),
@@ -290,13 +373,6 @@ class WueflEnergyLiveCard extends HTMLElement {
     // nicht der Systemeinstellung, wird das Farbschema hier gesetzt.
     svg.style.colorScheme = this.#hass?.themes?.darkMode ? 'dark' : 'light';
 
-    let defs = svg.querySelector('defs');
-    if (!defs) {
-      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-      svg.prepend(defs);
-    }
-    defs.insertAdjacentHTML('beforeend', SOLAR_GRADIENT);
-
     this.#els.svg = svg;
     this.#prepareFlows();
     this.#svgReady = true;
@@ -319,8 +395,13 @@ class WueflEnergyLiveCard extends HTMLElement {
       fat.removeAttribute('id');
       thin.setAttribute('class', 'flow');
       fat.setAttribute('class', 'flow-fat');
+      // pathLength normiert die Musterlänge auf ein Vielfaches von 14 bzw. 42
+      // Einheiten, unabhängig von der tatsächlichen geometrischen Länge des
+      // Pfads. Ohne das ginge das Punktmuster an einer zufälligen Stelle
+      // nicht auf – sichtbar als Lücke oder ein Ruckler beim Schleifenende.
+      thin.setAttribute('pathLength', '140');
+      fat.setAttribute('pathLength', '126');
       for (const el of [thin, fat]) {
-        el.style.opacity = '0';
         cable.parentNode.insertBefore(el, cable.nextSibling);
       }
       this.#els.flows[key] = { thin, fat };
@@ -394,99 +475,114 @@ class WueflEnergyLiveCard extends HTMLElement {
       if (g) g.style.display = has[key] ? '' : 'none';
     }
 
-    const T = (selector, value) => {
+    /**
+     * Beschriftungen sind in der Grafik ein einziges <text> mit <tspan>-Zeilen.
+     * Die Zusatzangaben (.cap, .sum) haben absichtlich kein eigenes x und
+     * fließen deshalb hinter dem Wert – daran wird nichts gesetzt, sonst
+     * schieben sie sich wieder übereinander.
+     */
+    /** Textfeld innerhalb eines Labels setzen – Kinder liegen jetzt in
+     *  normalen <div>/<span>-Elementen im foreignObject, kein Tspan mehr. */
+    const T = (groupSel, cls, value, index = 0) => {
+      const el = svg.querySelectorAll(`${groupSel} .${cls}`)[index];
+      if (el) el.textContent = value ?? '';
+    };
+
+    /** Gerät aktiv schalten und seine Farbe setzen. */
+    const dev = (selector, active, color) => {
       const el = svg.querySelector(selector);
       if (!el) return;
-      // Der <title> im Text ist die Beschreibung – nur den Textknoten ändern
-      const node = [...el.childNodes].find((n) => n.nodeType === 3);
-      if (node) node.nodeValue = value;
-      else el.append(value);
+      el.classList.toggle('is-active', active);
+      el.style.setProperty('--c-highlight', color);
     };
 
     /* --- Solar --- */
     if (has.solar) {
       const strings = breakdown(h, c.pv_power);
-      T('#label-solar-text .val', fmtPower(p.pv));
-      T('#label-solar-text .cap', tot ? `(${fmtEnergy(sum(h, c.pv_energy, energy) ?? 0)})` : '');
-      this.#extraLine(
-        svg, '#label-solar-text', 'wuefl-strings',
-        strings.length > 1
-          ? `≈ ${strings.map((s) => `${this.#short(s.name)} ${fmtPower(s.value)}`).join(' · ')}`
-          : '',
-      );
-      svg.querySelector('#solar')?.classList.toggle('is-active', p.pv >= 20);
+      const pvDay = todaySum(this.#today, c.pv_energy_total);
+      T('#label-solar-text', 'val', fmtPower(p.pv));
+      T('#label-solar-text', 'cap', tot && pvDay !== null ? `(${fmtEnergy(pvDay)})` : '');
+
+      // Mehrere Dachflächen stehen als eigene Zeile untereinander, nicht in
+      // einer Reihe – bei mehr als zwei, drei Flächen wäre das sonst zu breit.
+      const box = svg.querySelector('#label-solar-text .strings');
+      if (box) {
+        box.innerHTML = strings
+          .map((s2) => `<div>${esc(this.#short(s2.name))} ${fmtPower(s2.value)}</div>`)
+          .join('');
+      }
+      // Die Solarfläche bezieht ihre Farbe direkt aus dem Karten-Token
+      // --w-solar (in der SVG hinterlegt) und ist immer orange, kein
+      // is-active-Umschalten mehr nötig.
     }
 
     /* --- Netz --- */
     if (has.netz) {
-      const imp = sum(h, c.grid_import_energy, energy);
-      const exp = sum(h, c.grid_export_energy, energy);
-      T('#label-netz-text .val',
+      const imp = todaySum(this.#today, c.grid_import_total);
+      const exp = todaySum(this.#today, c.grid_export_total);
+      T('#label-netz-text', 'val',
         `${p.grid >= 0 ? 'beziehen' : 'einspeisen'} ${fmtPower(Math.abs(p.grid))}`);
-      // Beide Summenzeilen über die Liste ansprechen. Ein Selektor mit
-      // :nth-of-type greift hier nicht, weil er die <text>-Geschwister
-      // zählt und nicht die mit der Klasse .sum-out.
       const sums = svg.querySelectorAll('#label-netz-text .sum-out');
       if (sums[0]) sums[0].textContent = tot && imp !== null ? `bezogen ${fmtEnergy(imp)}` : '';
       if (sums[1]) sums[1].textContent = tot && exp !== null ? `eingespeist ${fmtEnergy(exp)}` : '';
+      dev('#netz', Math.abs(p.grid) >= 20,
+        p.grid >= 0 ? COLORS.grid_import : COLORS.grid_export);
     }
 
     /* --- Batterie --- */
     if (has.batterie) {
       const socs = breakdown(h, c.battery_soc, num);
-      const soc = socs.length ? socs.reduce((a, s) => a + s.value, 0) / socs.length : null;
-      T('#label-batterie-text .name', soc === null ? 'Batterie' : `Batterie ${fmtPercent(soc)}`);
-      T('#label-batterie-text .val',
+      const soc = socs.length ? socs.reduce((a, s2) => a + s2.value, 0) / socs.length : null;
+      T('#label-batterie-text', 'name', soc === null ? 'Batterie' : `Batterie ${fmtPercent(soc)}`);
+      T('#label-batterie-text', 'val',
         `${p.battery > 0 ? 'entlädt' : p.battery < 0 ? 'lädt' : 'bereit'} ${fmtPower(Math.abs(p.battery))}`);
-      const outE = sum(h, c.battery_out_energy, energy);
-      const inE = sum(h, c.battery_in_energy, energy);
-      T('#label-batterie-text .sum-out', tot && outE !== null ? `entladen ${fmtEnergy(outE)}` : '');
-      T('#label-batterie-text .sum-in', tot && inE !== null ? `geladen ${fmtEnergy(inE)}` : '');
+      const outE = todaySum(this.#today, c.battery_out_total);
+      const inE = todaySum(this.#today, c.battery_in_total);
+      T('#label-batterie-text', 'sum-out', tot && outE !== null ? `entladen ${fmtEnergy(outE)}` : '');
+      T('#label-batterie-text', 'sum-in', tot && inE !== null ? `geladen ${fmtEnergy(inE)}` : '');
       if (soc !== null) {
-        svg.style.setProperty('--soc', (Math.max(0, Math.min(100, soc)) / 100).toFixed(3));
+        // Ladestand als Anteil zwischen 0 und 1, die Grafik skaliert damit.
+        const frac = (Math.max(0, Math.min(100, soc)) / 100).toFixed(3);
+        svg.style.setProperty('--soc', frac);
+        svg.style.setProperty('--c-soc', frac);
       }
-      svg.querySelector('#battery')?.classList.toggle('is-active', Math.abs(p.battery) >= 20);
+      dev('#battery', Math.abs(p.battery) >= 20,
+        p.battery > 0 ? COLORS.battery_out : COLORS.battery_in);
     }
 
-    /* --- Wallboxen: eine Zeile je Fahrzeug --- */
+    /* --- Wallboxen: eine Zeile je Fahrzeug, in einem eigenen Grid-Bereich --- */
     if (has.wallbox) {
       const list = this.#wallboxes();
-      const rows = this.#wallboxRows(svg);
-      rows.forEach((row, i) => {
-        const wb = list[i];
-        const show = !!wb;
-        for (const el of row) el.style.display = show ? '' : 'none';
-        if (!show) return;
-        const pw = Math.abs(power(h, wb.power_entity) ?? 0);
-        const soc = num(h, wb.car_soc_entity);
-        row.forEach((el) => {
-          const cls = el.getAttribute('class');
-          if (cls === 'car') el.textContent = wb.name ?? `Auto ${i + 1}`;
-          else if (cls === 'car-val' || cls === 'car-sum') {
-            el.textContent = soc === null ? '' : fmtPercent(soc);
-          } else if (cls === 'val') el.textContent = fmtPower(pw);
-          else if (cls === 'sum') {
-            const e = energy(h, wb.today_energy_entity);
-            el.textContent = tot && e !== null ? `(${fmtEnergy(e)})` : '';
-          }
-        });
-      });
-      svg.querySelector('#wallbox')?.classList.toggle('is-active', p.wallbox >= 20);
+      const box = svg.querySelector('#label-wallbox-text .cars');
+      if (box) {
+        box.innerHTML = list.map((wb, i) => {
+          const pw = Math.abs(power(h, wb.power_entity) ?? 0);
+          const soc = num(h, wb.car_soc_entity);
+          const day = todaySum(this.#today, wb.energy_total);
+          const name = wb.name ?? `Auto ${i + 1}`;
+          const label = soc === null ? name : `${name}, ${fmtPercent(soc)}`;
+          const sum = tot && day !== null ? `(${fmtEnergy(day)})` : '';
+          return `<div class="car-row"><span class="car">${esc(label)}</span>` +
+            `<span class="val">${esc(fmtPower(pw))}</span>` +
+            `<span class="sum">${esc(sum)}</span></div>`;
+        }).join('');
+      }
+      dev('#wallbox', p.wallbox >= 20, COLORS.wallbox);
     }
 
     /* --- Wärmepumpe --- */
     if (has.waermepumpe) {
-      T('#label-waermepumpe-text .val', fmtPower(p.heatpump));
-      const e = sum(h, c.heatpump_energy, energy);
-      T('#label-waermepumpe-text .sum', tot && e !== null ? `(${fmtEnergy(e)})` : '');
-      svg.querySelector('#heatpump')?.classList.toggle('is-active', p.heatpump >= 20);
+      const e = todaySum(this.#today, c.heatpump_energy_total);
+      T('#label-waermepumpe-text', 'val', fmtPower(p.heatpump));
+      T('#label-waermepumpe-text', 'sum', tot && e !== null ? `(${fmtEnergy(e)})` : '');
+      dev('#heatpump', p.heatpump >= 20, COLORS.heatpump);
     }
 
     /* --- Haushalt --- */
-    T('#label-haushalt .val', fmtPower(p.house));
-    const he = energy(h, c.house_energy);
-    T('#label-haushalt .sum', tot && he !== null ? `(${fmtEnergy(he)})` : '');
-    svg.querySelector('#house')?.classList.toggle('is-active', p.house >= 20);
+    const he = todaySum(this.#today, c.house_energy_total);
+    T('#label-haushalt', 'val', fmtPower(p.house));
+    T('#label-haushalt', 'sum', tot && he !== null ? `(${fmtEnergy(he)})` : '');
+    dev('#house', p.house >= 20, COLORS.house);
 
     /* --- Flüsse --- */
     this.#flow('solar', p.pv, false, COLORS.pv);
@@ -496,43 +592,12 @@ class WueflEnergyLiveCard extends HTMLElement {
       p.battery > 0 ? COLORS.battery_out : COLORS.battery_in);
     this.#flow('wallbox', p.wallbox, true, COLORS.wallbox);
     this.#flow('waermepumpe', p.heatpump, true, COLORS.heatpump);
-  }
 
-  /** Alle Textzeilen der Wallbox-Gruppe nach Zeile sortiert. */
-  #wallboxRows(svg) {
-    const texts = [...svg.querySelectorAll('#label-wallbox-text text')].filter(
-      (t) => t.getAttribute('class') !== 'name',
-    );
-    const byY = new Map();
-    for (const t of texts) {
-      const y = t.getAttribute('y');
-      if (!byY.has(y)) byY.set(y, []);
-      byY.get(y).push(t);
-    }
-    return [...byY.entries()].sort((a, b) => Number(a[0]) - Number(b[0])).map(([, els]) => els);
-  }
-
-  /** Zusatzzeile unter einem Textblock, etwa die Strang-Näherung. */
-  #extraLine(svg, groupSel, id, value) {
-    const group = svg.querySelector(groupSel);
-    if (!group) return;
-    let el = group.querySelector(`#${id}`);
-    if (!value) {
-      if (el) el.style.display = 'none';
-      return;
-    }
-    if (!el) {
-      const ref = group.querySelector('.val');
-      if (!ref) return;
-      el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      el.setAttribute('id', id);
-      el.setAttribute('class', 'sum');
-      el.setAttribute('x', ref.getAttribute('x'));
-      el.setAttribute('y', String(Number(ref.getAttribute('y')) + 26));
-      group.appendChild(el);
-    }
-    el.style.display = '';
-    el.textContent = value;
+    // "Steuerelement" (#ha-box) ist keinem einzelnen Gerät zugeordnet,
+    // sondern zeigt: passiert irgendwo im System gerade etwas nennenswertes?
+    const anyActive = [p.pv, p.grid, p.battery, p.wallbox, p.heatpump]
+      .some((w) => Math.abs(w) >= 20);
+    dev('#ha-box', anyActive, 'var(--w-accent)');
   }
 
   #short(name) {
@@ -542,12 +607,19 @@ class WueflEnergyLiveCard extends HTMLElement {
   #flow(key, watt, reverse, color) {
     const pair = this.#els.flows?.[key];
     if (!pair) return;
-    const on = Math.abs(watt) >= 20;
-    const dur = Math.max(0.4, Math.min(2.4, 2200 / Math.max(1, Math.abs(watt))));
+    const w = Math.abs(watt);
+    const on = w >= 20;
+    // Wenig Leistung: langsam und blass. Viel: schnell und kräftig.
+    const dur = Math.max(0.45, Math.min(2.6, 2600 / Math.max(1, w)));
+    const strength = 0.35 + Math.min(1, w / 4000) * 0.65;
     for (const el of [pair.thin, pair.fat]) {
-      el.style.opacity = on ? '' : '0';
+      // "on" steuert nur die Deckkraft (mit CSS-Übergang) – die Animation
+      // selbst läuft immer weiter, dadurch gibt es beim Wiedereinblenden
+      // keinen Sprung zurück an den Bahnanfang.
+      el.classList.toggle('on', on);
       el.style.stroke = color;
       el.style.setProperty('--dur', `${dur.toFixed(2)}s`);
+      el.style.setProperty('--flow-op', strength.toFixed(2));
       el.classList.toggle('rev', !!reverse);
     }
   }
@@ -557,52 +629,101 @@ class WueflEnergyLiveCard extends HTMLElement {
   #renderMoney() {
     const c = this.#config;
     const h = this.#hass;
-    const imp = sum(h, c.grid_import_energy, energy);
-    const exp = sum(h, c.grid_export_energy, energy);
-    const pv = sum(h, c.pv_energy, energy);
+    const imp = todaySum(this.#today, c.grid_import_total);
+    const exp = todaySum(this.#today, c.grid_export_total);
+    const pv = todaySum(this.#today, c.pv_energy_total);
     const pImp = priceInfo(h, c, 'import').now;
     const pExp = priceInfo(h, c, 'export').now;
     const ref = c.price_reference ?? pImp;
 
-    const items = [];
-    if (exp !== null && pExp !== null) {
-      items.push({ k: 'Einspeisung heute', v: fmtEuro((exp * pExp) / 100) });
-    }
-    if (imp !== null && pImp !== null) {
-      items.push({ k: 'Netzbezug heute', v: fmtEuro(-(imp * pImp) / 100) });
-    }
-    if (items.length === 2) {
-      items.push({ k: 'Bilanz', v: fmtEuro((exp * pExp - imp * pImp) / 100) });
-    }
-    if (pv !== null && ref !== null) {
-      const own = Math.max(0, pv - (exp ?? 0));
-      items.push({ k: 'Durch PV gespart', v: fmtEuro((own * ref) / 100, { signed: false }) });
+    // Eigenverbrauch: was erzeugt und nicht eingespeist wurde.
+    const own = pv !== null ? Math.max(0, pv - (exp ?? 0)) : null;
+    const saved = own !== null && ref !== null ? (own * ref) / 100 : null;
+    const earned = exp !== null && pExp !== null ? (exp * pExp) / 100 : null;
+    const paid = imp !== null && pImp !== null ? (imp * pImp) / 100 : null;
+
+    const tiles = [];
+
+    if (earned !== null || paid !== null) {
+      const balance = (earned ?? 0) - (paid ?? 0);
+      tiles.push(`<div class="tile">
+        <span class="k">Bilanz heute</span>
+        <span class="v">${fmtEuro(balance)}</span>
+        <span class="split">
+          ${earned !== null ? `<span class="in">${fmtEuro(earned)} eingespeist</span>` : ''}
+          ${paid !== null ? `<span class="out">${fmtEuro(-paid)} bezogen</span>` : ''}
+        </span>
+      </div>`);
     }
 
-    this.#els.money.innerHTML = items
-      .map((i) => `<div class="tile"><span class="k">${i.k}</span><span class="v">${i.v}</span></div>`)
-      .join('');
+    if (saved !== null) {
+      tiles.push(`<button type="button" class="tile" data-explain="saved">
+        <span class="k hint">Durch PV gespart ${icon('mdi:information-outline')}</span>
+        <span class="v">${fmtEuro(saved, { signed: false })}</span>
+      </button>`);
+    }
+
+    // Amortisation: was der heutige Tag zu den Anschaffungskosten beiträgt.
+    const cost = Number(c.system_cost);
+    if (Number.isFinite(cost) && cost > 0 && (saved !== null || earned !== null)) {
+      const today = (saved ?? 0) + (earned ?? 0);
+      tiles.push(`<button type="button" class="tile" data-explain="payback">
+        <span class="k hint">Zur Amortisation ${icon('mdi:information-outline')}</span>
+        <span class="v">${fmtEuro(today, { signed: false })}</span>
+        <span class="split"><span>${((today / cost) * 100).toFixed(3).replace('.', ',')} % der Anlage</span></span>
+      </button>`);
+    }
+
+    this.#els.money.innerHTML = tiles.join('');
+
+    for (const btn of this.#els.money.querySelectorAll('[data-explain]')) {
+      btn.addEventListener('click', () => this.#toggleExplain(btn.dataset.explain));
+    }
+    this.#renderExplain();
+  }
+
+  #toggleExplain(key) {
+    this.#explain = this.#explain === key ? null : key;
+    this.#renderExplain();
+  }
+
+  #renderExplain() {
+    const cost = Number(this.#config.system_cost);
+    const texts = {
+      saved: `<p><strong>Durch PV gespart</strong> ist der Strom, den die Anlage heute erzeugt
+        und den du <em>selbst verbraucht</em> hast — also Erzeugung minus Einspeisung.
+        Bewertet wird er mit dem Preis, den du sonst fürs Einkaufen bezahlt hättest.</p>
+        <p>Das ist echtes Geld, das nicht abgeflossen ist. Es taucht auf keiner Rechnung auf,
+        deshalb steht es hier separat und nicht in der Bilanz.</p>`,
+      payback: `<p>Was der heutige Tag zu den Anschaffungskosten beiträgt: die Ersparnis durch
+        Eigenverbrauch plus die Einspeisevergütung.</p>
+        <p>Gerechnet gegen ${Number.isFinite(cost) ? fmtEuro(cost, { signed: false }) : '–'}
+        Gesamtkosten aus den Einstellungen unter <em>Anlage</em>.</p>`,
+    };
+    const el = this.#els.explainBox;
+    if (!el) return;
+    el.hidden = !this.#explain;
+    el.innerHTML = this.#explain ? texts[this.#explain] ?? '' : '';
   }
 
   /* --------------------- Preis und Prognose in einem ---------------- */
 
   #pvCurve() {
-    const ids = asList(this.#config.pv_forecast_entities);
-    const attr = this.#config.pv_forecast_attribute ?? 'watt_hours_period';
+    const today = new Date().toDateString();
     const byHour = new Map();
     let total = 0;
-    for (const id of ids) {
+
+    for (const id of asList(this.#config.pv_forecast_entities)) {
       const st = this.#hass.states[id];
       if (!st) continue;
       const v = energy(this.#hass, id);
       if (v !== null) total += v;
-      const raw = st.attributes[attr];
-      if (raw && typeof raw === 'object') {
-        for (const [t, wh] of Object.entries(raw)) {
-          const d = new Date(t);
-          if (d.toDateString() !== new Date().toDateString()) continue;
-          byHour.set(d.getHours(), (byHour.get(d.getHours()) ?? 0) + Number(wh) / 1000);
-        }
+      // Das Attribut wird erkannt, nicht vorausgesetzt – Forecast.Solar,
+      // Solcast und Konsorten legen es jeweils anders ab.
+      for (const e of pvForecast(st, this.#config.pv_forecast_attribute)) {
+        if (e.time.toDateString() !== today) continue;
+        const h = e.time.getHours();
+        byHour.set(h, (byHour.get(h) ?? 0) + e.kwh);
       }
     }
     return { byHour, total };

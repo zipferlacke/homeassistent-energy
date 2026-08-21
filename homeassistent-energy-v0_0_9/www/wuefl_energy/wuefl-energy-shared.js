@@ -65,6 +65,12 @@ export const TOKENS_CSS = `
 export const BASE_CSS = `
 :host { display: block; }
 
+/* Ein Element mit "hidden" muss immer verschwinden, auch wenn eine Klasse
+   direkt display:flex/grid darauf setzt. Ohne diese Regel gewinnt bei
+   gleicher Spezifität das Autoren-CSS gegen die UA-Regel [hidden]{display:none}
+   – der Effekt ist ein Regler, der trotz hidden sichtbar bleibt. */
+[hidden] { display: none !important; }
+
 .card {
   background: var(--w-bg);
   border-radius: var(--w-radius);
@@ -411,6 +417,153 @@ export function priceInfo(hass, config, direction = 'import') {
 }
 
 /* ------------------------------------------------------------------ *
+ * PV-Prognose
+ * ------------------------------------------------------------------ */
+
+/**
+ * Liest die Stundenkurve aus einem Prognose-Sensor.
+ *
+ * Jede Integration legt sie anders ab, deshalb wird der Reihe nach
+ * probiert statt fest verdrahtet:
+ *   Forecast.Solar   wh_period          { "2026-08-20T09:00:00+02:00": 1234 }
+ *   Solcast          detailedForecast   [{ period_start, pv_estimate }]
+ *   Open-Meteo u.a.  watt_hours_period  wie Forecast.Solar
+ *
+ * Ergebnis ist immer eine nach Zeit sortierte Liste { time, kwh }.
+ * `attrOverride` schlägt die Erkennung, falls doch mal etwas Eigenes kommt.
+ */
+export function pvForecast(state, attrOverride) {
+  if (!state?.attributes) return [];
+  const attrs = state.attributes;
+  const names = attrOverride
+    ? [attrOverride]
+    : ['watt_hours_period', 'wh_period', 'watt_hours', 'wh_hours',
+       'detailedForecast', 'detailedHourly', 'forecast'];
+
+  for (const name of names) {
+    const raw = attrs[name];
+    if (!raw) continue;
+
+    // Objektform: Zeitstempel -> Wattstunden im Zeitraum
+    if (!Array.isArray(raw) && typeof raw === 'object') {
+      const out = Object.entries(raw)
+        .map(([t, wh]) => ({ time: new Date(t), kwh: Number(wh) / 1000 }))
+        .filter((e) => !Number.isNaN(+e.time) && Number.isFinite(e.kwh));
+      if (out.length) return out.sort((a, b) => a.time - b.time);
+    }
+
+    // Listenform: Einträge mit Startzeit und entweder Energie oder Leistung
+    if (Array.isArray(raw) && raw.length) {
+      const rows = raw
+        .map((e) => {
+          const t = e.period_start ?? e.datetime ?? e.start_time ?? e.start ?? e.time;
+          return t
+            ? {
+                time: new Date(t),
+                kw: Number(e.pv_estimate ?? e.pv_estimate10 ?? e.power ?? e.value),
+                wh: Number(e.wh_period ?? e.watt_hours ?? e.energy),
+              }
+            : null;
+        })
+        .filter((e) => e && !Number.isNaN(+e.time));
+      if (!rows.length) continue;
+
+      rows.sort((a, b) => a.time - b.time);
+      // Solcast liefert Leistung im Zeitraum, meist halbstündlich. Die
+      // Schrittweite kommt aus den Daten selbst, nicht aus einer Annahme.
+      const stepH = rows.length > 1
+        ? Math.max(0.1, (rows[1].time - rows[0].time) / 3_600_000)
+        : 1;
+      const out = rows.map((r) => ({
+        time: r.time,
+        kwh: Number.isFinite(r.wh) ? r.wh / 1000 : Number.isFinite(r.kw) ? r.kw * stepH : 0,
+      }));
+      if (out.some((e) => e.kwh > 0)) return out;
+    }
+  }
+  return [];
+}
+
+/** Erwarteter Restertrag ab jetzt bis Sonnenuntergang, plus verbleibende Stunden. */
+export function pvOutlook(hass, ids, attrOverride) {
+  const now = new Date();
+  let rest = 0;
+  let last = now.getHours();
+  let any = false;
+
+  for (const id of asList(ids)) {
+    const series = pvForecast(hass?.states?.[id], attrOverride);
+    if (!series.length) {
+      // Ohne Kurve bleibt nur der Tagesgesamtwert – grob halbiert als Rest.
+      const v = energy(hass, id);
+      if (v !== null) rest += v * 0.5;
+      continue;
+    }
+    any = true;
+    for (const e of series) {
+      if (e.time > now && e.time.toDateString() === now.toDateString()) {
+        rest += e.kwh;
+        last = Math.max(last, e.time.getHours());
+      }
+    }
+  }
+  return { rest, hours: Math.max(0, last - now.getHours()), detailed: any };
+}
+
+export const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+/**
+ * Wann ist genug Sonnenüberschuss zusammengekommen?
+ *
+ * Läuft die Prognose Stunde für Stunde durch — über heute hinaus, solange
+ * die Vorhersage reicht. Kommt der Bedarf erst morgen zusammen, ist das eine
+ * ehrlichere Antwort als "heute nicht mehr erreichbar".
+ * Ergebnis: Date oder null, wenn die Vorhersage nicht weit genug reicht.
+ */
+export function solarEta(hass, ids, attrOverride, baseloadKw, neededKwh) {
+  if (neededKwh <= 0) return new Date();
+
+  const now = new Date();
+  const merged = new Map();
+  for (const id of asList(ids)) {
+    for (const e of pvForecast(hass?.states?.[id], attrOverride)) {
+      const key = +e.time;
+      merged.set(key, (merged.get(key) ?? 0) + e.kwh);
+    }
+  }
+  if (!merged.size) return null;
+
+  const rows = [...merged.entries()].sort((a, b) => a[0] - b[0]);
+  // Schrittweite aus den Daten, damit Halbstundenwerte richtig gewichtet werden.
+  const stepH = rows.length > 1 ? Math.max(0.1, (rows[1][0] - rows[0][0]) / 3_600_000) : 1;
+
+  let left = neededKwh;
+  for (const [time, kwh] of rows) {
+    if (time <= +now) continue;
+    const surplus = kwh - baseloadKw * stepH;
+    if (surplus <= 0) continue;
+    if (surplus >= left) {
+      // Innerhalb dieses Zeitraums erreicht – anteilig interpolieren.
+      const share = left / surplus;
+      return new Date(time + share * stepH * 3_600_000);
+    }
+    left -= surplus;
+  }
+  return null;
+}
+
+/** "um 14:26", "morgen um 14:26", "übermorgen um …", sonst "Fr um …". */
+export function fmtWhen(date) {
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOf(date) - startOf(new Date())) / 86_400_000);
+  const clock = `um ${fmtClock(date)}`;
+  if (days <= 0) return clock;
+  if (days === 1) return `morgen ${clock}`;
+  if (days === 2) return `übermorgen ${clock}`;
+  return `${WEEKDAYS[date.getDay()]} ${clock}`;
+}
+
+/* ------------------------------------------------------------------ *
  * Wetter
  * ------------------------------------------------------------------ */
 
@@ -433,7 +586,6 @@ export const WEATHER_ICONS = {
 };
 
 export const weatherIcon = (c) => WEATHER_ICONS[c] ?? 'mdi:thermometer';
-export const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
 /* ------------------------------------------------------------------ *
  * Diverses
@@ -512,15 +664,198 @@ export const sel = {
 };
 
 /* ------------------------------------------------------------------ *
+ * Tageswerte aus Gesamtzählern
+ * ------------------------------------------------------------------ */
+
+/**
+ * Summiert für jeden Zähler, was seit Mitternacht dazugekommen ist.
+ *
+ * Damit reicht in der Zuordnung ein einziger Gesamtzähler je Größe. Einen
+ * zweiten Sensor für "heute" zu verlangen wäre doppelte Arbeit — Home
+ * Assistant führt die Langzeitstatistik ohnehin und kann die Differenz
+ * über jeden Zeitraum bilden.
+ */
+export async function todayTotals(hass, ids) {
+  const wanted = [...new Set(asList(ids).filter(Boolean))];
+  if (!hass || !wanted.length) return {};
+
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+
+  try {
+    const res = await hass.callWS({
+      type: 'recorder/statistics_during_period',
+      start_time: start.toISOString(),
+      statistic_ids: wanted,
+      period: 'day',
+      types: ['change'],
+    });
+    const out = {};
+    for (const [id, rows] of Object.entries(res ?? {})) {
+      out[id] = asList(rows).reduce((a, r) => a + (Number(r.change) || 0), 0);
+    }
+    return out;
+  } catch {
+    // Ohne Recorder-Statistik bleiben die Tageswerte eben leer.
+    return {};
+  }
+}
+
+/** Tagessumme über mehrere Zähler. Ohne Daten null statt 0. */
+export function todaySum(totals, ids) {
+  const wanted = asList(ids).filter((id) => totals?.[id] !== undefined);
+  if (!wanted.length) return null;
+  return wanted.reduce((a, id) => a + totals[id], 0);
+}
+
+/* ------------------------------------------------------------------ *
  * Zentrale Zuordnung aus der Integration
  * ------------------------------------------------------------------ */
+
+/**
+ * Leere Zuordnung. Alles, wovon es mehrere geben kann, ist eine Liste —
+ * auch wenn es null oder eines ist. Das erspart Sonderfälle an jeder Stelle,
+ * an der später gezählt oder summiert wird.
+ */
+export const EMPTY_CONFIG = {
+  version: 4,
+  grid: {},
+  solar: {},
+  strings: [],
+  battery: [],
+  consumers: {},
+  heatpump: [],
+  wallboxes: [],
+  cars: [],
+  price: {},
+  system: {},
+  info: {},
+};
+
+const list = (v) => (Array.isArray(v) ? v : []);
+const pluck = (rows, key) => list(rows).map((r) => r?.[key]).filter(Boolean);
+
+/** Sorgt dafür, dass jede erwartete Liste auch wirklich eine ist. */
+export function normalizeConfig(raw) {
+  const c = { ...EMPTY_CONFIG, ...(raw ?? {}) };
+  for (const key of ['strings', 'battery', 'heatpump', 'wallboxes', 'cars']) c[key] = list(c[key]);
+  for (const key of ['grid', 'solar', 'consumers', 'price', 'system', 'info']) {
+    c[key] = c[key] ?? {};
+  }
+  return c;
+}
+
+/**
+ * Übersetzt die Zuordnung in die flachen Abschnitte, mit denen die Karten
+ * arbeiten. Die Karten müssen dadurch nichts über Listen, Autos oder
+ * Wallbox-Zuordnung wissen — sie bekommen fertige Entitätslisten.
+ */
+/**
+ * Übersetzt die Zuordnung in die flachen Abschnitte, mit denen die Karten
+ * arbeiten. "internal" kommt vom Backend und enthält die Entitäts-IDs der
+ * Helfer, die die Integration selbst anlegt (Lademodus, Ladestrom,
+ * Ladeziel, die vier anlagenweiten Laderegler) — dafür gibt es keinen
+ * Zuordnungsschritt mehr, die Integration weiß es selbst.
+ */
+export function deriveConfig(raw, internal = {}) {
+  const c = normalizeConfig(raw);
+  const cars = new Map(c.cars.map((car, i) => [car.id ?? `car_${i}`, car]));
+  const rules = internal.rules ?? {};
+
+  const live = {
+    // Explizit benannt statt "...c.grid" blind zu verteilen: die Live-Karte
+    // erwartet grid_power/invert_grid, der Zuordnungs-Block heißt intern
+    // nur power/invert. Ein reines Spread hätte "power" statt "grid_power"
+    // erzeugt und damit die ganze Netz-Gruppe unsichtbar gemacht.
+    grid_power: c.grid.power,
+    invert_grid: c.grid.invert,
+    pv_power_total: c.solar.power,
+    pv_power: pluck(c.strings, 'power'),
+    pv_energy_total: asList(c.solar.energy_total),
+    pv_forecast_entities: asList(c.solar.forecast),
+    pv_forecast_attribute: c.solar.forecast_attribute,
+
+    battery_power: pluck(c.battery, 'power'),
+    battery_soc: pluck(c.battery, 'soc'),
+    battery_in_total: pluck(c.battery, 'in_total'),
+    battery_out_total: pluck(c.battery, 'out_total'),
+    // Ein Schalter für alle Speicher: gemischte Vorzeichen wären ohnehin
+    // ein Fehler in der Zuordnung.
+    invert_battery: c.battery.some((b) => b.invert),
+
+    grid_import_total: asList(c.grid.import_total),
+    grid_export_total: asList(c.grid.export_total),
+
+    house_power: c.consumers.house_power,
+    house_energy_total: asList(c.consumers.energy_total),
+    heatpump_power: pluck(c.heatpump, 'power'),
+    heatpump_energy_total: pluck(c.heatpump, 'energy_total'),
+    wallbox_power: pluck(c.wallboxes, 'power'),
+    wallbox_energy_total: pluck(c.wallboxes, 'energy_total'),
+
+    weather_entity: c.info.weather_entity,
+  };
+
+  const history = {
+    pv_energy: live.pv_energy_total,
+    grid_import: live.grid_import_total,
+    grid_export: live.grid_export_total,
+    battery_in: live.battery_in_total,
+    battery_out: live.battery_out_total,
+    battery_soc: live.battery_soc,
+    house_energy: live.house_energy_total,
+    wallbox_energy: live.wallbox_energy_total,
+    heatpump_energy: live.heatpump_energy_total,
+  };
+
+  // Wallbox und Auto sind getrennt gepflegt und werden hier zusammengeführt.
+  // Lademodus, Ladestrom und Ladeziel kommen aus "internal" — die legt die
+  // Integration selbst an, dafür trägt niemand eine Entität ein.
+  const wallboxes = c.wallboxes.map((wb, i) => {
+    const car = cars.get(wb.car) ?? {};
+    const iw = internal.wallboxes?.[wb.id] ?? {};
+    return {
+      ...wb,
+      name: wb.name || car.name || `Wallbox ${i + 1}`,
+      power_entity: wb.power,
+      total_energy_entity: wb.energy_total,
+      session_energy_entity: wb.energy_session,
+      // Ladestand: bevorzugt vom Fahrzeug, sonst was die Wallbox meldet.
+      car_soc_entity: car.soc ?? wb.car_soc,
+      // Ladeziel: eine echte Fahrzeug-Integration darf mitreden, sonst
+      // greift der von der Integration angelegte Regler.
+      target_soc_entity: car.target ?? iw.target_entity,
+      capacity: car.capacity ?? wb.capacity,
+      mode_entity: iw.mode_entity,
+      current_entity: iw.current_entity,
+      ...rules,
+      ...c.price,
+      pv_forecast_entities: live.pv_forecast_entities,
+      pv_forecast_attribute: live.pv_forecast_attribute,
+      house_base_load: c.system.house_base_load,
+    };
+  });
+
+  return {
+    live: { ...live, ...c.price, ...c.system },
+    history: { ...history, title: c.system.history_title },
+    price: c.price,
+    system: c.system,
+    rules,
+    info: c.info,
+    wallboxes,
+    cars: c.cars,
+    hasBattery: c.battery.length > 0,
+    raw: c,
+  };
+}
 
 let centralPromise = null;
 let centralSubscribed = false;
 
 /**
- * Holt die auf der Seite "wuefl Energie" gepflegte Zuordnung.
- * Fehlt die Integration, kommt ein leeres Objekt zurück und die Karten
+ * Holt die Zuordnung und liefert die abgeleiteten Abschnitte.
+ * Fehlt die Integration, kommt ein leeres Gerüst zurück und die Karten
  * arbeiten allein mit ihrer eigenen Konfiguration weiter.
  */
 export async function centralConfig(hass, section) {
@@ -534,7 +869,7 @@ export async function centralConfig(hass, section) {
       return {};
     });
   }
-  const all = (await centralPromise) ?? {};
+  const all = deriveConfig((await centralPromise) ?? {});
 
   if (!centralSubscribed && hass.connection) {
     centralSubscribed = true;
@@ -549,6 +884,23 @@ export async function centralConfig(hass, section) {
   }
 
   return (section ? all[section] : all) ?? {};
+}
+
+/** Rohe Zuordnung, wie sie gespeichert ist — für die Einstellungsansicht. */
+export async function rawConfig(hass) {
+  const data = await hass.callWS({ type: 'wuefl_energy/get' }).catch(() => ({}));
+  // "internal" ist ein vom Backend berechnetes Zusatzfeld, kein Teil der
+  // vom Nutzer gepflegten Zuordnung — beim Bearbeiten und erneuten
+  // Speichern soll es nicht versehentlich mit persistiert werden.
+  const { internal, ...rest } = data ?? {};
+  return normalizeConfig(rest);
+}
+
+/** Zuordnung speichern und alle offenen Karten benachrichtigen. */
+export async function saveConfig(hass, config) {
+  await hass.callWS({ type: 'wuefl_energy/save', config });
+  centralPromise = null;
+  window.dispatchEvent(new CustomEvent('wuefl-energy-config-changed'));
 }
 
 /**

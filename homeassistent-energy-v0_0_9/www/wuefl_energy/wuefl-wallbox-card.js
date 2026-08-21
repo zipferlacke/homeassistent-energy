@@ -6,8 +6,8 @@
 
 import {
   adoptSheet, asList, power, energy, num, sum,
-  fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtClock, fmtDuration, moreInfo,
-  registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged,
+  fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtDuration, moreInfo,
+  registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   esc, icon, COLORS, WueflFormEditor, sel,
 } from './wuefl-energy-shared.js';
 
@@ -24,19 +24,24 @@ const modeInfo = (label) => MODE_KINDS.find((m) => m.match.test(label)) ?? { ico
 
 const CSS = `
 .top {
-  align-items: start; display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between;
+  & .name { font-size: 1.35rem; font-weight: 600; line-height: 1.25; }
+  & .state { color: var(--w-text-soft); font-size: var(--w-fs-sm); margin-top: .1rem; }
+}
 
-  & .name { font-size: var(--w-fs-lg); font-weight: 600; line-height: 1.25; }
-  & .state { color: var(--w-text-soft); font-size: var(--w-fs-sm); }
-  & .goal { font-weight: 600; text-align: right; }
-  & .goal small { color: var(--w-text-soft); display: block; font-weight: 400; }
+.goalrow {
+  align-items: baseline;
+  display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between;
+  margin-top: .85rem;
+
+  & .left { color: var(--w-text-soft); font-size: var(--w-fs-sm); }
+  & .right { font-weight: 600; margin-left: auto; }
 }
 
 .track {
   background: var(--w-line);
   border-radius: 999px;
   height: .6rem;
-  margin: .7rem 0 .3rem;
+  margin: .45rem 0 .3rem;
   position: relative;
 
   & .fill { background: ${COLORS.wallbox}; border-radius: 999px; height: 100%; transition: width .6s ease; }
@@ -44,32 +49,35 @@ const CSS = `
   & .mark.old { background: none; border-left: 2px dashed var(--w-text-soft); }
 }
 
+/* Unter dem Balken steht, WORAUF die Schätzung beruht – Ladestand und Ziel
+   stehen schon oben, die Wiederholung war überflüssig. */
 .scale {
-  color: var(--w-text-soft);
-  display: flex; font-size: var(--w-fs-sm); justify-content: space-between;
+  & .note { color: var(--w-text-soft); font-size: var(--w-fs-sm); line-height: 1.45; }
 }
 
-.once {
-  align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem;
-
-  & .badge {
-    background: var(--w-accent); border-radius: var(--w-radius);
-    color: var(--w-on-accent); font-size: var(--w-fs-sm); padding: .2rem .6rem;
-  }
-  & .undo { font-size: var(--w-fs-sm); height: auto; padding: .35rem .7rem; }
-  & .hint { color: var(--w-text-soft); font-size: var(--w-fs-sm); }
-}
-
+/* Modus-Auswahl im Stil der Home-Assistant-Bedienelemente. */
 .modes {
-  display: grid; gap: .4rem; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); margin: .75rem 0;
+  background: var(--w-bg-soft);
+  border-radius: var(--w-radius);
+  display: grid;
+  gap: 3px;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  margin: .8rem 0;
+  padding: 3px;
 
   & .btn {
-    border: 2px solid transparent;
-    flex-direction: column; gap: .15rem; height: auto; padding: .5rem .4rem;
+    background: transparent;
+    border-radius: calc(var(--w-radius) - 3px);
+    flex-direction: column; gap: .2rem; height: auto; padding: .6rem .4rem;
 
     & ha-icon { --mdc-icon-size: 22px; }
-    & .txt { font-size: var(--w-fs-sm); text-align: center; }
-    &[aria-pressed="true"] { border-color: var(--w-accent); }
+    & .txt { font-size: var(--w-fs-sm); line-height: 1.2; text-align: center; }
+    &:hover { background: var(--w-bg-hover); }
+    &[aria-pressed="true"] {
+      background: var(--w-accent);
+      box-shadow: 0 1px 3px rgb(0 0 0 / .2);
+      color: var(--w-on-accent);
+    }
   }
 }
 
@@ -79,25 +87,43 @@ const CSS = `
   & label { flex: 0 0 auto; font-size: var(--w-fs-sm); }
   & input[type="range"] { accent-color: var(--w-accent); flex: 1 1 6rem; }
   & output { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 3rem; text-align: right; }
-  & .full { flex: 0 0 auto; font-size: var(--w-fs-sm); height: auto; padding: .35rem .7rem; }
+  & .full { flex: 0 0 auto; font-size: var(--w-fs-sm); height: auto; padding: .4rem .8rem; }
 }
 
 details {
-  margin-top: .6rem;
+  border-top: 1px solid var(--w-line);
+  margin-top: .7rem;
 
   & summary {
     align-items: center; cursor: pointer; display: flex; font-size: var(--w-fs-sm);
-    gap: .4rem; padding: .35rem 0; user-select: none;
+    gap: .5rem; list-style: none; padding: .6rem 0; user-select: none;
+
+    &::-webkit-details-marker { display: none; }
+    & > span { flex: 1 1 auto; }
+    /* Sichtbarer Hinweis, dass sich hier etwas aufklappt. */
+    & .chev { --mdc-icon-size: 20px; color: var(--w-text-soft); transition: transform .2s ease; }
   }
+  &[open] summary .chev { transform: rotate(180deg); }
+  &:hover summary { color: var(--w-accent); }
   & .body { background: var(--w-bg-soft); border-radius: var(--w-radius); padding: .65rem .75rem; }
 }
+
+.ref {
+  border-top: 1px solid var(--w-line);
+  color: var(--w-text-soft);
+  font-size: var(--w-fs-sm);
+  line-height: 1.45;
+  margin: .7rem 0 0;
+  padding-top: .6rem;
+}
+.slider:first-child + .ref { margin-top: .7rem; }
 
 .slider {
   & + .slider { margin-top: .8rem; }
   & .line { display: flex; font-size: var(--w-fs-sm); justify-content: space-between; }
   & input[type="range"] { accent-color: var(--w-accent); margin-top: .25rem; width: 100%; }
   & output { font-variant-numeric: tabular-nums; font-weight: 600; }
-  & .note { color: var(--w-text-soft); display: block; font-size: var(--w-fs-sm); }
+  & .note { color: var(--w-text-soft); display: block; font-size: var(--w-fs-sm); line-height: 1.45; }
 }
 
 .switchrow {
@@ -131,6 +157,7 @@ class WueflWallboxCard extends HTMLElement {
   #watch = [];
   #drag = null;
   #once = false;
+  #wasCharging = false;
   #savedTarget = null;
 
   static getConfigElement() { return document.createElement('wuefl-wallbox-card-editor'); }
@@ -160,9 +187,9 @@ class WueflWallboxCard extends HTMLElement {
 
   async #loadCentral() {
     const all = await centralConfig(this.#hass);
-    const slot = this.#own.slot ?? 1;
-    this.#central = { ...(all[`wallbox_${slot}`] ?? {}), ...(all.price ?? {}) };
-    if (all.live?.pv_forecast_entities) this.#central.pv_forecast_entities = all.live.pv_forecast_entities;
+    // slot ist die Position in der Wallbox-Liste. Gibt es sie nicht mehr,
+    // bleibt die Karte leer statt falsche Werte einer anderen zu zeigen.
+    this.#central = (all.wallboxes ?? [])[(this.#own.slot ?? 1) - 1] ?? {};
     this.#apply();
     this.#update();
   }
@@ -186,8 +213,13 @@ class WueflWallboxCard extends HTMLElement {
     card.className = 'card';
     card.innerHTML = `
       <div class="top">
-        <div><div class="name"></div><div class="state"></div></div>
-        <div class="goal"><span class="goal-main"></span><small class="goal-note"></small></div>
+        <div class="name"></div>
+        <div class="state"></div>
+      </div>
+
+      <div class="goalrow" hidden>
+        <span class="left"></span>
+        <span class="right"></span>
       </div>
 
       <div class="track" hidden>
@@ -195,13 +227,7 @@ class WueflWallboxCard extends HTMLElement {
         <div class="mark target"></div>
         <div class="mark old" hidden></div>
       </div>
-      <div class="scale" hidden><span class="soc-now"></span><span class="soc-goal"></span></div>
-
-      <div class="once" hidden>
-        <span class="badge">Einmalig 100 % aktiv</span>
-        <button type="button" class="btn undo">Zurücknehmen</button>
-        <span class="hint"></span>
-      </div>
+      <div class="scale" hidden><span class="note"></span></div>
 
       <div class="modes"></div>
 
@@ -209,38 +235,20 @@ class WueflWallboxCard extends HTMLElement {
         <label for="tgt">Ladeziel</label>
         <input type="range" id="tgt" min="20" max="100" step="5">
         <output>–</output>
-        <button type="button" class="btn full">Einmalig 100 %</button>
+        <button type="button" class="btn full" aria-pressed="false">Einmalig 100 %</button>
       </div>
 
       <details class="adv">
-        <summary>${icon('mdi:tune')}Mehr Optionen</summary>
+        <summary>${icon('mdi:tune')}<span>Mehr Optionen</span>${icon('mdi:chevron-down', 'class="chev"')}</summary>
         <div class="body">
-          <div class="slider limit" hidden>
-            <div class="line"><span>Netzstrom nutzen bis</span><output>–</output></div>
-            <input type="range">
-            <span class="note">Gilt im Modus mit günstigem Strom. Liegt der Preis darüber, wartet die Wallbox auf Sonne.</span>
-          </div>
           <div class="slider cur" hidden>
             <div class="line"><span>Maximaler Ladestrom</span><output>–</output></div>
             <input type="range">
-            <span class="note">Begrenzt den Strom pro Phase. 16 A sind rund 11 kW, 6 A rund 4 kW. Nur nötig, wenn Hausanschluss oder Leitung das verlangen — im Solarbetrieb regelt die Automatik den Wert selbst.</span>
+            <span class="note">Gilt nur für diese Wallbox. Begrenzt den Strom pro Phase: 16 A sind rund 11 kW, 6 A rund 4 kW. Nur nötig, wenn Hausanschluss oder Leitung das verlangen — im Solarbetrieb regelt die Automatik den Wert selbst.</span>
           </div>
-        </div>
-      </details>
-
-      <details class="batt">
-        <summary>${icon('mdi:home-battery')}Hausakku</summary>
-        <div class="body">
-          <div class="switchrow use" hidden>
-            <span>Aus Hausakku laden<span class="note">Erlaubt dem Auto, Strom aus den Speichern zu ziehen.</span></span>
-            <button class="switch" role="switch" aria-checked="false" type="button"><span></span></button>
-          </div>
-          <div class="slider reserve" hidden>
-            <div class="line"><span>Speicher nutzen bis</span><output>–</output></div>
-            <input type="range" min="0" max="100" step="5">
-            <span class="note">Darunter bleiben die Speicher fürs Haus reserviert.</span>
-          </div>
-          <div class="modes prio" hidden></div>
+          <p class="ref">Hausakku-Freigabe, Speicherreserve und die Preisgrenze für Netzstrom
+            gelten für alle Wallboxen zusammen und stehen in der Ansicht
+            <strong>Einstellungen</strong>.</p>
         </div>
       </details>
 
@@ -252,16 +260,15 @@ class WueflWallboxCard extends HTMLElement {
     this.#els = {
       card,
       name: q('.name'), state: q('.state'),
-      goalMain: q('.goal-main'), goalNote: q('.goal-note'),
       track: q('.track'), fill: q('.fill'),
       markTarget: q('.mark.target'), markOld: q('.mark.old'),
-      scale: q('.scale'), socNow: q('.soc-now'), socGoal: q('.soc-goal'),
-      once: q('.once'), undo: q('.undo'), onceHint: q('.once .hint'),
-      modes: q('.modes'), prio: q('.modes.prio'),
+      scale: q('.scale'),
+      goalRow: q('.goalrow'), goalLeft: q('.goalrow .left'), goalRight: q('.goalrow .right'),
+      scaleNote: q('.scale .note'),
+      modes: q('.modes'),
       target: q('.target'), targetInput: q('.target input'), targetOut: q('.target output'), full: q('.full'),
-      limit: q('.slider.limit'), cur: q('.slider.cur'), reserve: q('.slider.reserve'),
-      use: q('.switchrow.use'), useSwitch: q('.switchrow.use .switch'),
-      adv: q('details.adv'), batt: q('details.batt'),
+      cur: q('.slider.cur'),
+      adv: q('details.adv'),
       stats: q('.stats'),
     };
 
@@ -274,23 +281,20 @@ class WueflWallboxCard extends HTMLElement {
       this.#setNumber(this.#config.target_soc_entity, Number(this.#els.targetInput.value));
     });
 
+    // Ein Knopf, der an und aus geht. Aus geht er auch von selbst, sobald
+    // der Ladevorgang endet – egal ob bei 100 % oder weil jemand absteckt.
     this.#els.full.addEventListener('click', () => {
-      this.#savedTarget = num(this.#hass, this.#config.target_soc_entity);
-      this.#once = true;
-      this.#setNumber(this.#config.target_soc_entity, 100);
-      this.#update();
-    });
-    this.#els.undo.addEventListener('click', () => {
-      this.#once = false;
-      if (this.#savedTarget !== null) this.#setNumber(this.#config.target_soc_entity, this.#savedTarget);
+      if (this.#once) {
+        this.#endOnce();
+      } else {
+        this.#savedTarget = num(this.#hass, this.#config.target_soc_entity);
+        this.#once = true;
+        this.#setNumber(this.#config.target_soc_entity, 100);
+      }
       this.#update();
     });
 
-    for (const [key, cfgKey] of [
-      ['limit', 'price_limit_entity'],
-      ['cur', 'current_entity'],
-      ['reserve', 'battery_reserve_entity'],
-    ]) {
+    for (const [key, cfgKey] of [['cur', 'current_entity']]) {
       const box = this.#els[key];
       const input = box.querySelector('input');
       const out = box.querySelector('output');
@@ -303,11 +307,6 @@ class WueflWallboxCard extends HTMLElement {
         this.#setNumber(this.#config[cfgKey], Number(input.value));
       });
     }
-
-    this.#els.useSwitch.addEventListener('click', () => {
-      const on = this.#els.useSwitch.getAttribute('aria-checked') === 'true';
-      this.#toggle(this.#config.battery_use_entity, !on);
-    });
 
     this.#built = true;
     this.#update();
@@ -344,80 +343,82 @@ class WueflWallboxCard extends HTMLElement {
   /* ------------------------------ Prognose -------------------------- */
 
   #solarOutlook() {
-    const ids = asList(this.#config.pv_forecast_entities);
-    const attr = this.#config.pv_forecast_attribute ?? 'watt_hours_period';
-    const now = new Date();
-    let rest = 0;
-    let lastHour = now.getHours();
-
-    for (const id of ids) {
-      const st = this.#hass.states[id];
-      if (!st) continue;
-      const raw = st.attributes[attr];
-      if (raw && typeof raw === 'object') {
-        for (const [t, wh] of Object.entries(raw)) {
-          const d = new Date(t);
-          if (d > now && d.toDateString() === now.toDateString()) {
-            rest += Number(wh) / 1000;
-            lastHour = Math.max(lastHour, d.getHours());
-          }
-        }
-      } else {
-        const v = energy(this.#hass, id);
-        if (v !== null) rest += v * 0.5;
-      }
-    }
-    return { rest, hours: Math.max(0, lastHour - now.getHours()) };
+    return pvOutlook(
+      this.#hass,
+      this.#config.pv_forecast_entities,
+      this.#config.pv_forecast_attribute,
+    );
   }
 
   /** Ergebnis: was oben rechts steht, plus die Zeile darunter. */
   #estimate(kind, needed, goal) {
     const c = this.#config;
-    if (needed <= 0) return { main: `Ladeziel ${fmtPercent(goal)} erreicht`, note: '' };
-    if (kind === 'off') return { main: 'Laden aus', note: '' };
+    if (needed <= 0) return { main: `Ladeziel ${fmtPercent(goal)} erreicht`, left: '', note: '' };
+    if (kind === 'off') return { main: '', left: '', note: '' };
 
-    const done = (hours, note) => {
-      if (!Number.isFinite(hours) || hours <= 0) return { main: 'wird berechnet', note };
-      if (hours > 24) return { main: 'heute nicht mehr erreichbar', note };
-      return {
-        main: `Ladeziel ${fmtPercent(goal)} um ${fmtClock(new Date(Date.now() + hours * 3_600_000))}`,
-        note: `noch ${fmtDuration(hours)}${note ? ` · ${note}` : ''}`,
-      };
+    const at = (date, note) => ({
+      main: `Ladeziel ${fmtPercent(goal)} ${fmtWhen(date)}`,
+      left: `noch ${fmtDuration((date - Date.now()) / 3_600_000)}`,
+      note,
+    });
+    const inHours = (hours, note) => {
+      if (!Number.isFinite(hours) || hours <= 0) return { main: 'wird berechnet', left: '', note };
+      return at(new Date(Date.now() + hours * 3_600_000), note);
     };
 
     const full = (c.max_power ?? 11000) / 1000;
-    if (kind === 'fast') return done(needed / full, `volle Leistung, ${fmtPower(c.max_power ?? 11000)}`);
+    if (kind === 'fast') {
+      return inHours(needed / full, `Zeit ist eine Prognose · volle Leistung, ${fmtPower(c.max_power ?? 11000)}`);
+    }
 
-    const { rest, hours } = this.#solarOutlook();
     const base = (c.house_base_load ?? 400) / 1000;
-    const surplus = hours ? rest / hours - base : 0;
+
+    /* Wann trägt die Sonne genug zusammen? Die Prognose läuft über den
+       heutigen Tag hinaus, damit statt "heute nicht mehr erreichbar" ein
+       konkreter Zeitpunkt an einem der Folgetage stehen kann. */
+    const solar = () => solarEta(
+      this.#hass, c.pv_forecast_entities, c.pv_forecast_attribute, base, needed,
+    );
+    const solarNote = 'Zeit ist eine Prognose aus Wetter und PV-Vorhersage, sie ändert sich im Lauf des Tages';
 
     if (kind === 'mix') {
       const price = priceInfo(this.#hass, c, 'import').now;
       const limit = num(this.#hass, c.price_limit_entity);
       if (price !== null && limit !== null && price <= limit) {
-        return done(needed / full, `Netzstrom bei ${fmtPrice(price)}/kWh, unter der Grenze von ${fmtPrice(limit)}`);
+        return inHours(needed / full,
+          'Zeit ist eine Prognose · lädt gerade mit Netzstrom, weil der Preis unter deiner Grenze liegt');
       }
-      if (surplus > 0.2) {
-        return done(needed / surplus, 'aus Sonne geschätzt — Netzstrom ist gerade zu teuer');
+      const eta = solar();
+      if (eta) {
+        return at(eta, `${solarNote} · Netzstrom ist gerade zu teuer`);
       }
       return {
         main: `wartet auf ${limit !== null ? `${fmtPrice(limit)}/kWh` : 'günstigen Strom'}`,
+        left: '',
         note: price !== null ? `aktuell ${fmtPrice(price)}/kWh, und die Sonne reicht nicht` : '',
       };
     }
 
     // Reiner Solarbetrieb
-    if (!hours || rest <= 0) return { main: 'heute nicht mehr erreichbar', note: 'keine nennenswerte Erzeugung mehr erwartet' };
-    if (surplus <= 0.2) return { main: 'heute nicht mehr erreichbar', note: 'die Prognose deckt kaum mehr als den Grundverbrauch' };
-    if (needed / surplus > hours) {
+    const eta = solar();
+    if (eta) return at(eta, solarNote);
+
+    const { rest, hours } = this.#solarOutlook();
+    const surplus = hours ? rest / hours - base : 0;
+    if (surplus > 0.2) {
       return {
         main: `heute etwa ${fmtEnergy(surplus * hours)}`,
-        note: 'geschätzt aus PV-Prognose abzüglich Grundlast — schwankt mit Wetter und Verbrauch',
+        left: '',
+        note: `${solarNote} — für das Ladeziel reicht die Vorhersage nicht weit genug`,
       };
     }
-    return done(needed / surplus, 'geschätzt aus PV-Prognose abzüglich Grundlast — schwankt mit Wetter und Verbrauch');
+    return {
+      main: 'kein Zeitpunkt absehbar',
+      left: '',
+      note: 'die Vorhersage deckt kaum mehr als den Grundverbrauch — reicht sie weiter, steht hier ein Tag und eine Uhrzeit',
+    };
   }
+
 
   /* ------------------------------ Anzeige --------------------------- */
 
@@ -425,8 +426,6 @@ class WueflWallboxCard extends HTMLElement {
     if (!this.#built || !this.#hass) return;
     const c = this.#config;
     const h = this.#hass;
-
-    this.#els.name.textContent = c.name ?? 'Wallbox';
 
     const soc = num(h, c.car_soc_entity);
     const target = num(h, c.target_soc_entity);
@@ -437,8 +436,18 @@ class WueflWallboxCard extends HTMLElement {
     const modeState = c.mode_entity ? h.states[c.mode_entity] : null;
     const kind = modeState ? modeInfo(modeState.state).kind : 'other';
 
-    // Erreicht das Fahrzeug sein Ziel, ist die Einmal-Ladung erledigt
-    if (this.#once && soc !== null && soc >= 100) this.#once = false;
+    // Ladestand hängt am Namen, nicht in einer eigenen Ecke.
+    this.#els.name.textContent =
+      (c.name ?? 'Wallbox') + (soc === null ? '' : `, ${fmtPercent(soc)}`);
+
+    // Einmal-Ladung endet mit dem Ladevorgang: bei 100 %, beim Abstecken
+    // und beim Umschalten auf Aus.
+    if (this.#once) {
+      const done = soc !== null && soc >= 100;
+      const stopped = kind === 'off' || (this.#wasCharging && !charging);
+      if (done || stopped) this.#endOnce();
+    }
+    this.#wasCharging = charging;
 
     let label;
     if (kind === 'off') label = 'Laden aus';
@@ -446,40 +455,50 @@ class WueflWallboxCard extends HTMLElement {
     else if (soc !== null && soc >= goal) label = 'Ladeziel erreicht';
     else label = 'angeschlossen, lädt nicht';
 
-    const session = energy(h, c.session_energy_entity);
-    this.#els.state.textContent =
-      (soc === null ? label : `${label} · ${fmtPercent(soc)}`) +
-      (charging ? ` · ${fmtPower(pw)}${session !== null ? ` · ${fmtEnergy(session)}` : ''}` : '');
+    // Statt Zustand, Ladestand und Sitzungsmenge stehen hier die zwei Zahlen,
+    // die beim Laden wirklich interessieren: was fließt gerade, was heute schon.
+    const amps = this.#amps(pw);
+    const today = energy(h, c.today_energy_entity);
+    this.#els.state.textContent = [
+      charging ? (amps !== null ? `${amps} · ${fmtPower(pw)}` : fmtPower(pw)) : label,
+      today !== null ? `heute ${fmtEnergy(today)}` : null,
+    ].filter(Boolean).join(' · ');
+
+    // Restdauer links, Zielzeit rechts. Der Grund der Schätzung steht
+    // unter dem Balken, nicht hier oben. Ohne Ladestand-Entität gibt es
+    // weder ein "Ziel erreicht" noch eine Zeitschätzung — die Grundlage
+    // dafür (wo steht der Akku gerade?) fehlt schlicht.
+    const needed = soc === null ? 0 : ((goal - soc) / 100) * (c.capacity ?? 58);
+    const est = soc === null ? { main: '', left: '', note: '' } : this.#estimate(kind, needed, goal);
+    this.#els.goalRow.hidden = !est.main && !est.left;
+    this.#els.goalLeft.textContent = est.left ?? '';
+    this.#els.goalRight.textContent = est.main ?? '';
 
     // Balken mit Ladestand, Zielmarke und altem Ziel
     this.#els.track.hidden = soc === null;
-    this.#els.scale.hidden = soc === null;
+    this.#els.scale.hidden = soc === null || !est.note;
     if (soc !== null) {
       this.#els.fill.style.width = `${Math.max(0, Math.min(100, soc))}%`;
       this.#els.markTarget.style.left = `${Math.max(0, Math.min(100, goal))}%`;
       const showOld = this.#once && this.#savedTarget !== null;
       this.#els.markOld.hidden = !showOld;
       if (showOld) this.#els.markOld.style.left = `${this.#savedTarget}%`;
-      this.#els.socNow.textContent = `Ladestand ${fmtPercent(soc)}`;
-      this.#els.socGoal.textContent = `Ladeziel ${fmtPercent(goal)}`;
+      this.#els.scaleNote.textContent = est.note ?? '';
     }
 
-    this.#els.once.hidden = !this.#once;
-    this.#els.onceHint.textContent =
-      this.#savedTarget !== null ? `danach wieder ${fmtPercent(this.#savedTarget)}` : '';
-
-    const needed = soc === null ? 0 : ((goal - soc) / 100) * (c.capacity ?? 58);
-    const est = this.#estimate(kind, needed, goal);
-    this.#els.goalMain.textContent = est.main;
-    this.#els.goalNote.textContent = est.note;
-
     this.#renderModes(this.#els.modes, c.mode_entity);
-    this.#renderModes(this.#els.prio, c.priority_entity);
-    this.#els.prio.hidden = !c.priority_entity;
 
-    const hasTarget = !!c.target_soc_entity && !!h.states[c.target_soc_entity];
+    // Ein Ladeziel in Prozent ergibt nur Sinn, wenn es auch einen echten
+    // Ladestand gibt, an dem man den Fortschritt ablesen kann — sonst weiß
+    // weder die Karte noch die Wallbox, wann "80 %" erreicht ist, weil der
+    // Ladestand nirgends gemeldet wird.
+    const hasSoc = !!c.car_soc_entity && !!h.states[c.car_soc_entity];
+    const hasTarget = hasSoc && !!c.target_soc_entity && !!h.states[c.target_soc_entity];
     this.#els.target.hidden = !hasTarget;
-    this.#els.full.hidden = this.#once;
+    this.#els.full.setAttribute('aria-pressed', String(this.#once));
+    this.#els.full.textContent = this.#once
+      ? `Einmalig 100 % · zurück auf ${this.#savedTarget !== null ? fmtPercent(this.#savedTarget) : 'alt'}`
+      : 'Einmalig 100 %';
     this.#els.targetInput.disabled = this.#once;
     if (hasTarget && this.#drag !== 'target') {
       const shown = this.#once && this.#savedTarget !== null ? this.#savedTarget : goal;
@@ -487,21 +506,32 @@ class WueflWallboxCard extends HTMLElement {
       this.#els.targetOut.textContent = fmtPercent(shown);
     }
 
-    this.#syncSlider('limit', c.price_limit_entity, { min: 0, max: 60, step: 1 });
     this.#syncSlider('cur', c.current_entity, { min: 6, max: 16, step: 1 });
-    this.#syncSlider('reserve', c.battery_reserve_entity, { min: 0, max: 100, step: 5 });
-    this.#els.adv.hidden = this.#els.limit.hidden && this.#els.cur.hidden;
-
-    const hasUse = !!c.battery_use_entity && !!h.states[c.battery_use_entity];
-    this.#els.use.hidden = !hasUse;
-    if (hasUse) {
-      const on = h.states[c.battery_use_entity].state === 'on';
-      this.#els.useSwitch.setAttribute('aria-checked', String(on));
-      if (!on) this.#els.reserve.hidden = true;
-    }
-    this.#els.batt.hidden = !hasUse && !c.battery_reserve_entity && !c.priority_entity;
 
     this.#renderStats();
+  }
+
+  /**
+   * Ladestrom je Phase. Gibt es einen echten Stromsensor, gilt der.
+   * Sonst wird aus der Leistung gerechnet — dafür muss die Phasenzahl
+   * stimmen, Voreinstellung ist dreiphasig.
+   */
+  #amps(watt) {
+    const direct = num(this.#hass, this.#config.current_actual_entity);
+    if (direct !== null) return `${direct.toFixed(1).replace('.', ',')} A`;
+    if (!watt || watt < 50) return null;
+    const phases = Number(this.#config.phases) || 3;
+    const a = watt / (phases * 230);
+    return `${a.toFixed(1).replace('.', ',')} A`;
+  }
+
+  /** Einmal-Ladung beenden und das alte Ziel wiederherstellen. */
+  #endOnce() {
+    this.#once = false;
+    if (this.#savedTarget !== null) {
+      this.#setNumber(this.#config.target_soc_entity, this.#savedTarget);
+      this.#savedTarget = null;
+    }
   }
 
   #renderModes(container, entityId) {

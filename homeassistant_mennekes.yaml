@@ -1,0 +1,270 @@
+# ==============================================================================
+# MENNEKES AMTRON CHARGE CONTROL
+# Basierend auf der Spezifikation: https://www.mennekes.de/fileadmin/MEN-Deutschland/emobility/01_documents/04_installer/ECU_modbus_tcp_server_spec_rev_1.07.pdf
+# Lokal "mennekes_modbus_charge_controll.pdf"
+# ==============================================================================
+
+modbus:
+  - name: "mennekes_wallbox"
+    type: tcp
+    host: !secret mennekes_modbus_host_ip
+    port: !secret mennekes_modbus_port
+    delay: 15
+    timeout: 30
+    message_wait_milliseconds: !secret mennekes_modbus_wait_milliseconds
+
+    sensors:
+      # --- ENERGIE (in Wh vom Modbus, skaliert auf kWh) ---
+      - name: "Mennekes Gesamtzählerstand"
+        unique_id: mennekes_gesamtzaehlerstand
+        address: 218
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        scale: 0.001 
+        precision: 2
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total_increasing
+        scan_interval: 30
+
+      # --- LEISTUNG (in W vom Modbus) ---
+      - name: "Mennekes Gesamtleistung"
+        unique_id: mennekes_gesamtleistung
+        address: 220
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        scan_interval: 15
+
+      - name: "Mennekes Leistung L1"
+        unique_id: mennekes_leistung_l1
+        address: 206
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        scan_interval: 15
+
+      - name: "Mennekes Leistung L2"
+        unique_id: mennekes_leistung_l2
+        address: 208
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        scan_interval: 15
+
+      - name: "Mennekes Leistung L3"
+        unique_id: mennekes_leistung_l3
+        address: 210
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        scan_interval: 15
+
+      # --- STROM (in mA vom Modbus, skaliert auf A) ---
+      - name: "Mennekes Strom L1"
+        unique_id: mennekes_strom_l1
+        address: 212
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        scale: 0.001 
+        precision: 1
+        unit_of_measurement: "A"
+        device_class: current
+        state_class: measurement
+        scan_interval: 15
+        
+      - name: "Mennekes Strom L2"
+        unique_id: mennekes_strom_l2
+        address: 214
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        scale: 0.001 
+        precision: 1
+        unit_of_measurement: "A"
+        device_class: current
+        state_class: measurement
+        scan_interval: 15
+
+      - name: "Mennekes Strom L3"
+        unique_id: mennekes_strom_l3
+        address: 216
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        scale: 0.001 
+        precision: 1
+        unit_of_measurement: "A"
+        device_class: current
+        state_class: measurement
+        scan_interval: 15
+
+      # --- SPANNUNG (in V vom Modbus) ---
+      - name: "Mennekes Spannung L1"
+        unique_id: mennekes_spannung_l1
+        address: 222
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        unit_of_measurement: "V"
+        device_class: voltage
+        state_class: measurement
+        scan_interval: 15
+
+      - name: "Mennekes Spannung L2"
+        unique_id: mennekes_spannung_l2
+        address: 224
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        unit_of_measurement: "V"
+        device_class: voltage
+        state_class: measurement
+        scan_interval: 15
+
+      - name: "Mennekes Spannung L3"
+        unique_id: mennekes_spannung_l3
+        address: 226
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        unit_of_measurement: "V"
+        device_class: voltage
+        state_class: measurement
+        scan_interval: 15
+
+      # --- STATUS-REGISTER (Rohwerte) ---
+      - name: "Mennekes OCPP Status Raw"
+        unique_id: mennekes_ocpp_status_raw
+        address: 104
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint16
+        scan_interval: 15
+
+      - name: "Mennekes Fahrzeugstatus Raw"
+        unique_id: mennekes_fahrzeugstatus_raw
+        address: 122
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint16
+        scan_interval: 15
+
+      - name: "Mennekes CP Verfügbarkeit Raw"
+        unique_id: mennekes_cp_verfuegbarkeit_raw
+        address: 124
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint16
+        scan_interval: 30
+
+      - name: "Mennekes Steckerverriegelung Raw"
+        unique_id: mennekes_steckerverriegelung_raw
+        address: 152
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint16
+        scan_interval: 15
+        
+      - name: "Mennekes Energie Aktueller Ladevorgang"
+        unique_id: mennekes_energie_aktueller_ladevorgang
+        address: 716
+        device_address: !secret mennekes_modbus_device_address
+        input_type: holding
+        data_type: uint32
+        scale: 0.001
+        precision: 2
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        scan_interval: 30
+
+    # --- STEUERUNG ---
+    numbers:
+      - name: "Mennekes HEMS Stromvorgabe"
+        unique_id: mennekes_hems_stromvorgabe
+        device_address: !secret mennekes_modbus_device_address
+        address: 1000 # HEMS_CURRENT_LIMIT 
+        write_type: holding
+        data_type: uint16
+        min_value: 0      # 0 A = Pause / Ladefreigabe AUS
+        max_value: 16     # Auf 16A limitiert (falls du eine 11kW Wallbox hast, ansonsten 32A eintragen)
+        step: 1
+        unit_of_measurement: "A"
+
+
+template:
+  - sensor:
+      # Übersetzung für Register 104
+      - name: "Mennekes Status"
+        unique_id: mennekes_status_text
+        icon: mdi:ev-station
+        state: >
+          {% set mapper = {
+            0: 'Verfügbar (Frei)',
+            1: 'Belegt durch Auto',
+            2: 'Reserviert (komisch)',
+            3: 'Nicht verfügbar (komisch)',
+            4: 'Fehler',
+            5: 'Vorbereitung',
+            6: 'Laden aktiv',
+            7: 'Pausiert (Wallbox)',
+            8: 'Pausiert (Auto)',
+            9: 'Beendet'
+          } %}
+          {{ mapper.get(states('sensor.mennekes_ocpp_status_raw')|int(-1), 'Unbekannt') }}
+
+      # Übersetzung für Register 122
+      - name: "Mennekes Kabel & Fahrzeug"
+        unique_id: mennekes_kabel_fahrzeug_text
+        icon: mdi:ev-plug-type2
+        state: >
+          {% set mapper = {
+            1: 'Kein Auto angesteckt (State A)',
+            2: 'Auto angesteckt, lädt nicht (State B)',
+            3: 'Auto lädt (State C)',
+            4: 'Lädt mit Lüftung (State D)',
+            5: 'Fehler (State E)'
+          } %}
+          {{ mapper.get(states('sensor.mennekes_fahrzeugstatus_raw')|int(-1), 'Unbekannt') }}
+
+      # Übersetzung für Register 152
+      - name: "Mennekes Steckerverriegelung"
+        unique_id: mennekes_stecker_text
+        icon: >
+          {% if states('sensor.mennekes_steckerverriegelung_raw')|int(-1) == 1 %}
+            mdi:lock
+          {% else %}
+            mdi:lock-open-variant
+          {% endif %}
+        state: >
+          {% set mapper = {
+            0: 'Entriegelt',
+            1: 'Verriegelt'
+          } %}
+          {{ mapper.get(states('sensor.mennekes_steckerverriegelung_raw')|int(-1), 'Unbekannt') }}
+
+      # Übersetzung für Register 124
+      - name: "Mennekes Betriebsbereitschaft"
+        unique_id: mennekes_betriebsbereitschaft_text
+        icon: mdi:power-plug
+        state: >
+          {% set mapper = {
+            0: 'Gesperrt / Fehler',
+            1: 'Betriebsbereit'
+          } %}
+          {{ mapper.get(states('sensor.mennekes_cp_verfuegbarkeit_raw')|int(-1), 'Unbekannt') }}

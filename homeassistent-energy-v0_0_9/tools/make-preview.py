@@ -34,6 +34,8 @@ cards = "\n".join(
         "wuefl-energy-live-card.js",
         "wuefl-energy-history-card.js",
         "wuefl-wallbox-card.js",
+        "wuefl-energy-settings-card.js",
+        "wuefl-energy-config-card.js",
     )
 )
 
@@ -105,15 +107,50 @@ HTML = """<!doctype html>
       font: inherit; font-size: .85rem; padding: .35rem .9rem;
     }
     & button.on { background: var(--primary-color); color: var(--text-primary-color); }
+    & .sep { border-left: 1px solid var(--divider-color); height: 1.4rem; }
   }
 
-  .views { display: grid; gap: 1.5rem; padding: 1.25rem; }
-  .view > h2 {
+  .native-note {
+    background: var(--card-background-color);
+    border-left: 3px solid var(--primary-color);
+    border-radius: 6px;
     color: var(--secondary-text-color);
-    font-size: .8rem; font-weight: 600; letter-spacing: .08em;
-    margin: 0 0 .6rem; text-transform: uppercase;
+    font-size: .85rem;
+    line-height: 1.5;
+    margin-top: 1rem;
+    padding: .7rem .9rem;
   }
-  .view { margin-inline: auto; width: 100%; }
+
+  .backbar {
+    margin-bottom: .8rem;
+    & button {
+      background: var(--card-background-color); border: 1px solid var(--divider-color);
+      border-radius: 999px; color: inherit; cursor: pointer; font: inherit;
+      font-size: .85rem; padding: .4rem .9rem;
+    }
+  }
+
+  .tabs {
+    background: var(--card-background-color);
+    border-bottom: 1px solid var(--divider-color);
+    display: flex;
+    gap: .25rem;
+    padding: 0 1rem;
+    position: sticky;
+    top: 3.1rem;
+    z-index: 9;
+
+    & button {
+      background: none; border: 0; border-bottom: 3px solid transparent;
+      color: var(--secondary-text-color); cursor: pointer; font: inherit;
+      font-weight: 500; padding: .7rem 1.1rem;
+    }
+    & button.on { border-bottom-color: var(--primary-color); color: var(--primary-color); }
+  }
+
+  .views { padding: 1.25rem; }
+  .view { display: none; margin-inline: auto; width: 100%; }
+  .view.active { display: block; }
   .grid { display: grid; gap: 1rem; }
 
   /* Breite wie eine HA-Sections-Spalte, damit die Beurteilung stimmt. */
@@ -139,10 +176,17 @@ HTML = """<!doctype html>
   <strong>wuefl Energie – Layout-Vorschau</strong>
   <button data-theme="light" class="on">Hell</button>
   <button data-theme="dark">Dunkel</button>
-  <span style="width:1rem"></span>
+  <span class="sep"></span>
   <button data-width="narrow">Handy</button>
   <button data-width="column" class="on">Eine Spalte</button>
   <button data-width="wide">Zwei Spalten</button>
+</div>
+
+<div class="tabs" id="tabs">
+  <button data-view="live" class="on">Live</button>
+  <button data-view="history">Energie</button>
+  <button data-view="wallbox">Wallbox</button>
+  <button data-view="settings">Einstellungen</button>
 </div>
 
 <p class="note">
@@ -152,9 +196,22 @@ HTML = """<!doctype html>
 </p>
 
 <div class="views">
-  <section class="view"><h2>Ansicht: Live</h2><div class="grid" id="v-live"></div></section>
-  <section class="view"><h2>Ansicht: Energie</h2><div class="grid" id="v-history"></div></section>
-  <section class="view"><h2>Ansicht: Wallbox</h2><div class="grid" id="v-wallbox"></div></section>
+  <section class="view active" data-view="live"><div class="grid" id="v-live"></div></section>
+  <section class="view" data-view="history">
+    <div class="grid" id="v-history"></div>
+    <p class="native-note">Die Energie-Ansicht nutzt jetzt Home Assistants eigene
+      <code>statistics-graph</code>-Karte (und <code>energy-usage-graph</code>, falls
+      eingerichtet). Beide brauchen ein echtes Home Assistant im Hintergrund
+      (Langzeitstatistik, Energie-Konfiguration) — in dieser eigenständigen Vorschau
+      ohne Backend lässt sich das nicht sinnvoll nachstellen. Im echten Dashboard
+      erscheint dort das Diagramm mit deinen Gesamtzählern.</p>
+  </section>
+  <section class="view" data-view="wallbox"><div class="grid" id="v-wallbox"></div></section>
+  <section class="view" data-view="settings"><div class="grid" id="v-settings"></div></section>
+  <section class="view" data-view="config">
+    <div class="backbar"><button type="button" id="back-to-settings">&larr; Zurück zu Einstellungen</button></div>
+    <div class="grid" id="v-config"></div>
+  </section>
 </div>
 
 <script id="svg-data" type="text/plain">__SVG_B64__</script>
@@ -195,6 +252,39 @@ class HaIcon extends HTMLElement {
 }
 customElements.define('ha-icon', HaIcon);
 
+/**
+ * ha-form gibt es nur im Home-Assistant-Frontend. Fuer die Vorschau reicht
+ * ein schlichter Ersatz: Beschriftung, Hilfetext und ein Eingabefeld je
+ * Schema-Eintrag. Das Layout des Dialogs laesst sich damit beurteilen.
+ */
+class HaFormStub extends HTMLElement {
+  set schema(v) { this._schema = v; this._draw(); }
+  set data(v) { this._data = v ?? {}; this._draw(); }
+  set hass(v) { this._hass = v; }
+  _draw() {
+    if (!this._schema) return;
+    this.innerHTML = '';
+    this.style.cssText = 'display:block';
+    for (const f of this._schema) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:block;margin-bottom:.9rem;font-size:.85rem;'
+        + 'color:var(--secondary-text-color)';
+      const label = this.computeLabel ? this.computeLabel(f) : f.name;
+      const help = this.computeHelper ? this.computeHelper(f) : '';
+      const val = this._data?.[f.name];
+      row.innerHTML = `<span style="display:block;color:var(--primary-text-color);
+          font-weight:500;margin-bottom:.25rem">${label}</span>
+        <input value="${Array.isArray(val) ? val.join(', ') : (val ?? '')}"
+          placeholder="Entität auswählen"
+          style="background:var(--secondary-background-color);border:0;border-radius:8px;
+            color:inherit;font:inherit;height:38px;padding:0 .7rem;width:100%">
+        ${help ? `<span style="display:block;margin-top:.25rem;line-height:1.4">${help}</span>` : ''}`;
+      this.appendChild(row);
+    }
+  }
+}
+customElements.define('ha-form', HaFormStub);
+
 /* --- Erfundene Zustaende ------------------------------------------- */
 
 const now = new Date();
@@ -211,7 +301,7 @@ const states = {
   'sensor.pv_power': st(4180, { unit_of_measurement: 'W', friendly_name: 'PV Leistung' }),
   'sensor.pv_string_1': st(2380, { unit_of_measurement: 'W', friendly_name: 'PV Sued' }),
   'sensor.pv_string_2': st(1800, { unit_of_measurement: 'W', friendly_name: 'PV Ost' }),
-  'sensor.pv_energy_today': st(23.7, { unit_of_measurement: 'kWh', friendly_name: 'PV heute' }),
+  'sensor.pv_energy_total': st(18430, { unit_of_measurement: 'kWh', friendly_name: 'PV gesamt' }),
   'sensor.solcast_today': st(31.2, {
     unit_of_measurement: 'kWh',
     friendly_name: 'Solcast Prognose heute',
@@ -219,19 +309,19 @@ const states = {
   }),
 
   'sensor.grid_power': st(-1240, { unit_of_measurement: 'W', friendly_name: 'Netz' }),
-  'sensor.grid_import_today': st(6.8, { unit_of_measurement: 'kWh' }),
-  'sensor.grid_export_today': st(9.4, { unit_of_measurement: 'kWh' }),
+  'sensor.grid_import_total': st(4210, { unit_of_measurement: 'kWh' }),
+  'sensor.grid_export_total': st(7830, { unit_of_measurement: 'kWh' }),
 
   'sensor.battery_power': st(-820, { unit_of_measurement: 'W', friendly_name: 'Speicher' }),
   'sensor.battery_soc': st(64, { unit_of_measurement: '%', friendly_name: 'Speicher Ladestand' }),
-  'sensor.battery_in_today': st(7.9, { unit_of_measurement: 'kWh' }),
-  'sensor.battery_out_today': st(5.2, { unit_of_measurement: 'kWh' }),
+  'sensor.battery_in_total': st(5120, { unit_of_measurement: 'kWh' }),
+  'sensor.battery_out_total': st(4680, { unit_of_measurement: 'kWh' }),
 
   'sensor.house_power': st(690, { unit_of_measurement: 'W', friendly_name: 'Haushalt' }),
-  'sensor.house_energy_today': st(11.3, { unit_of_measurement: 'kWh' }),
+  'sensor.house_energy_total': st(9240, { unit_of_measurement: 'kWh' }),
 
   'sensor.heatpump_power': st(1150, { unit_of_measurement: 'W', friendly_name: 'Waermepumpe' }),
-  'sensor.heatpump_energy_today': st(8.1, { unit_of_measurement: 'kWh' }),
+  'sensor.heatpump_energy_total': st(3110, { unit_of_measurement: 'kWh' }),
 
   'sensor.strompreis': st(PRICE_CURVE[now.getHours()], {
     unit_of_measurement: 'ct/kWh',
@@ -246,108 +336,138 @@ const states = {
   'sensor.wallbox_session': st(12.4, { unit_of_measurement: 'kWh' }),
   'sensor.wallbox_today': st(18.9, { unit_of_measurement: 'kWh' }),
   'sensor.wallbox_total': st(2431, { unit_of_measurement: 'kWh' }),
-  'input_select.wallbox_modus': st('Solar + guenstig', {
-    options: ['Aus', 'Solar', 'Solar + guenstig', 'Schnell'], friendly_name: 'Lademodus',
-  }),
-  'input_select.wallbox_prioritaet': st('Hausakku zuerst', {
-    options: ['Hausakku zuerst', 'Auto zuerst'],
-  }),
-  'input_number.wallbox_ladestrom': st(16, { unit_of_measurement: 'A', min: 6, max: 16, step: 1 }),
-  'input_number.wallbox_preisgrenze': st(24, { unit_of_measurement: 'ct', min: 0, max: 60, step: 1 }),
-  'input_number.wallbox_reserve': st(30, { unit_of_measurement: '%', min: 0, max: 100, step: 5 }),
-  'input_boolean.wallbox_hausakku': st('on'),
 
   /* Wallbox 2 */
   'sensor.wallbox2_power': st(0, { unit_of_measurement: 'W', friendly_name: 'Wallbox Garage' }),
   'sensor.zoe_soc': st(92, { unit_of_measurement: '%', friendly_name: 'Zoe Ladestand' }),
   'number.zoe_ziel': st(90, { unit_of_measurement: '%', min: 20, max: 100, step: 5 }),
-  'sensor.wallbox2_today': st(0, { unit_of_measurement: 'kWh' }),
-  'input_select.wallbox2_modus': st('Solar', { options: ['Aus', 'Solar', 'Solar + guenstig', 'Schnell'] }),
+  'sensor.wallbox2_total': st(430, { unit_of_measurement: 'kWh' }),
+
+  /* Von der Integration selbst angelegte Helfer – siehe INTERNAL weiter
+     unten, wo dieselben Entitaets-IDs berechnet werden wie es
+     specs.py::compute_internal() in echt tut. */
+  'switch.wuefl_hausakku_freigabe': st('on'),
+  'number.wuefl_speicherreserve': st(30, { unit_of_measurement: '%', min: 0, max: 100, step: 5 }),
+  'number.wuefl_preisgrenze_laden': st(24, { unit_of_measurement: 'ct', min: 0, max: 60, step: 1 }),
+  'select.wuefl_prioritaet': st('Hausakku zuerst', { options: ['Hausakku zuerst', 'Auto zuerst'] }),
+
+  'select.wuefl_wallbox_carport_modus': st('Solar + guenstig', {
+    options: ['Aus', 'Solar', 'Solar + guenstig', 'Schnell'],
+  }),
+  'number.wuefl_wallbox_carport_ladestrom': st(16, { unit_of_measurement: 'A', min: 6, max: 16, step: 1 }),
+  'number.wuefl_wallbox_carport_ladeziel': st(80, { unit_of_measurement: '%', min: 20, max: 100, step: 5 }),
+
+  'select.wuefl_wallbox_garage_modus': st('Solar', {
+    options: ['Aus', 'Solar', 'Solar + guenstig', 'Schnell'],
+  }),
+  'number.wuefl_wallbox_garage_ladestrom': st(16, { unit_of_measurement: 'A', min: 6, max: 16, step: 1 }),
+  'number.wuefl_wallbox_garage_ladeziel': st(90, { unit_of_measurement: '%', min: 20, max: 100, step: 5 }),
+};
+
+/* Entspricht specs.py::compute_internal() – dieselben Entitaets-IDs, hier
+   von Hand fuer die zwei Demo-Wallboxen "Carport" und "Garage" nachgebaut,
+   weil die Vorschau kein Python ausfuehrt. */
+const INTERNAL = {
+  rules: {
+    battery_use_entity: 'switch.wuefl_hausakku_freigabe',
+    battery_reserve_entity: 'number.wuefl_speicherreserve',
+    price_limit_entity: 'number.wuefl_preisgrenze_laden',
+    priority_entity: 'select.wuefl_prioritaet',
+  },
+  wallboxes: {
+    wb_1: {
+      mode_entity: 'select.wuefl_wallbox_carport_modus',
+      current_entity: 'number.wuefl_wallbox_carport_ladestrom',
+      target_entity: 'number.wuefl_wallbox_carport_ladeziel',
+    },
+    wb_2: {
+      mode_entity: 'select.wuefl_wallbox_garage_modus',
+      current_entity: 'number.wuefl_wallbox_garage_ladestrom',
+      target_entity: 'number.wuefl_wallbox_garage_ladeziel',
+    },
+  },
 };
 
 /* --- Zentrale Zuordnung, wie sie die Integration liefern wuerde ----- */
 
 const CENTRAL = {
-  live: {
-    title: 'Zuhause',
-    weather_entity: 'weather.home',
-    show_totals: true,
-    pv_power_total: 'sensor.pv_power',
-    pv_power: ['sensor.pv_string_1', 'sensor.pv_string_2'],
-    pv_energy: ['sensor.pv_energy_today'],
-    pv_forecast_entities: ['sensor.solcast_today'],
-    grid_power: 'sensor.grid_power',
-    grid_import_energy: ['sensor.grid_import_today'],
-    grid_export_energy: ['sensor.grid_export_today'],
-    battery_power: ['sensor.battery_power'],
-    battery_soc: ['sensor.battery_soc'],
-    battery_in_energy: ['sensor.battery_in_today'],
-    battery_out_energy: ['sensor.battery_out_today'],
+  version: 3,
+  grid: {
+    power: 'sensor.grid_power',
+    import_total: ['sensor.grid_import_total'],
+    export_total: ['sensor.grid_export_total'],
+  },
+  solar: {
+    power: 'sensor.pv_power',
+    energy_total: ['sensor.pv_energy_total'],
+    forecast: ['sensor.solcast_today'],
+  },
+  strings: [
+    { id: 's1', name: 'Dach Sued', power: 'sensor.pv_string_1' },
+    { id: 's2', name: 'Dach Ost', power: 'sensor.pv_string_2' },
+  ],
+  battery: [
+    { id: 'batt_1', name: 'Hausspeicher', power: 'sensor.battery_power',
+      soc: 'sensor.battery_soc', in_total: 'sensor.battery_in_total',
+      out_total: 'sensor.battery_out_total' },
+  ],
+  consumers: {
     house_power: 'sensor.house_power',
-    house_energy: 'sensor.house_energy_today',
-    heatpump_power: ['sensor.heatpump_power'],
-    heatpump_energy: ['sensor.heatpump_energy_today'],
+    energy_total: ['sensor.house_energy_total'],
   },
-  price: { price_entity: 'sensor.strompreis', price_export_fixed: 8.2 },
-  history: {
-    title: 'Energie',
-    pv_energy: ['sensor.pv_energy_today'],
-    grid_import: ['sensor.grid_import_today'],
-    grid_export: ['sensor.grid_export_today'],
-    battery_in: ['sensor.battery_in_today'],
-    battery_out: ['sensor.battery_out_today'],
-    house_energy: ['sensor.house_energy_today'],
-    wallbox_energy: ['sensor.wallbox_today'],
-    heatpump_energy: ['sensor.heatpump_energy_today'],
-    battery_soc: ['sensor.battery_soc'],
+  heatpump: [
+    { id: 'hp_1', name: 'Waermepumpe', power: 'sensor.heatpump_power',
+      energy_total: 'sensor.heatpump_energy_total' },
+  ],
+  cars: [
+    { id: 'car_ev6', name: 'Kia EV6', soc: 'sensor.ev6_soc',
+      target: 'number.ev6_ziel', capacity: 77 },
+    { id: 'car_zoe', name: 'Renault Zoe', soc: 'sensor.zoe_soc',
+      target: 'number.zoe_ziel', capacity: 52 },
+  ],
+  wallboxes: [
+    { id: 'wb_1', name: 'Carport', car: 'car_ev6', power: 'sensor.wallbox_power',
+      energy_total: 'sensor.wallbox_total', energy_session: 'sensor.wallbox_session',
+      phases: 3, max_power: 11000 },
+    { id: 'wb_2', name: 'Garage', car: 'car_zoe', power: 'sensor.wallbox2_power',
+      energy_total: 'sensor.wallbox2_total',
+      phases: 3, max_power: 11000 },
+  ],
+  price: {
+    price_entity: 'sensor.strompreis', price_export_fixed: 8.2, price_reference: 34.5,
   },
-  wallbox_1: {
-    name: 'Kia EV6',
-    capacity: 77,
-    max_power: 11000,
-    car_soc_entity: 'sensor.ev6_soc',
-    target_soc_entity: 'number.ev6_ziel',
-    mode_entity: 'input_select.wallbox_modus',
-    priority_entity: 'input_select.wallbox_prioritaet',
-    current_entity: 'input_number.wallbox_ladestrom',
-    price_limit_entity: 'input_number.wallbox_preisgrenze',
-    battery_reserve_entity: 'input_number.wallbox_reserve',
-    battery_use_entity: 'input_boolean.wallbox_hausakku',
-    power_entity: 'sensor.wallbox_power',
-    session_energy_entity: 'sensor.wallbox_session',
-    today_energy_entity: 'sensor.wallbox_today',
-    total_energy_entity: 'sensor.wallbox_total',
-    battery_soc_entity: ['sensor.battery_soc'],
-  },
-  wallbox_2: {
-    name: 'Renault Zoe',
-    capacity: 52,
-    max_power: 11000,
-    car_soc_entity: 'sensor.zoe_soc',
-    target_soc_entity: 'number.zoe_ziel',
-    mode_entity: 'input_select.wallbox2_modus',
-    power_entity: 'sensor.wallbox2_power',
-    today_energy_entity: 'sensor.wallbox2_today',
-  },
+  system: { title: 'Zuhause', system_cost: 24800, house_base_load: 400 },
+  info: { weather_entity: 'weather.home', temperatures: [] },
 };
 
 /* --- Statistiken fuer die Energie-Ansicht --------------------------- */
 
 const SHAPE = {
-  'sensor.pv_energy_today':      PV_CURVE.map((v) => v * 0.9),
-  'sensor.grid_import_today':    PV_CURVE.map((v, h) => Math.max(0, 1.1 - v * 0.35) * (h > 5 ? 1 : .5)),
-  'sensor.grid_export_today':    PV_CURVE.map((v) => Math.max(0, v - 1.6) * 0.7),
-  'sensor.battery_in_today':     PV_CURVE.map((v) => Math.max(0, v - 2.4) * 0.55),
-  'sensor.battery_out_today':    PV_CURVE.map((v, h) => (v < .3 && h > 16 ? 1.1 : 0)),
-  'sensor.house_energy_today':   PV_CURVE.map((_, h) => .35 + (h > 6 && h < 9 ? .6 : 0) + (h > 17 && h < 22 ? .9 : 0)),
-  'sensor.wallbox_energy':       [],
-  'sensor.wallbox_today':        PV_CURVE.map((_, h) => (h >= 11 && h <= 15 ? 2.6 : 0)),
-  'sensor.heatpump_energy_today':PV_CURVE.map((_, h) => (h < 8 || h > 19 ? .8 : .25)),
+  'sensor.pv_energy_total':      PV_CURVE.map((v) => v * 0.9),
+  'sensor.grid_import_total':    PV_CURVE.map((v, h) => Math.max(0, 1.1 - v * 0.35) * (h > 5 ? 1 : .5)),
+  'sensor.grid_export_total':    PV_CURVE.map((v) => Math.max(0, v - 1.6) * 0.7),
+  'sensor.battery_in_total':     PV_CURVE.map((v) => Math.max(0, v - 2.4) * 0.55),
+  'sensor.battery_out_total':    PV_CURVE.map((v, h) => (v < .3 && h > 16 ? 1.1 : 0)),
+  'sensor.house_energy_total':   PV_CURVE.map((_, h) => .35 + (h > 6 && h < 9 ? .6 : 0) + (h > 17 && h < 22 ? .9 : 0)),
+  'sensor.wallbox_total':        PV_CURVE.map((_, h) => (h >= 11 && h <= 15 ? 2.6 : 0)),
+  'sensor.wallbox2_total':       PV_CURVE.map(() => 0),
+  'sensor.heatpump_energy_total':PV_CURVE.map((_, h) => (h < 8 || h > 19 ? .8 : .25)),
 };
 
-function statistics(ids) {
+function statistics(ids, period) {
   const out = {};
   const hours = Math.max(1, now.getHours() + 1);
+  // Tagesabfrage: eine Zeile mit der Summe seit Mitternacht.
+  if (period === 'day') {
+    for (const id of ids) {
+      const shape = SHAPE[id];
+      if (!shape) continue;
+      const total = shape.slice(0, hours).reduce((a, v) => a + v, 0);
+      out[id] = [{ start: +new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+                   change: Number(total.toFixed(3)) }];
+    }
+    return out;
+  }
   for (const id of ids) {
     if (id === 'sensor.battery_soc') {
       out[id] = Array.from({ length: hours }, (_, h) => ({
@@ -373,8 +493,11 @@ const hass = {
   themes: { darkMode: false },
   connection: { subscribeEvents: async () => () => {} },
   async callWS(msg) {
-    if (msg.type === 'wuefl_energy/get') return CENTRAL;
-    if (msg.type === 'recorder/statistics_during_period') return statistics(msg.statistic_ids);
+    if (msg.type === 'wuefl_energy/get') return { ...CENTRAL, internal: INTERNAL };
+    if (msg.type === 'wuefl_energy/save') return { saved: true };
+    if (msg.type === 'recorder/statistics_during_period') {
+      return statistics(msg.statistic_ids, msg.period);
+    }
     return {};
   },
   async callService(domain, service, data, target) {
@@ -446,9 +569,11 @@ function push() {
 }
 
 add('v-live', 'wuefl-energy-live-card', { title: 'Zuhause', show_totals: true });
-add('v-history', 'wuefl-energy-history-card', { title: 'Energie', default_period: 'day' });
+add('v-history', 'wuefl-energy-history-card', { title: 'Energie' });
 add('v-wallbox', 'wuefl-wallbox-card', { slot: 1 });
 add('v-wallbox', 'wuefl-wallbox-card', { slot: 2 });
+add('v-settings', 'wuefl-energy-settings-card', {});
+add('v-config', 'wuefl-energy-config-card', {});
 push();
 
 /* Leichte Bewegung, damit die laufenden Kabel und Werte lebendig wirken. */
@@ -468,6 +593,19 @@ setInterval(() => {
 /* ================================================================== *
  * 4. Schalter in der Kopfleiste
  * ================================================================== */
+
+function showView(name) {
+  for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.view === name);
+  for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.dataset.view === name);
+  window.scrollTo({ top: 0 });
+}
+
+window.addEventListener('wuefl-open-config', () => showView('config'));
+document.getElementById('back-to-settings').addEventListener('click', () => showView('settings'));
+
+for (const btn of document.querySelectorAll('.tabs button')) {
+  btn.addEventListener('click', () => showView(btn.dataset.view));
+}
 
 for (const btn of document.querySelectorAll('.bar button')) {
   btn.addEventListener('click', () => {

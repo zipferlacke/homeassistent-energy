@@ -5,71 +5,20 @@
 #   homeassistant:
 #     packages: !include_dir_named packages
 #
-# Helfer für die Wallbox-Karte, ein Beispiel-Preissensor und die
-# Automation, die aus Modus und Überschuss einen Ladestrom macht.
+# Ein Beispiel-Preissensor und die Automation, die aus Modus und Ueberschuss
+# einen Ladestrom macht.
 #
-# Einbinden über configuration.yaml:
-#   homeassistant:
-#     packages: !include_dir_named packages
+# Lademodus, Ladestrom, Ladeziel und die vier anlagenweiten Laderegler
+# (Hausakku-Freigabe, Speicherreserve, Prioritaet, Preisgrenze) stehen NICHT
+# mehr hier drin — die legt die Integration "wuefl Energie" selbst an, sobald
+# in der Zuordnung eine Wallbox existiert. Zu finden unter Einstellungen →
+# Geraete & Dienste → Entitaeten, Suche "wuefl", oder direkt in der Ansicht
+# Einstellungen des wuefl-Energie-Dashboards.
 #
-# Bei mehreren Wallboxen: diese Datei kopieren und in allen Namen das
-# Kürzel ändern (wallbox_ → wallbox2_). Jede Wallbox bekommt dann eine
-# eigene Karte im Dashboard.
-
-input_select:
-  wallbox_modus:
-    name: Lademodus
-    icon: mdi:ev-station
-    options:
-      - Aus
-      - Solar
-      - Solar + günstig
-      - Schnell
-
-  wallbox_prioritaet:
-    name: Priorität
-    icon: mdi:priority-high
-    options:
-      - Hausakku zuerst
-      - Auto zuerst
-
-input_number:
-  wallbox_ladestrom:
-    name: Maximaler Ladestrom
-    min: 6
-    max: 16
-    step: 1
-    unit_of_measurement: A
-    icon: mdi:current-ac
-
-  wallbox_ziel_soc:
-    name: Ziel-Ladestand
-    min: 20
-    max: 100
-    step: 5
-    unit_of_measurement: "%"
-    icon: mdi:battery-charging-90
-
-  wallbox_preisgrenze:
-    name: Preisgrenze fürs Laden
-    min: 0
-    max: 60
-    step: 1
-    unit_of_measurement: ct/kWh
-    icon: mdi:cash
-
-  wallbox_akku_reserve:
-    name: Speicher nutzen bis
-    min: 0
-    max: 100
-    step: 5
-    unit_of_measurement: "%"
-    icon: mdi:home-battery
-
-input_boolean:
-  wallbox_akku_freigabe:
-    name: Aus Hausakku laden
-    icon: mdi:battery-arrow-down
+# Bei mehreren Wallboxen: diese Datei kopieren, in den Automations-
+# Variablen unten die Entitaets-IDs der zweiten Wallbox eintragen und der
+# Automation eine neue "id:" geben (sonst ueberschreiben sich die beiden
+# Kopien gegenseitig).
 
 # Fester Arbeitspreis als Sensor. Wer einen dynamischen Tarif hat,
 # löscht diesen Block und wählt in der Karte den Sensor der Integration.
@@ -101,19 +50,30 @@ automation:
       car_soc: sensor.auto_ladestand
       wallbox_power: sensor.wallbox_leistung
       wallbox_switch: switch.wallbox_laden
-      wallbox_current: number.wallbox_ladestrom
       price_sensor: sensor.strompreis_bezug
       phases: 3
       voltage: 230
+
+      # Diese sechs kommen von der Integration selbst — Namen stimmen mit
+      # der Vorschau/README überein, solange nur eine Wallbox existiert.
+      # Bei mehreren Wallboxen stehen die tatsächlichen Namen in
+      # Einstellungen → Geräte & Dienste → Entitäten (Suche "wuefl").
+      wallbox_current: number.wuefl_wallbox_wallbox_1_ladestrom
+      mode_entity: select.wuefl_wallbox_wallbox_1_modus
+      target_entity: number.wuefl_wallbox_wallbox_1_ladeziel
+      priority_entity: select.wuefl_prioritaet
+      reserve_entity: number.wuefl_speicherreserve
+      use_entity: switch.wuefl_hausakku_freigabe
+      limit_entity: number.wuefl_preisgrenze_laden
       # ------------------------------------------------------------------
 
-      modus: "{{ states('input_select.wallbox_modus') }}"
-      freigabe: "{{ is_state('input_boolean.wallbox_akku_freigabe', 'on') }}"
-      reserve: "{{ states('input_number.wallbox_akku_reserve') | float(0) }}"
-      ziel_soc: "{{ states('input_number.wallbox_ziel_soc') | float(100) }}"
-      grenze: "{{ states('input_number.wallbox_preisgrenze') | float(99) }}"
-      prio: "{{ states('input_select.wallbox_prioritaet') }}"
-      max_a: "{{ states('input_number.wallbox_ladestrom') | float(16) }}"
+      modus: "{{ states(mode_entity) }}"
+      freigabe: "{{ is_state(use_entity, 'on') }}"
+      reserve: "{{ states(reserve_entity) | float(0) }}"
+      ziel_soc: "{{ states(target_entity) | float(100) }}"
+      grenze: "{{ states(limit_entity) | float(99) }}"
+      prio: "{{ states(priority_entity) }}"
+      max_a: "{{ states(wallbox_current) | float(16) }}"
 
       soc: "{{ states(battery_soc) | float(0) }}"
       preis: "{{ states(price_sensor) | float(99) }}"
@@ -143,12 +103,12 @@ automation:
         seconds: "/30"
       - trigger: state
         entity_id:
-          - input_select.wallbox_modus
-          - input_select.wallbox_prioritaet
-          - input_boolean.wallbox_akku_freigabe
-          - input_number.wallbox_akku_reserve
-          - input_number.wallbox_preisgrenze
-          - input_number.wallbox_ziel_soc
+          - select.wuefl_wallbox_wallbox_1_modus
+          - select.wuefl_prioritaet
+          - switch.wuefl_hausakku_freigabe
+          - number.wuefl_speicherreserve
+          - number.wuefl_preisgrenze_laden
+          - number.wuefl_wallbox_wallbox_1_ladeziel
 
     actions:
       - choose:
