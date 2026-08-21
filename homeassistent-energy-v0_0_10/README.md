@@ -7,20 +7,26 @@ Keine externen Abhängigkeiten: keine Bibliothek, kein Font, kein Build-Schritt.
 Farben und Maße kommen aus dem aktiven Home-Assistant-Theme, Icons aus dem
 mitgelieferten Material-Design-Icons-Satz.
 
+Die Karten liegen in der Integration selbst und werden von ihr ausgeliefert —
+**ein einziger Ordner zu kopieren, keine Lovelace-Ressource von Hand
+einzutragen.**
+
 ## Was gehoert wohin
 
 | Aus dem Paket | Ziel in Home Assistant |
 |---|---|
 | `custom_components/wuefl_energy/` | `config/custom_components/wuefl_energy/` |
-| `www/wuefl_energy/` | `config/www/wuefl_energy/` |
 | `packages/wuefl_wallbox.yaml` | `config/packages/wuefl_wallbox.yaml` (optional) |
 | `preview.html` | nirgendwo, nur zum Anschauen im Browser |
 
-Kein Dashboard-YAML mehr — die Ansichten entstehen automatisch.
+Kein separater `www/`-Ordner mehr, kein Dashboard-YAML — beides entsteht
+automatisch.
 
 ## Installation
 
-**1. Integration**
+### Option A: von Hand
+
+**1. Integration kopieren**
 
 `custom_components/wuefl_energy/` nach `config/custom_components/` kopieren.
 In `configuration.yaml` auf oberster Ebene ergaenzen — nicht in einem Package:
@@ -29,30 +35,17 @@ In `configuration.yaml` auf oberster Ebene ergaenzen — nicht in einem Package:
 wuefl_energy:
 ```
 
-Nach dem Neustart legt Home Assistant automatisch einen Eintrag unter
+**2. Neu starten.**
+
+Home Assistant legt beim ersten Start automatisch einen Eintrag unter
 Einstellungen → Geraete & Dienste an — das ist erwartet, da steht nichts
-einzustellen, der Eintrag existiert nur, damit die Helfer-Entitaeten
-(Laderegler, Lademodus je Wallbox) zuverlaessig geladen werden.
+einzustellen. Der Eintrag existiert nur, damit die Helfer-Entitaeten
+(Laderegler, Lademodus je Wallbox) zuverlaessig geladen werden, und damit die
+Integration ihre Karten unter `/wuefl_energy_files/` ausliefern und als
+Lovelace-Ressource anmelden kann. Beides passiert automatisch — keine
+Ressource von Hand einzutragen, kein `www/`-Ordner zu kopieren.
 
-**2. Karten**
-
-`www/wuefl_energy/` nach `config/www/` kopieren.
-
-**3. Neu starten.**
-
-**4. Eine einzige Ressource eintragen**
-
-Einstellungen → Dashboards → Drei-Punkte-Menue → Ressourcen → Hinzufuegen,
-als **JavaScript-Modul**:
-
-```
-/local/wuefl_energy/wuefl-energy-strategy.js
-```
-
-Das ist alles. Die Datei laedt die Karten selbst nach — die frueheren
-Einzeleintraege sind nicht mehr noetig.
-
-**5. Dashboard anlegen**
+**3. Dashboard anlegen**
 
 Einstellungen → Dashboards → Dashboard hinzufuegen → **wuefl Energie**
 auswaehlen. Erscheint es nicht in der Liste, den Browser-Cache leeren und die
@@ -65,12 +58,12 @@ strategy:
   type: custom:wuefl-energy
 ```
 
-**6. Zuordnen**
+**4. Zuordnen**
 
 Im neuen Dashboard die Ansicht **Zuordnung** oeffnen und die Entitaeten
 eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 
-**7. Helfer und Ladeautomatik (optional)**
+**5. Helfer und Ladeautomatik (optional)**
 
 `packages/wuefl_wallbox.yaml` nach `config/packages/` kopieren. Dafuer muss in
 `configuration.yaml` stehen:
@@ -79,6 +72,21 @@ eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 homeassistant:
   packages: !include_dir_named packages
 ```
+
+### Option B: über HACS (empfohlen für Entwicklung/Updates)
+
+Wenn dieses Paket in einem eigenen GitHub-Repository liegt, laesst es sich als
+**benutzerdefiniertes Repository** in HACS eintragen — die `hacs.json` im
+Wurzelverzeichnis macht das moeglich. Danach ist eine neue Version nur noch
+ein Klick auf "Neu herunterladen" statt Dateien von Hand zu kopieren:
+
+1. In HACS → drei Punkte oben rechts → **Benutzerdefinierte Repositories**.
+2. URL des eigenen Repositories eintragen, Kategorie **Integration**.
+3. "wuefl Energie" suchen, installieren, Home Assistant neu starten.
+
+Da alles — Integration und Karten — in `custom_components/wuefl_energy/`
+liegt, reicht die Kategorie *Integration* fuer beides; es ist kein separater
+HACS-Eintrag fuer die Karten noetig.
 
 ## Wie die Ansichten entstehen
 
@@ -320,22 +328,23 @@ Maße und Schriftgrößen hängen an `--w-radius`, `--w-pad`, `--w-input-h` und
 
 | Datei | Zweck |
 |---|---|
-| `wuefl-energy-shared.js` | Tokens, Grundgerüst-CSS, Farben, Icons, Formatierung, Editor-Basis |
-| `wuefl-energy-live-card.js` | Energiefluss-Grafik mit laufenden Kabeln |
-| `wuefl-energy-history-card.js` | Energie-Ansicht, Balken oberhalb/unterhalb der Nulllinie |
-| `wuefl-wallbox-card.js` | Lademodus, Ladeziel, Zeitprognose je Fahrzeug |
-| `wuefl-energy-settings-card.js` | Laderegeln, die fuer alle Wallboxen gelten |
-| `wuefl-energy-config-card.js` | Die Zuordnung — Bloecke mit Hinzufuegen-Dialogen |
-| `wuefl-energy-strategy.js` | Baut die Ansichten, einzige einzutragende Ressource |
-| `energieflow.svg` | Die Grafik der Live-Karte |
-| `custom_components/wuefl_energy/` | Speichert die Zuordnung, zwei WebSocket-Befehle |
+| `custom_components/wuefl_energy/www/wuefl-energy-shared.js` | Tokens, Grundgerüst-CSS, Farben, Icons, Formatierung, Editor-Basis |
+| `custom_components/wuefl_energy/www/wuefl-energy-live-card.js` | Energiefluss-Grafik mit laufenden Kabeln |
+| `custom_components/wuefl_energy/www/wuefl-energy-history-card.js` | Energie-Ansicht, Balken oberhalb/unterhalb der Nulllinie |
+| `custom_components/wuefl_energy/www/wuefl-wallbox-card.js` | Lademodus, Ladeziel, Zeitprognose je Fahrzeug |
+| `custom_components/wuefl_energy/www/wuefl-energy-settings-card.js` | Laderegeln, die fuer alle Wallboxen gelten |
+| `custom_components/wuefl_energy/www/wuefl-energy-config-card.js` | Die Zuordnung — Bloecke mit Hinzufuegen-Dialogen |
+| `custom_components/wuefl_energy/www/wuefl-energy-strategy.js` | Baut die Ansichten, wird automatisch angemeldet |
+| `custom_components/wuefl_energy/www/energieflow.svg` | Die Grafik der Live-Karte |
+| `custom_components/wuefl_energy/__init__.py` | Speichert die Zuordnung, liefert die Karten aus, zwei WebSocket-Befehle |
 | `custom_components/wuefl_energy/specs.py` | Soll-Liste der selbst verwalteten Helfer |
 | `custom_components/wuefl_energy/config_flow.py` | Legt automatisch den Config Entry an |
 | `custom_components/wuefl_energy/switch.py` | Hausakku-Freigabe als eigene Plattform |
 | `custom_components/wuefl_energy/number.py` | Speicherreserve, Preisgrenze, Ladestrom, Ladeziel |
 | `custom_components/wuefl_energy/select.py` | Prioritaet, Lademodus je Wallbox |
 | `packages/wuefl_wallbox.yaml` | Preissensor-Beispiel und Ladeautomatik |
-| `tools/make-preview.py` | Baut `preview.html` aus den Quelldateien |
+| `hacs.json` | Macht das Repository als HACS-Quelle nutzbar |
+| `tools/make-preview.py` | Baut `preview.html` aus den Quelldateien (nur zur Entwicklung) |
 
 ## Hinweise
 

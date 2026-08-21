@@ -179,19 +179,6 @@ export const COLORS = {
   price: 'var(--w-price)',
 };
 
-/** Material Design Icons – bringt Home Assistant mit, kein eigener Font. */
-export const ICONS = {
-  pv: 'mdi:solar-power-variant',
-  grid_import: 'mdi:transmission-tower-export',
-  grid_export: 'mdi:transmission-tower-import',
-  battery_out: 'mdi:battery-arrow-down',
-  battery_in: 'mdi:battery-charging',
-  house: 'mdi:home',
-  wallbox: 'mdi:ev-station',
-  heatpump: 'mdi:heat-pump',
-  price: 'mdi:currency-eur',
-};
-
 /** Ein Icon als HTML. Nur hier definiert, damit ein Wechsel leichtfällt. */
 export const icon = (name, extra = '') =>
   `<ha-icon icon="${name}"${extra ? ` ${extra}` : ''}></ha-icon>`;
@@ -349,11 +336,6 @@ export function fmtEnergy(kwh) {
 
 export function fmtPercent(v, d = 0) {
   return v === null || v === undefined ? '–' : `${de(v, d)} %`;
-}
-
-export function fmtSigned(kwh) {
-  if (kwh === null || kwh === undefined) return '–';
-  return `${kwh < 0 ? '−' : '+'} ${fmtEnergy(Math.abs(kwh))}`;
 }
 
 export function fmtPrice(ct) {
@@ -914,26 +896,4 @@ export function mergeConfig(central, own) {
     if (v !== undefined && v !== null && v !== '') out[k] = v;
   }
   return out;
-}
-
-/** Kleines Flächendiagramm für Preis- und Prognosestreifen. */
-export function sparkline(points, color, { width = 300, height = 78, pad = 5 } = {}) {
-  if (!points.length) return '';
-  const max = Math.max(...points);
-  const min = Math.min(0, ...points);
-  const span = max - min || 1;
-  const x = (i) =>
-    pad + (points.length < 2 ? width / 2 : (i / (points.length - 1)) * (width - 2 * pad));
-  const y = (v) => height - pad - ((v - min) / span) * (height - 2 * pad);
-  const line = points.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
-  const id = `sg${Math.random().toString(36).slice(2, 8)}`;
-  return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" class="spark">
-    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" style="stop-color: ${color}; stop-opacity: .45"/>
-      <stop offset="1" style="stop-color: ${color}; stop-opacity: 0"/>
-    </linearGradient></defs>
-    <path d="${line} L${x(points.length - 1).toFixed(1)} ${height - pad} L${pad} ${height - pad} Z" fill="url(#${id})"/>
-    <path d="${line}" style="stroke: ${color}" fill="none" stroke-width="2.5"
-          stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
-  </svg>`;
 }

@@ -17,6 +17,12 @@ wurde. Ein Config Entry entsteht automatisch beim ersten Start, sobald
 "wuefl_energy:" in der configuration.yaml steht — dafür ist nichts in der
 Oberfläche zu klicken.
 
+Die Karten liegen im eigenen www/-Unterordner dieser Integration und werden
+von ihr selbst ausgeliefert (register_static_path) und als Lovelace-
+Ressource angemeldet (add_extra_js_url) — es gibt keinen separaten
+config/www/-Ordner mehr zu kopieren und keinen manuellen Ressourcen-Eintrag.
+Wer die Integration installiert, hat automatisch auch die Karten.
+
 Alles andere hält die Integration nur als Zuordnung fest und stellt sie den
 Karten über zwei WebSocket-Befehle bereit. Gepflegt wird sie in der Ansicht
 "Zuordnung" im Dashboard.
@@ -24,10 +30,13 @@ Karten über zwei WebSocket-Befehle bereit. Gepflegt wird sie in der Ansicht
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -44,6 +53,11 @@ STORAGE_VERSION = 1
 EVENT_UPDATED = "wuefl_energy_updated"
 PLATFORMS = ("switch", "number", "select")
 
+# Eigener Pfad statt "/local/…" — dafür muss niemand etwas nach config/www/
+# kopieren, die Dateien liegen direkt in dieser Integration.
+URL_BASE = "/wuefl_energy_files"
+STRATEGY_FILE = "wuefl-energy-strategy.js"
+
 # Die Integration wird mit einer leeren Zeile in configuration.yaml aktiviert.
 CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Any(dict, None)}, extra=vol.ALLOW_EXTRA)
 
@@ -59,6 +73,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 DOMAIN, context={"source": SOURCE_IMPORT}, data={}
             )
         )
+
+    # Die Karten liegen unter custom_components/wuefl_energy/www/ und werden
+    # von der Integration selbst ausgeliefert — kein config/www/ zu kopieren.
+    web_path = str(Path(__file__).parent / "www")
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(URL_BASE, web_path, cache_headers=False)]
+    )
+    # Meldet die Ressource automatisch bei Lovelace an. Die Strategy-Datei
+    # importiert die übrigen Karten relativ zu sich selbst, ein Eintrag
+    # genügt also.
+    add_extra_js_url(hass, f"{URL_BASE}/{STRATEGY_FILE}")
 
     websocket_api.async_register_command(hass, websocket_get_config)
     websocket_api.async_register_command(hass, websocket_save_config)

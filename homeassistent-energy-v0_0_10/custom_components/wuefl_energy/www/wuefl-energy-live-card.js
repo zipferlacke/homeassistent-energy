@@ -16,7 +16,9 @@ import {
   COLORS, WueflFormEditor, sel,
 } from './wuefl-energy-shared.js';
 
-const SVG_URL = '/local/wuefl_energy/energieflow.svg';
+// Wird von der Integration selbst ausgeliefert (siehe __init__.py,
+// URL_BASE) — kein "/local/..." mehr, das www/ manuell kopiert werden müsste.
+const SVG_URL = '/wuefl_energy_files/energieflow.svg';
 
 /* Kabel sind im SVG alle vom Gerät zum Anschlusskasten gezeichnet.
    "inbound" heißt: Strom fließt in dieser Richtung, also normal abspielen. */
