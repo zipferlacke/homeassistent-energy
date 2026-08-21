@@ -111,7 +111,7 @@ class WueflEnergyDashboardStrategy {
 
     if (hasEnergyEntities || hasNativeEnergy) {
       views.push(view('Energie', 'energie', 'mdi:chart-box', [
-        ...(hasNativeEnergy ? [{ type: 'energy-usage-graph' }] : []),
+        ...(hasNativeEnergy ? [{ type: 'energy-usage-graph', title: 'Verteilung' }] : []),
         ...(hasEnergyEntities ? [energyCard(energyGroups)] : []),
       ], 1));
     }
@@ -139,8 +139,8 @@ class WueflEnergyDashboardStrategy {
     // käme man aus einem leeren Dashboard nicht mehr heraus. Die Laderegeln
     // darin blenden sich selbst aus, wenn es keine Wallbox gibt.
     views.push(view('Einstellungen', 'einstellungen', 'mdi:cog', [
-      { type: 'custom:wuefl-energy-settings-card' },
-    ], 1));
+      { type: 'custom:wuefl-energy-settings-card', grid_options: { columns: 'full' } },
+    ], 2));
 
     // Die Zuordnung war als randloses "panel" gedacht, weil sie lang ist —
     // das bedeutet bei Home Assistant aber ausdrücklich volle Breite ohne
@@ -154,8 +154,10 @@ class WueflEnergyDashboardStrategy {
       icon: 'mdi:format-list-checks',
       type: 'sections',
       subview: true,
-      max_columns: 1,
-      sections: [section([{ type: 'custom:wuefl-energy-config-card' }])],
+      max_columns: 2,
+      sections: [section([
+        { type: 'custom:wuefl-energy-config-card', grid_options: { columns: 'full' } },
+      ])],
     });
 
     return { title: 'wuefl Energie', views };
@@ -169,6 +171,10 @@ window.customStrategies = window.customStrategies || [];
 if (!window.customStrategies.some((s) => s.type === 'wuefl-energy')) {
   window.customStrategies.push({
     type: 'wuefl-energy',
+    // Seit Home Assistant 2026.5 nötig, damit die Strategie im "Neues
+    // Dashboard"-Dialog korrekt verarbeitet wird — ohne dieses Feld bricht
+    // HA dort mit "can't access property 'startsWith', … is undefined" ab.
+    strategyType: 'dashboard',
     name: 'wuefl Energie',
     description: 'Live-Energiefluss, Bilanz, Wallboxen — die Ansichten entstehen aus deiner Zuordnung.',
   });

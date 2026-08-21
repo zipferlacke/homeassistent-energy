@@ -1,10 +1,6 @@
 # wuefl Energie für Home Assistant
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=DEIN-GITHUB-NAME&repository=DEIN-REPO-NAME&category=integration)
-
-*Vor dem Veroeffentlichen: `DEIN-GITHUB-NAME` und `DEIN-REPO-NAME` oben durch
-deinen echten GitHub-Benutzernamen und Repository-Namen ersetzen — sonst
-zeigt der Button auf ein nicht existierendes Repository.*
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zipferlacke&repository=homeassistent-energy&category=integration)
 
 Drei Karten (Live-Energiefluss, Energiebilanz, Wallbox) plus eine kleine
 Integration, die alle Entitäten an einer zentralen Stelle zuordnet.

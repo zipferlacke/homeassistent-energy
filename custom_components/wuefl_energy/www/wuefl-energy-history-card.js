@@ -20,6 +20,7 @@ const PERIODS = [
   { id: 'week', label: 'Woche' },
   { id: 'month', label: 'Monat' },
   { id: 'year', label: 'Jahr' },
+  { id: 'custom', label: 'Benutzerdefiniert' },
 ];
 
 /* Erzeugung oberhalb der Nulllinie, Verbrauch unterhalb — wie bei HA's
@@ -46,16 +47,28 @@ const CSS = `
   border-radius: var(--w-radius);
   display: grid;
   gap: 3px;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, 1fr) auto;
   padding: 3px;
 
   & .btn {
     background: transparent; border-radius: calc(var(--w-radius) - 3px);
-    font-size: var(--w-fs-sm); height: auto; padding: .5rem 0;
+    font-size: var(--w-fs-sm); height: auto; padding: .5rem .4rem;
+    white-space: nowrap;
 
     &:hover { background: var(--w-bg-hover); }
     &[aria-pressed="true"] { background: var(--w-accent); color: var(--w-on-accent); }
   }
+  & .btn.custom { padding: .5rem; }
+}
+
+.customrange {
+  align-items: center; display: flex; flex-wrap: wrap; gap: .5rem;
+
+  & input {
+    background: var(--w-bg-soft); border: 0; border-radius: var(--w-radius);
+    color: inherit; font: inherit; height: var(--w-input-h); padding: 0 .6rem;
+  }
+  & span { color: var(--w-text-soft); font-size: var(--w-fs-sm); }
 }
 
 .chips { display: flex; flex-wrap: wrap; gap: .35rem; }
@@ -79,6 +92,22 @@ const CSS = `
 
 .tiles {
   display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+
+  & .tile {
+    border-left: 3px solid var(--tile-color, var(--w-line));
+    display: flex; flex-direction: column; gap: .15rem;
+
+    & .k { align-items: center; color: var(--w-text-soft); display: flex; font-size: var(--w-fs-sm); gap: .35rem; }
+    & .v { font-size: 1.05rem; font-variant-numeric: tabular-nums; font-weight: 700; }
+    & .split { display: flex; font-size: var(--w-fs-sm); gap: .6rem; }
+    & .split .in { color: var(--w-batt-out); }
+    & .split .out { color: var(--w-danger); }
+  }
+}
+
+.footer { display: flex; justify-content: flex-end; }
+.footer .btn {
+  font-size: var(--w-fs-sm); height: auto; padding: .4rem .8rem;
 }
 `;
 
@@ -143,17 +172,33 @@ class WueflEnergyHistoryCard extends HTMLElement {
     card.innerHTML = `
       <h2></h2>
       <div class="periods">
-        ${PERIODS.map((p) => `<button type="button" class="btn" data-period="${p.id}"
+        ${PERIODS.filter((p) => p.id !== 'custom').map((p) => `<button type="button" class="btn" data-period="${p.id}"
           aria-pressed="${p.id === this.#period}">${p.label}</button>`).join('')}
+        <button type="button" class="btn custom" data-period="custom"
+          aria-pressed="${this.#period === 'custom'}" aria-label="Benutzerdefinierter Zeitraum">
+          ${icon('mdi:calendar-range')}
+        </button>
+      </div>
+      <div class="customrange" hidden>
+        <input type="date" class="from">
+        <span>bis</span>
+        <input type="date" class="to">
+        <button type="button" class="btn apply-range">Anzeigen</button>
       </div>
       <div class="chips"></div>
       <div class="chart"><div class="state">Lädt …</div></div>
       <div class="tiles"></div>
+      <div class="footer">
+        <button type="button" class="btn export">${icon('mdi:download')}CSV exportieren</button>
+      </div>
     `;
     root.appendChild(card);
 
     const q = (x) => card.querySelector(x);
-    this.#els = { card, title: q('h2'), periods: q('.periods'), chips: q('.chips'), chart: q('.chart'), tiles: q('.tiles') };
+    this.#els = {
+      card, title: q('h2'), periods: q('.periods'), chips: q('.chips'), chart: q('.chart'),
+      tiles: q('.tiles'), customRange: q('.customrange'), from: q('.from'), to: q('.to'),
+    };
 
     for (const btn of card.querySelectorAll('[data-period]')) {
       btn.addEventListener('click', () => {
@@ -161,9 +206,12 @@ class WueflEnergyHistoryCard extends HTMLElement {
         for (const b of card.querySelectorAll('[data-period]')) {
           b.setAttribute('aria-pressed', String(b === btn));
         }
-        this.#loadData();
+        this.#els.customRange.hidden = this.#period !== 'custom';
+        if (this.#period !== 'custom') this.#loadData();
       });
     }
+    q('.apply-range').addEventListener('click', () => this.#loadData());
+    q('.export').addEventListener('click', () => this.#exportCsv());
 
     this.#built = true;
     this.#loadData();
@@ -177,6 +225,13 @@ class WueflEnergyHistoryCard extends HTMLElement {
 
   #range() {
     const now = new Date();
+    if (this.#period === 'custom') {
+      const fromVal = this.#els.from?.value;
+      const toVal = this.#els.to?.value;
+      const start = fromVal ? new Date(`${fromVal}T00:00:00`) : new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = toVal ? new Date(`${toVal}T23:59:59`) : now;
+      return { start, end };
+    }
     const start = new Date(now);
     if (this.#period === 'day') start.setHours(0, 0, 0, 0);
     else if (this.#period === 'week') { start.setDate(now.getDate() - now.getDay() + 1); start.setHours(0, 0, 0, 0); }
@@ -203,7 +258,11 @@ class WueflEnergyHistoryCard extends HTMLElement {
 
     if (!totals) {
       const ids = used.flatMap((s) => asList(this.#config[s.key]));
-      const period = this.#period === 'day' ? 'hour' : this.#period === 'week' || this.#period === 'month' ? 'day' : 'month';
+      const spanDays = (end - start) / 86_400_000;
+      const period = this.#period === 'day' ? 'hour'
+        : this.#period === 'week' || this.#period === 'month' ? 'day'
+        : this.#period === 'custom' ? (spanDays <= 3 ? 'hour' : spanDays <= 90 ? 'day' : 'month')
+        : 'month';
       let stats = {};
       try {
         stats = await this.#hass.callWS({
@@ -311,24 +370,12 @@ class WueflEnergyHistoryCard extends HTMLElement {
       `<line class="zero" x1="${L}" y1="${yZero}" x2="${W - R}" y2="${yZero}"/>`,
     ];
 
-    // Gestapelt: jede Serie oben auf der vorherigen, wie bei HA's eigener Ansicht.
-    let stackUp = new Array(buckets.length).fill(0);
-    for (const s of up) {
-      const bottom = stackUp.map((v) => y(v));
-      stackUp = stackUp.map((v, i) => v + s.values[i]);
-      const top = stackUp.map((v) => y(v));
-      const pts = top.map((t, i) => `${x(i).toFixed(1)} ${t.toFixed(1)}`);
-      const rev = [...bottom].reverse().map((b, ri) => `${x(bottom.length - 1 - ri).toFixed(1)} ${b.toFixed(1)}`);
-      out.push(`<path d="M${pts.join(' L')} L${rev.join(' L')} Z" style="fill: ${s.color}; opacity: .85"/>`);
-    }
-    let stackDn = new Array(buckets.length).fill(0);
-    for (const s of dn) {
-      const bottom = stackDn.map((v) => y(v));
-      stackDn = stackDn.map((v, i) => v + s.values[i]);
-      const top = stackDn.map((v) => y(v));
-      const pts = top.map((t, i) => `${x(i).toFixed(1)} ${t.toFixed(1)}`);
-      const rev = [...bottom].reverse().map((b, ri) => `${x(bottom.length - 1 - ri).toFixed(1)} ${b.toFixed(1)}`);
-      out.push(`<path d="M${pts.join(' L')} L${rev.join(' L')} Z" style="fill: ${s.color}; opacity: .85"/>`);
+    // Liniendiagramm: jede Serie als eigene Linie, Erzeugung oberhalb,
+    // Verbrauch unterhalb der Nulllinie, keine Fläche mehr.
+    for (const s of [...up, ...dn]) {
+      const pts = s.values.map((v, i) => `${x(i).toFixed(1)} ${y(v).toFixed(1)}`);
+      out.push(`<path d="M${pts.join(' L')}" fill="none" stroke-width="2.5"
+        stroke-linejoin="round" stroke-linecap="round" style="stroke: ${s.color}"/>`);
     }
 
     const tickEvery = Math.max(1, Math.ceil(buckets.length / 8));
@@ -360,14 +407,74 @@ class WueflEnergyHistoryCard extends HTMLElement {
       if (vals.length) socAvg = vals.reduce((a, v) => a + v, 0) / vals.length;
     }
 
-    const tiles = used
-      .filter((s) => !this.#hidden.has(s.key))
-      .map((s) => `<div class="tile"><span class="k">${esc(s.label)}</span>
-        <span class="v">${fmtEnergy(total(s))}</span></div>`);
+    const visible = used.filter((s) => !this.#hidden.has(s.key));
+    const tiles = [];
+    const seenPair = new Set();
+
+    for (const s of visible) {
+      // Gegenstücke (Netz, Speicher) landen in einer gemeinsamen Kachel mit
+      // beiden Werten, statt zwei fast gleich aussehenden Einzelkacheln.
+      if (s.pair) {
+        if (seenPair.has(s.pair)) continue;
+        seenPair.add(s.pair);
+        const both = visible.filter((x) => x.pair === s.pair);
+        const inSeries = both.find((x) => x.sign > 0) ?? both[0];
+        const outSeries = both.find((x) => x.sign < 0) ?? both[1];
+        const inVal = inSeries ? total(inSeries) : 0;
+        const outVal = outSeries ? total(outSeries) : 0;
+        tiles.push(`<div class="tile" style="--tile-color: ${inSeries?.color ?? outSeries?.color}">
+          <span class="k">${esc(PAIR_NAMES[s.pair])}</span>
+          <span class="v">${fmtEnergy(inVal + outVal)}</span>
+          <span class="split">
+            ${inSeries ? `<span class="in">${fmtEnergy(inVal)} ${esc(inSeries.short)}</span>` : ''}
+            ${outSeries ? `<span class="out">${fmtEnergy(outVal)} ${esc(outSeries.short)}</span>` : ''}
+          </span>
+        </div>`);
+        continue;
+      }
+      tiles.push(`<div class="tile" style="--tile-color: ${s.color}">
+        <span class="k">${esc(s.label)}</span>
+        <span class="v">${fmtEnergy(total(s))}</span>
+      </div>`);
+    }
     if (socAvg !== null) {
       tiles.push(`<div class="tile"><span class="k">Ladestand ⌀</span><span class="v">${fmtPercent(socAvg)}</span></div>`);
     }
     this.#els.tiles.innerHTML = tiles.join('');
+  }
+
+  /* ------------------------------ Export ------------------------------ */
+
+  #exportCsv() {
+    const cacheKey = [...this.#cache.keys()].pop();
+    const totals = cacheKey ? this.#cache.get(cacheKey) : null;
+    if (!totals) return;
+
+    const used = this.#used().filter((s) => !this.#hidden.has(s.key));
+    const rows = [['Zeitpunkt', ...used.map((s) => s.label)]];
+    const byTime = new Map();
+
+    for (const s of used) {
+      for (const id of asList(this.#config[s.key])) {
+        for (const row of totals.stats[id] ?? []) {
+          const t = new Date(row.start).toISOString();
+          if (!byTime.has(t)) byTime.set(t, {});
+          byTime.get(t)[s.key] = (byTime.get(t)[s.key] ?? 0) + (Number(row.change) || 0);
+        }
+      }
+    }
+    for (const [t, vals] of [...byTime.entries()].sort()) {
+      rows.push([t, ...used.map((s) => (vals[s.key] ?? 0).toFixed(3))]);
+    }
+
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `energie-${this.#period}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }
 

@@ -851,7 +851,8 @@ export async function centralConfig(hass, section) {
       return {};
     });
   }
-  const all = deriveConfig((await centralPromise) ?? {});
+  const payload = (await centralPromise) ?? {};
+  const all = deriveConfig(payload, payload.internal);
 
   if (!centralSubscribed && hass.connection) {
     centralSubscribed = true;
