@@ -753,6 +753,13 @@ export function deriveConfig(raw, internal = {}) {
     invert_grid: c.grid.invert,
     pv_power_total: c.solar.power,
     pv_power: pluck(c.strings, 'power'),
+    // Zusätzlich die Dachflächen samt der in der Zuordnung vergebenen Namen —
+    // pv_power allein enthält nur die Entitäts-IDs, dabei ginge der Name
+    // verloren und die Karte müsste auf den friendly_name des Sensors
+    // zurückfallen.
+    pv_strings: c.strings
+      .filter((s) => s.power)
+      .map((s, i) => ({ entity: s.power, name: s.name || `Fläche ${i + 1}` })),
     pv_energy_total: asList(c.solar.energy_total),
     pv_forecast_entities: asList(c.solar.forecast),
     pv_forecast_attribute: c.solar.forecast_attribute,

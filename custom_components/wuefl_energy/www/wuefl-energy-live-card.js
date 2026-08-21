@@ -481,51 +481,117 @@ class WueflEnergyLiveCard extends HTMLElement {
      * fehlende ergänzt — "die Klassen suchen und das Format da einsetzen",
      * dynamisch statt fest auf zwei Einträge.
      */
+    /**
+     * Klont eine Vorlagen-Zeile (z. B. eine Wallbox) so oft wie nötig.
+     *
+     * Die Zeilenumbrüche in der Grafik sind ECHTE Zeilenumbrüche im XML,
+     * sichtbar gemacht durch "white-space: pre" — nicht durch dy. Deshalb
+     * muss zwischen den Zeilen jeweils ein Text-Knoten mit "\\n" plus der
+     * Original-Einrückung stehen; ein dy setzt die Funktion bewusst nicht,
+     * den Abstand macht die umgebende .t-box allein.
+     *
+     * Vorlage, Einrückung und Abschluss werden beim ersten Durchlauf am
+     * Container zwischengespeichert — sonst wären sie beim nächsten Aufruf
+     * verloren, weil der Container ja komplett geleert wird (besonders,
+     * wenn die Liste einmal leer ist).
+     */
     const repeat = (container, templateSelector, items, fill) => {
       if (!container) return;
-      const existing = Array.from(container.querySelectorAll(templateSelector));
-      if (!existing.length) return;
-      const template = existing[0].cloneNode(true);
-      for (const el of existing) el.remove();
+
+      if (!container.__wueflTpl) {
+        const first = container.querySelector(templateSelector);
+        if (!first) return;
+        const before = first.previousSibling;
+        const last = container.lastChild;
+        container.__wueflTpl = {
+          node: first.cloneNode(true),
+          indent: before && before.nodeType === 3 ? before.nodeValue : '\n          ',
+          tail: last && last.nodeType === 3 ? last.nodeValue : '\n          ',
+        };
+        // Abstand macht die .t-box, nicht die einzelne Zeile.
+        container.__wueflTpl.node.removeAttribute('dy');
+      }
+      const tpl = container.__wueflTpl;
+
+      // textContent = '' entfernt Elemente UND die Text-Knoten dazwischen —
+      // sonst blieben die alten Umbrüche als zusätzliche Leerzeilen stehen.
+      container.textContent = '';
       items.forEach((item, i) => {
-        const node = template.cloneNode(true);
-        // Bei der ersten Zeile keinen zusätzlichen Zeilenabstand, sonst
-        // rutscht alles einen zu weit nach unten.
-        if (i === 0) node.removeAttribute('dy');
+        container.appendChild(document.createTextNode(tpl.indent));
+        const node = tpl.node.cloneNode(true);
         fill(node, item, i);
         container.appendChild(node);
       });
+      container.appendChild(document.createTextNode(tpl.tail));
+    };
+
+    /**
+     * Wie repeat(), aber für Paare aus zwei tspans (Name + Wert), die in
+     * der Vorlage nebeneinander stehen statt in einer gemeinsamen Hülle —
+     * so sind die Dachflächen aufgebaut.
+     */
+    const repeatPair = (container, nameSel, valueSel, items, fill) => {
+      if (!container) return;
+
+      if (!container.__wueflPair) {
+        const name = container.querySelector(nameSel);
+        const value = container.querySelector(valueSel);
+        if (!name || !value) return;
+        const before = name.previousSibling;
+        const between = name.nextSibling;
+        const last = container.lastChild;
+        container.__wueflPair = {
+          name: name.cloneNode(true),
+          value: value.cloneNode(true),
+          indent: before && before.nodeType === 3 ? before.nodeValue : '\n          \t',
+          sep: between && between.nodeType === 3 ? between.nodeValue : ' ',
+          tail: last && last.nodeType === 3 ? last.nodeValue : '\n          ',
+        };
+      }
+      const tpl = container.__wueflPair;
+
+      container.textContent = '';
+      items.forEach((item, i) => {
+        container.appendChild(document.createTextNode(tpl.indent));
+        const name = tpl.name.cloneNode(true);
+        const value = tpl.value.cloneNode(true);
+        fill(name, value, item, i);
+        container.appendChild(name);
+        container.appendChild(document.createTextNode(tpl.sep));
+        container.appendChild(value);
+      });
+      container.appendChild(document.createTextNode(tpl.tail));
     };
 
     /* --- Solar --- */
     if (has.solar) {
-      const strings = breakdown(h, c.pv_power);
+      // Namen kommen aus der Zuordnung — dort trägt man sie ja gerade
+      // deshalb ein. Nur wenn nichts hinterlegt ist (oder die Karte ohne
+      // zentrale Zuordnung läuft), greift der friendly_name des Sensors.
+      const strings = asList(c.pv_strings).length
+        ? asList(c.pv_strings).map((s2) => ({
+            name: s2.name,
+            value: power(h, s2.entity),
+          })).filter((s2) => s2.value !== null)
+        : breakdown(h, c.pv_power);
       const pvDay = todaySum(this.#today, c.pv_energy_total);
       T('#label-solar-text', 't-header', 'Solar');
       T('#label-solar-text', 'v_live', fmtPower(p.pv));
       T('#label-solar-text', 'v_total', tot && pvDay !== null ? fmtEnergy(pvDay) : '');
 
-      // Dachflächen: die Vorlage ist ein Paar aus .t-sub + .v_sub_live,
-      // keine gemeinsame Hülle wie bei der Wallbox – deshalb hier eigene,
-      // einfachere Klon-Logik statt der allgemeinen repeat()-Funktion.
-      const box = svg.querySelector('#label-solar-text .t-box');
-      const subName = box?.querySelector('.t-sub');
-      const subVal = box?.querySelector('.v_sub_live');
-      if (box && subName && subVal) {
-        const oldPairs = Array.from(box.querySelectorAll('.t-sub, .v_sub_live'));
-        const nameTpl = subName.cloneNode(true);
-        const valTpl = subVal.cloneNode(true);
-        for (const el of oldPairs) el.remove();
-        strings.forEach((s2, i) => {
-          const n = nameTpl.cloneNode(true);
-          const v = valTpl.cloneNode(true);
-          if (i === 0) { n.removeAttribute('dy'); }
-          n.textContent = this.#short(s2.name);
-          v.textContent = fmtPower(s2.value);
-          box.appendChild(n);
-          box.appendChild(v);
-        });
-      }
+      // Dachflächen: Name und Wert stehen als Paar nebeneinander, jede
+      // Fläche in einer eigenen Zeile.
+      const hasOwnNames = asList(c.pv_strings).length > 0;
+      repeatPair(
+        svg.querySelector('#label-solar-text .t-box'),
+        '.t-sub', '.v_sub_live', strings,
+        (name, value, s2) => {
+          // Selbst vergebene Namen bleiben unangetastet — gekürzt wird nur
+          // ein aus dem Sensor übernommener friendly_name.
+          name.textContent = hasOwnNames ? s2.name : this.#short(s2.name);
+          value.textContent = fmtPower(s2.value);
+        },
+      );
 
       // Solar ist grau, solange nichts erzeugt wird, und bekommt erst bei
       // Ertrag den orangenen Schimmer-Verlauf ("Glow").

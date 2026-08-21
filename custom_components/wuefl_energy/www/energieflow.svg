@@ -2,17 +2,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="113.907 65.184 736.536 736.017" width="1260" height="900" role="img" aria-labelledby="svg-title" xmlns:bx="https://boxy-svg.com" preserveAspectRatio="none">
   <title id="svg-title">Energiefluss im Haus</title>
   <defs>
-  <linearGradient id="solar-shimmer" gradientUnits="objectBoundingBox"
-                x1="0" y1="0" x2="0.6" y2="0.6" spreadMethod="reflect">
-    <stop offset="0" style="stop-color: var(--w-solar, #ff9800)"/>
-    <stop offset="0.46" style="stop-color: var(--w-solar, #ff9800)"/>
-    <stop offset="0.5" style="stop-color: color-mix(in srgb, var(--w-solar, #ff9800) 55%, white)"/>
-    <stop offset="0.54" style="stop-color: var(--w-solar, #ff9800)"/>
-    <stop offset="1" style="stop-color: var(--w-solar, #ff9800)"/>
-    <animateTransform attributeName="gradientTransform" type="translate"
-                       values="-0.6 -0.6; 0.6 0.6" dur="3.6s" repeatCount="indefinite"/>
-  </linearGradient>
-  
     <mask id="wand-maske" maskUnits="userSpaceOnUse">
       <rect x="-58.031" y="81.615" width="2328.5" height="910.246" fill="#ffffff"/>
       <g fill="rgb(150,150,150)" transform="matrix(1.212761, 0, 0, 0.900343, -58.030991, 81.61409)">
@@ -76,20 +65,17 @@
     text {
       fill: var(--c-text);
       white-space: pre-line;
-      
+      font-size:1.2rem;
       .t-header {
-        font-size: 1.4rem;
+        font-size: 1.9rem;
         font-weight: 600;
       }
       .t-sub{font-weight: 600;}
       .v_live{
-		font-size:1.2rem
-    }
+		    font-size:1.3rem;
+      }
       .v_total{ 
       	fill: grey;
-      }
-      .t-box{
-      	margin-top:0.5rem;
       }
     }
 
@@ -196,7 +182,7 @@
 
     /* Solar */
     #solar {
-      #solar-surface { fill: var(--c-line-soft); stroke: none; transition: fill .4s ease, filter .4s ease; }
+      #solar-surface { fill: var(--c-highlight); stroke: none; }
       .panel {
         fill: var(--c-panel);
         fill-opacity: var(--o-panel, 1);
@@ -271,7 +257,7 @@
       <path id="door" class="face door" d="M 231.809 528.196 L 259.928 544.251 C 262.259 545.841 263.406 545.046 263.371 541.864 L 263.213 460.275 C 263.177 457.093 263.236 454.501 260.905 452.91 L 233.269 436.909 C 231.011 435.95 229.092 437.567 229.108 439.895 L 228.762 521.118 C 228.798 524.299 229.478 526.606 231.809 528.196 Z" style=""/>
       <circle class="knob" cx="256.494" cy="505.168" r="2.6"/>
       <path id="window-small" class="face window" d="M 191.368 465.232 L 220.078 481.81 C 221.812 482.81 222.679 482.31 222.679 480.31 L 222.679 449.91 C 222.679 447.91 221.812 446.41 220.078 445.41 L 191.368 428.832 C 189.634 427.832 188.767 428.332 188.767 430.332 L 188.767 460.732 C 188.767 462.732 189.634 464.232 191.368 465.232 Z" style="stroke-width: 1.2;"/>
-      <path style="fill: none; stroke: rgb(0, 0, 0); stroke-linecap: round; stroke-linejoin: round;" d="M 204.11 472.134 L 204.055 436.381"/>
+      <path class="mullion" d="M 204.11 472.134 L 204.055 436.381"/>
       <g id="3d-roof-group">
         <path id="roof-main" class="face roof" d="M 268.506 140.453 C 270.363 137.017 275.425 136.696 277.898 139.002 L 530.317 283.152 C 527.432 280.569 522.865 282.01 521.791 284.698 L 420.577 510.518 C 416.109 516.87 409.256 517.379 400.019 512.046 L 175.642 382.509 C 166.405 377.176 164.02 369.666 168.488 359.981 L 268.506 140.453 Z"/>
       </g>
@@ -298,13 +284,13 @@
       <path id="kabel-solar" class="cable" d="M 482.013 434.441 L 498.85 441.051 L 460.345 501.712 L 471.094 504.802 L 543.612 470.504" style="">
         <title>kabel-solar</title>
       </path>
-      <g id="label-solar-text" transform="matrix(1, 0, 0, 1, -223.054291, -17.355242)">
+      <g id="label-solar-text" transform="matrix(1, 0, 0, 1, -223.817825, -16.112965)">
         <title>Text</title>
-        <text x="345" y="125" style="white-space: pre;">
-          <tspan class="t-header">Solar</tspan>
-          <tspan class="v_live">4.5kW</tspan>, <tspan class="v_total">25kWh</tspan><tspan class="t-box" dy="0.5rem">
-          	<tspan class="t-sub">Dach Ost</tspan> <tspan class="v_sub_live">10kw</tspan>
-          	<tspan class="t-sub">Dach West</tspan> <tspan class="v_sub_live">15kw</tspan>
+        <text x="302.586" y="130.628" style="white-space: pre;">
+          <tspan class="t-header" style="font-size: 30.4px; word-spacing: 0px;">Solar</tspan>
+          <tspan class="v_live" style="font-size: 20.8px; word-spacing: 0px;">4.5kW</tspan>, <tspan class="v_total" style="font-size: 19.2px; word-spacing: 0px;">25kWh</tspan><tspan class="t-box" dy="0.5rem" style="font-size: 19.2px; word-spacing: 0px;">
+          	<tspan class="t-sub" style="font-size: 19.2px; word-spacing: 0px;">Dach Ost</tspan> <tspan class="v_sub_live" style="font-size: 19.2px; word-spacing: 0px;">10kw</tspan>
+          	<tspan class="t-sub" style="font-size: 19.2px; word-spacing: 0px;">Dach West</tspan> <tspan class="v_sub_live" style="font-size: 19.2px; word-spacing: 0px;">15kw</tspan>
            </tspan>
         </text>
       </g>
@@ -322,7 +308,7 @@
       <path id="kabel-wallbox" class="cable" d="M 800.444 439.994 L 800.388 412.365 L 811.182 415.573 L 811.219 410.627 L 804.637 408.803 L 666.367 452.263 L 666.51 430.899 L 686.687 440.502 L 617.246 462.92" mask="url(#wand-maske)" style="">
         <title>kabel-wallbox</title>
       </path>
-      <g id="label-wallbox-text" transform="matrix(1, 0, 0, 1, -5.6504, 41.618717)">
+      <g id="label-wallbox-text" transform="matrix(1, 0, 0, 1, -48.650562, 50.689007)">
         <title>Text</title>
         <text x="560" y="165" style="white-space: pre;">
           <tspan class="t-header">Wallbox</tspan><tspan class="t-box" dy="0.5rem">
@@ -334,17 +320,8 @@
     </g>
     <g id="label-netz" class="label">
       <title>Netz</title>
-      <g id="netz" class="device" transform="matrix(0.78, 0, 0, 0.86, 574.4, 486.9)">
-        <title>netz-geraet</title>
-        <path class="face side" d="M 42.5 30.6 L 35.6 34.6 L 35.6 8.4 L 42.5 4.4 Z"/>
-        <path class="face front" d="M 35.6 34.6 L 8.4 20.6 L 8.4 -5.6 L 35.6 8.4 Z"/>
-        <path class="face top" d="M 15.6 -10.6 L 42.5 4.4 L 35.6 8.4 L 8.4 -5.6 Z"/>
-        <path class="icon" d="M 15.8 12.2 L 24.6 16.9 L 19.4 21.9 L 27.6 26.4"
-              style="stroke-width: 2.6px;"/>
-      </g>
-      
-      <path class="cable" d="M 715.682 579.482 L 691.025 570.319 L 636.168 596.258 L 612.746 588.668 L 612.853 491.989" style=""/>
-      <g id="label-netz-text" transform="matrix(1, 0, 0, 1, 1.469275, 22.590723)">
+      <path class="cable" d="M 691.442 574.094 L 678.095 570.469 L 629.157 593.469 L 612.746 588.668 L 612.853 491.989" style=""/>
+      <g id="label-netz-text" transform="matrix(1, 0, 0, 1, -18.589014, 28.902037)">
         <title>Text</title>
         <text x="630" y="572" style="white-space: pre;">
           <tspan class="t-header">Netz</tspan>
@@ -377,13 +354,13 @@
         <path class="icon" d="M 389.943 568.163 L 377.36 579.261 L 375.03 581.316 L 390.537 590.007 L 375.64 603.865" style="stroke-width: 3px;"/>
       </g>
       <path class="cable" d="M 444.219 603.316 L 452.634 605.969 L 453.373 537.959 L 460.369 540.808 L 544.369 505.854" style=""/>
-      <g id="label-batterie-text" transform="matrix(0.912976, 0, 0, 0.9228, 98.191887, 86.40332)" style="">
+      <g id="label-batterie-text" transform="matrix(0.912976, 0, 0, 0.9228, 86.040718, 77.952553)" style="">
         <title>Text</title>
-        <text x="162" y="633" style="white-space: pre;">
-          <tspan class="t-header">Batterie</tspan>
-          <tspan class="v_live">5kW</tspan>, <tspan class="v_total">20kWh</tspan><tspan dy="0.5rem" class="box">
-          <tspan class="t-sub">Geladen </tspan><tspan class="v_in">7kWh</tspan>
-          <tspan class="t-sub">Entladen </tspan><tspan class="v_out">2kWh</tspan>
+        <text x="199.602" y="645.271" style="white-space: pre;">
+          <tspan class="t-header" style="font-size: 30.4px; word-spacing: 0px;">Batterie</tspan>
+          <tspan class="v_live" style="font-size: 20.8px; word-spacing: 0px;">5kW</tspan>, <tspan class="v_total" style="font-size: 19.2px; word-spacing: 0px;">20kWh</tspan><tspan dy="0.5rem" class="box" style="font-size: 19.2px; word-spacing: 0px;">
+          <tspan class="t-sub" style="font-size: 19.2px; word-spacing: 0px;">Geladen </tspan><tspan class="v_in" style="font-size: 19.2px; word-spacing: 0px;">7kWh</tspan>
+          <tspan class="t-sub" style="font-size: 19.2px; word-spacing: 0px;">Entladen </tspan><tspan class="v_out" style="font-size: 19.2px; word-spacing: 0px;">2kWh</tspan>
           </tspan>
         </text>
       </g>
@@ -412,7 +389,7 @@
         <path class="face top" d="M 511.97 528.1 Q 516.3 525.6 520.63 528.1 L 543.57 541.3 Q 547.9 543.8 543.57 546.3 L 489.13 577.7 Q 484.8 580.2 480.47 577.7 L 457.63 564.5 Q 453.3 562.0 457.63 559.5 Z"/>
       </g>
       <path class="cable" d="M 561.815 511.818 L 562.437 558.199" style="transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(-1, 0, 0, -1, -1.070953, 0.408936)"/>
-      <g id="label-waermepumpe-text" transform="matrix(1, 0, 0, 1, 10.473577, -12.384333)">
+      <g id="label-waermepumpe-text" transform="matrix(1, 0, 0, 1, -5.928053, -7.294254)">
         <title>Text</title>
         <text x="418" y="685" style="white-space: pre;">
           <tspan class="t-header">Wärmepumpe</tspan>
@@ -432,11 +409,11 @@
     </g>
     <g id="label-haushalt" class="label" transform="matrix(0.86687, 0, 0, 1.154616, -6.006975, -16.013775)" style="">
       <title>Haushalt</title>
-      <g id="group-3" transform="matrix(1, 0, 0, 1, -287.050629, -164.166107)">
+      <g id="group-3" transform="matrix(1, 0, 0, 1, -338.293579, -163.739349)">
         <title>Text</title>
-        <text x="418" y="685" style="white-space: pre;">
-          <tspan class="t-header">Haushalt</tspan>
-          <tspan class="v_live">1.5kW</tspan>, <tspan class="v_total">8kWh</tspan>
+        <text x="436.598" y="688.758" style="white-space: pre;">
+          <tspan class="t-header" style="font-size: 30.4px; word-spacing: 0px;">Haushalt</tspan>
+          <tspan class="v_live" style="font-size: 20.8px; word-spacing: 0px;">1.5kW</tspan>, <tspan class="v_total" style="font-size: 19.2px; word-spacing: 0px;">8kWh</tspan>
         </text>
       </g>
     </g>
