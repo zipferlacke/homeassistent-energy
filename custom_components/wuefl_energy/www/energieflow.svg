@@ -2,19 +2,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="113.907 65.184 736.536 736.017" width="1260" height="900" role="img" aria-labelledby="svg-title" xmlns:bx="https://boxy-svg.com" preserveAspectRatio="none">
   <title id="svg-title">Energiefluss im Haus</title>
   <defs>
+    <linearGradient id="solar-shimmer" gradientUnits="objectBoundingBox"
+                x1="0" y1="0" x2="0.6" y2="0.6" spreadMethod="reflect">
+      <stop offset="0" style="stop-color: var(--w-solar, #ff9800)"/>
+      <stop offset="0.46" style="stop-color: var(--w-solar, #ff9800)"/>
+      <stop offset="0.5" style="stop-color: color-mix(in srgb, var(--w-solar, #ff9800) 55%, white)"/>
+      <stop offset="0.54" style="stop-color: var(--w-solar, #ff9800)"/>
+      <stop offset="1" style="stop-color: var(--w-solar, #ff9800)"/>
+      <animateTransform attributeName="gradientTransform" type="translate"
+                        values="-0.6 -0.6; 0.6 0.6" dur="3.6s" repeatCount="indefinite"/>
+    </linearGradient>
+
     <mask id="wand-maske" maskUnits="userSpaceOnUse">
-      <rect x="-58.031" y="81.615" width="2328.5" height="910.246" fill="#ffffff"/>
+      <rect x="-58.031" y="81.615" width="2328.5" height="910.246" fill="#ffffff"></rect>
       <g fill="rgb(150,150,150)" transform="matrix(1.212761, 0, 0, 0.900343, -58.030991, 81.61409)">
-        <path style="fill: inherit; stroke:none!important" d="M 614.389 396.281 L 592.204 406.053 L 586.528 389.929 L 602.329 369.589 L 613.143 381.076 L 614.389 396.281 Z"/>
-        <path style="fill:inherit; stroke: none!important;" d="M 713.664 366.563 L 705.748 369.918 L 705.665 367.997 L 711.089 365.667 L 713.664 366.563 Z"/>
-        <path style="fill:inherit;stroke:none!important" d="M 591.538 410.633 L 614.243 400.671 L 614.142 408.513 L 593.996 417.447 L 591.538 410.633 Z"/>
+        <path style="fill: inherit; stroke:none!important" d="M 614.389 396.281 L 592.204 406.053 L 586.528 389.929 L 602.329 369.589 L 613.143 381.076 L 614.389 396.281 Z"></path>
+        <path style="fill:inherit; stroke: none!important;" d="M 713.664 366.563 L 705.748 369.918 L 705.665 367.997 L 711.089 365.667 L 713.664 366.563 Z"></path>
+        <path style="fill:inherit;stroke:none!important" d="M 591.538 410.633 L 614.243 400.671 L 614.142 408.513 L 593.996 417.447 L 591.538 410.633 Z"></path>
       </g>
     </mask>
     <bx:export>
-      <bx:file format="svg" path="energieflow.svg" normalization="{&quot;removeForeignMetadata&quot;:true}" excluded="true"/>
-      <bx:file format="png" path="energieflow.png" excluded="true"/>
-      <bx:file format="svg" path="Energiefluss im Haus.svg"/>
-      <bx:file format="png" path="Energiefluss im Haus.png"/>
+      <bx:file format="svg" path="energieflow.svg" normalization="{&quot;removeForeignMetadata&quot;:true}" excluded="true"></bx:file>
+      <bx:file format="png" path="energieflow.png" excluded="true"></bx:file>
+      <bx:file format="svg" path="Energiefluss im Haus.svg"></bx:file>
+      <bx:file format="png" path="Energiefluss im Haus.png"></bx:file>
     </bx:export>
   </defs>
   <style>
@@ -227,39 +238,39 @@
     <title>Szene</title>
     <g id="carport" transform="matrix(0.963742, 0, 0, 0.962223, 14.535222, 18.824194)">
       <title>Carport</title>
-      <path id="carport-wall" class="face wall" d="M 542.883 291.028 L 722.866 354.234 C 727.898 356.001 730.414 359.552 730.414 364.885 L 730.414 455.769 C 730.414 461.102 727.971 462.698 723.086 460.556 L 528.926 375.44 C 524.041 373.298 522.029 369.596 522.892 364.333 L 534.041 296.271 C 534.904 291.008 537.851 289.261 542.883 291.028 Z"/>
+      <path id="carport-wall" class="face wall" d="M 542.883 291.028 L 722.866 354.234 C 727.898 356.001 730.414 359.552 730.414 364.885 L 730.414 455.769 C 730.414 461.102 727.971 462.698 723.086 460.556 L 528.926 375.44 C 524.041 373.298 522.029 369.596 522.892 364.333 L 534.041 296.271 C 534.904 291.008 537.851 289.261 542.883 291.028 Z"></path>
       <g id="moto" transform="matrix(1, 0, 0.454779, 1, -205.626785, 0.787811)">
         <title>Motorrad</title>
-        <circle class="wheel" cx="653.605" cy="428.113" r="9.5"/>
-        <circle class="wheel" cx="686.305" cy="447.013" r="9.5"/>
-        <path class="frame" d="M 653.605 427.013 Q 656.205 411.713 666.905 418.113 L 673.705 423.513 Q 680.005 420.413 683.905 426.513 L 686.305 445.313"/>
-        <path class="tank" d="M 661.105 418.413 Q 666.905 412.813 675.605 421.813 L 674.705 426.313 L 662.505 420.913 Z"/>
+        <circle class="wheel" cx="653.605" cy="428.113" r="9.5"></circle>
+        <circle class="wheel" cx="686.305" cy="447.013" r="9.5"></circle>
+        <path class="frame" d="M 653.605 427.013 Q 656.205 411.713 666.905 418.113 L 673.705 423.513 Q 680.005 420.413 683.905 426.513 L 686.305 445.313"></path>
+        <path class="tank" d="M 661.105 418.413 Q 666.905 412.813 675.605 421.813 L 674.705 426.313 L 662.505 420.913 Z"></path>
       </g>
       <g id="car" transform="matrix(1, 0, 0, 1, -1.61722, -2.531156)">
         <title>Auto</title>
-        <path class="face far" d="M 590.853 433.354 C 590.053 420.954 594.486 415.687 604.153 417.554 C 611.953 414.554 620.453 415.454 629.653 420.254 L 644.153 428.854 C 653.886 435.587 661.253 444.687 666.253 456.154 L 674.453 462.354 C 679.638 467.54 681.956 471.93 682.953 478.754 L 682.952 483.323 L 590.853 433.954 L 590.853 433.354 Z"/>
-        <path class="face shell" d="M 547.153 458.554 C 546.353 446.154 550.82 440.887 560.553 442.754 C 568.286 439.754 576.753 440.654 585.953 445.454 L 600.553 454.054 C 610.22 460.787 617.586 469.887 622.653 481.354 L 630.853 487.554 C 636.52 491.754 642.606 504.808 638.904 510.647 L 682.957 483.084 C 685.61 478.781 680.12 466.554 674.453 462.354 L 666.253 456.154 C 661.253 444.687 653.886 435.587 644.153 428.854 L 629.653 420.254 C 620.453 415.454 611.953 414.554 604.153 417.554 C 594.486 415.687 590.053 420.954 590.853 433.354 L 547.153 458.554 Z"/>
-        <path class="face body" d="M 547.153 458.554 C 546.353 446.154 550.82 440.887 560.553 442.754 C 568.286 439.754 576.753 440.654 585.953 445.454 L 600.553 454.054 C 610.22 460.787 617.586 469.887 622.653 481.354 L 630.853 487.554 C 636.52 491.754 639.005 498.127 639.591 501.952 C 640.467 505.531 640.057 509.186 638.756 510.598 L 547.153 459.154 L 547.153 458.554 Z"/>
-        <path class="face glass" d="M 563.453 442.754 Q 573.653 441.354 585.953 447.654 L 600.553 456.354 Q 612.653 464.754 619.253 477.754 L 662.853 452.554 Q 656.353 439.554 644.153 431.154 L 629.653 422.454 Q 617.253 416.154 607.053 417.554 Z"/>
-        <circle class="wheel" cx="567.853" cy="468.554" r="10"/>
-        <circle class="rim" cx="567.853" cy="468.554" r="4"/>
-        <circle class="wheel" cx="621.427" cy="498.332" r="10"/>
-        <circle class="rim" cx="621.427" cy="498.332" r="4"/>
+        <path class="face far" d="M 590.853 433.354 C 590.053 420.954 594.486 415.687 604.153 417.554 C 611.953 414.554 620.453 415.454 629.653 420.254 L 644.153 428.854 C 653.886 435.587 661.253 444.687 666.253 456.154 L 674.453 462.354 C 679.638 467.54 681.956 471.93 682.953 478.754 L 682.952 483.323 L 590.853 433.954 L 590.853 433.354 Z"></path>
+        <path class="face shell" d="M 547.153 458.554 C 546.353 446.154 550.82 440.887 560.553 442.754 C 568.286 439.754 576.753 440.654 585.953 445.454 L 600.553 454.054 C 610.22 460.787 617.586 469.887 622.653 481.354 L 630.853 487.554 C 636.52 491.754 642.606 504.808 638.904 510.647 L 682.957 483.084 C 685.61 478.781 680.12 466.554 674.453 462.354 L 666.253 456.154 C 661.253 444.687 653.886 435.587 644.153 428.854 L 629.653 420.254 C 620.453 415.454 611.953 414.554 604.153 417.554 C 594.486 415.687 590.053 420.954 590.853 433.354 L 547.153 458.554 Z"></path>
+        <path class="face body" d="M 547.153 458.554 C 546.353 446.154 550.82 440.887 560.553 442.754 C 568.286 439.754 576.753 440.654 585.953 445.454 L 600.553 454.054 C 610.22 460.787 617.586 469.887 622.653 481.354 L 630.853 487.554 C 636.52 491.754 639.005 498.127 639.591 501.952 C 640.467 505.531 640.057 509.186 638.756 510.598 L 547.153 459.154 L 547.153 458.554 Z"></path>
+        <path class="face glass" d="M 563.453 442.754 Q 573.653 441.354 585.953 447.654 L 600.553 456.354 Q 612.653 464.754 619.253 477.754 L 662.853 452.554 Q 656.353 439.554 644.153 431.154 L 629.653 422.454 Q 617.253 416.154 607.053 417.554 Z"></path>
+        <circle class="wheel" cx="567.853" cy="468.554" r="10"></circle>
+        <circle class="rim" cx="567.853" cy="468.554" r="4"></circle>
+        <circle class="wheel" cx="621.427" cy="498.332" r="10"></circle>
+        <circle class="rim" cx="621.427" cy="498.332" r="4"></circle>
       </g>
-      <path id="carport-roof" class="face roof" d="M 455.299 350.571 L 607.563 401.528 C 616.415 404.49 625.146 404.172 633.758 400.575 L 722.51 363.504 C 731.122 359.907 731.031 356.546 722.235 353.421 L 546.411 290.957 C 537.616 287.832 529.317 288.831 521.514 293.952 L 453.726 338.446 C 445.924 343.567 446.448 347.609 455.299 350.571 Z"/>
+      <path id="carport-roof" class="face roof" d="M 455.299 350.571 L 607.563 401.528 C 616.415 404.49 625.146 404.172 633.758 400.575 L 722.51 363.504 C 731.122 359.907 731.031 356.546 722.235 353.421 L 546.411 290.957 C 537.616 287.832 529.317 288.831 521.514 293.952 L 453.726 338.446 C 445.924 343.567 446.448 347.609 455.299 350.571 Z"></path>
     </g>
     <g id="house" transform="matrix(0.963742, 0, 0, 0.962223, 14.535222, 18.824194)">
       <title>Haus</title>
-      <path id="house-wall-left" class="face wall" d="M 192.235 505.832 L 420.875 637.830 Q 427.805 641.831 427.805 633.831 L 427.805 495.831 Q 427.805 487.831 420.875 483.830 L 192.235 351.832 Q 185.305 347.831 185.305 355.831 L 185.305 493.831 Q 185.305 501.831 192.235 505.832 Z"/>
-      <path id="house-wall-gable" class="face wall-2" d="M 614.877 533.830 L 434.733 637.832 Q 427.805 641.831 427.805 633.831 L 427.805 495.831 Q 427.805 487.831 431.159 480.569 L 521.451 285.093 Q 524.805 277.831 530.433 283.517 L 616.177 370.145 Q 621.805 375.831 621.805 383.831 L 621.805 521.831 Q 621.805 529.831 614.877 533.830 Z"/>
-      <path id="window-big" class="face window" d="M 275.301 511.559 L 326.571 541.159 C 328.881 542.492 330.036 541.826 330.036 539.159 L 330.036 505.159 C 330.036 502.492 328.881 500.492 326.571 499.159 L 275.301 469.559 C 272.991 468.226 271.836 468.892 271.836 471.559 L 271.836 505.559 C 271.836 508.226 272.991 510.226 275.301 511.559 Z"/>
-      <path class="mullion" d="M 300.936 526.359 L 300.936 484.359 M 271.836 488.559 L 330.036 522.159"/>
-      <path id="door" class="face door" d="M 231.809 528.196 L 259.928 544.251 C 262.259 545.841 263.406 545.046 263.371 541.864 L 263.213 460.275 C 263.177 457.093 263.236 454.501 260.905 452.91 L 233.269 436.909 C 231.011 435.95 229.092 437.567 229.108 439.895 L 228.762 521.118 C 228.798 524.299 229.478 526.606 231.809 528.196 Z" style=""/>
-      <circle class="knob" cx="256.494" cy="505.168" r="2.6"/>
-      <path id="window-small" class="face window" d="M 191.368 465.232 L 220.078 481.81 C 221.812 482.81 222.679 482.31 222.679 480.31 L 222.679 449.91 C 222.679 447.91 221.812 446.41 220.078 445.41 L 191.368 428.832 C 189.634 427.832 188.767 428.332 188.767 430.332 L 188.767 460.732 C 188.767 462.732 189.634 464.232 191.368 465.232 Z" style="stroke-width: 1.2;"/>
-      <path class="mullion" d="M 204.11 472.134 L 204.055 436.381"/>
+      <path id="house-wall-left" class="face wall" d="M 192.235 505.832 L 420.875 637.830 Q 427.805 641.831 427.805 633.831 L 427.805 495.831 Q 427.805 487.831 420.875 483.830 L 192.235 351.832 Q 185.305 347.831 185.305 355.831 L 185.305 493.831 Q 185.305 501.831 192.235 505.832 Z"></path>
+      <path id="house-wall-gable" class="face wall-2" d="M 614.877 533.830 L 434.733 637.832 Q 427.805 641.831 427.805 633.831 L 427.805 495.831 Q 427.805 487.831 431.159 480.569 L 521.451 285.093 Q 524.805 277.831 530.433 283.517 L 616.177 370.145 Q 621.805 375.831 621.805 383.831 L 621.805 521.831 Q 621.805 529.831 614.877 533.830 Z"></path>
+      <path id="window-big" class="face window" d="M 275.301 511.559 L 326.571 541.159 C 328.881 542.492 330.036 541.826 330.036 539.159 L 330.036 505.159 C 330.036 502.492 328.881 500.492 326.571 499.159 L 275.301 469.559 C 272.991 468.226 271.836 468.892 271.836 471.559 L 271.836 505.559 C 271.836 508.226 272.991 510.226 275.301 511.559 Z"></path>
+      <path class="mullion" d="M 300.936 526.359 L 300.936 484.359 M 271.836 488.559 L 330.036 522.159"></path>
+      <path id="door" class="face door" d="M 231.809 528.196 L 259.928 544.251 C 262.259 545.841 263.406 545.046 263.371 541.864 L 263.213 460.275 C 263.177 457.093 263.236 454.501 260.905 452.91 L 233.269 436.909 C 231.011 435.95 229.092 437.567 229.108 439.895 L 228.762 521.118 C 228.798 524.299 229.478 526.606 231.809 528.196 Z" style=""></path>
+      <circle class="knob" cx="256.494" cy="505.168" r="2.6"></circle>
+      <path id="window-small" class="face window" d="M 191.368 465.232 L 220.078 481.81 C 221.812 482.81 222.679 482.31 222.679 480.31 L 222.679 449.91 C 222.679 447.91 221.812 446.41 220.078 445.41 L 191.368 428.832 C 189.634 427.832 188.767 428.332 188.767 430.332 L 188.767 460.732 C 188.767 462.732 189.634 464.232 191.368 465.232 Z" style="stroke-width: 1.2;"></path>
+      <path class="mullion" d="M 204.11 472.134 L 204.055 436.381"></path>
       <g id="3d-roof-group">
-        <path id="roof-main" class="face roof" d="M 268.506 140.453 C 270.363 137.017 275.425 136.696 277.898 139.002 L 530.317 283.152 C 527.432 280.569 522.865 282.01 521.791 284.698 L 420.577 510.518 C 416.109 516.87 409.256 517.379 400.019 512.046 L 175.642 382.509 C 166.405 377.176 164.02 369.666 168.488 359.981 L 268.506 140.453 Z"/>
+        <path id="roof-main" class="face roof" d="M 268.506 140.453 C 270.363 137.017 275.425 136.696 277.898 139.002 L 530.317 283.152 C 527.432 280.569 522.865 282.01 521.791 284.698 L 420.577 510.518 C 416.109 516.87 409.256 517.379 400.019 512.046 L 175.642 382.509 C 166.405 377.176 164.02 369.666 168.488 359.981 L 268.506 140.453 Z"></path>
       </g>
     </g>
   </g>
@@ -269,79 +280,76 @@
       <title>Solar</title>
       <g id="solar" transform="matrix(1.168783, 0, 0, 0.866328, -34.288139, 100.382149)" style="">
         <title>solar-modul</title>
-        <path id="solar-surface" d="M 278.152 170.176 L 480.520 287.004 Q 490.911 293.004 485.895 303.906 L 408.480 472.171 Q 403.464 483.073 393.073 477.073 L 190.705 360.245 Q 180.314 354.245 185.330 343.343 L 262.745 175.078 Q 267.761 164.176 278.152 170.176 Z"/>
-        <path class="panel" data-row="0" data-col="0" d="M 271.794 176.852 L 307.07 197.218 L 268.989 279.988 L 233.713 259.622 Z"/>
-        <path class="panel" data-row="0" data-col="1" d="M 314.865 201.718 L 350.142 222.083 L 312.061 304.854 L 276.784 284.488 Z"/>
-        <path class="panel" data-row="0" data-col="2" d="M 357.936 226.583 L 393.213 246.949 L 355.132 329.719 L 319.855 309.353 Z"/>
-        <path class="panel" data-row="0" data-col="3" d="M 401.007 251.449 L 436.284 271.815 L 398.203 354.585 L 362.926 334.219 Z"/>
-        <path class="panel" data-row="0" data-col="4" d="M 444.078 276.315 L 479.355 296.68 L 441.274 379.451 L 405.997 359.085 Z"/>
-        <path class="panel" data-row="1" data-col="0" d="M 229.951 267.798 L 265.228 288.164 L 227.147 370.934 L 191.87 350.569 Z"/>
-        <path class="panel" data-row="1" data-col="1" d="M 273.022 292.664 L 308.299 313.03 L 270.218 395.8 L 234.941 375.434 Z"/>
-        <path class="panel" data-row="1" data-col="2" d="M 316.093 317.53 L 351.37 337.896 L 313.289 420.666 L 278.012 400.3 Z"/>
-        <path class="panel" data-row="1" data-col="3" d="M 359.164 342.395 L 394.441 362.761 L 356.36 445.531 L 321.083 425.166 Z"/>
-        <path class="panel" data-row="1" data-col="4" d="M 402.236 367.261 L 437.512 387.627 L 399.431 470.397 L 364.155 450.031 Z"/>
+        <path id="solar-surface" d="M 278.152 170.176 L 480.520 287.004 Q 490.911 293.004 485.895 303.906 L 408.480 472.171 Q 403.464 483.073 393.073 477.073 L 190.705 360.245 Q 180.314 354.245 185.330 343.343 L 262.745 175.078 Q 267.761 164.176 278.152 170.176 Z"></path>
+        <path class="panel" data-row="0" data-col="0" d="M 271.794 176.852 L 307.07 197.218 L 268.989 279.988 L 233.713 259.622 Z"></path>
+        <path class="panel" data-row="0" data-col="1" d="M 314.865 201.718 L 350.142 222.083 L 312.061 304.854 L 276.784 284.488 Z"></path>
+        <path class="panel" data-row="0" data-col="2" d="M 357.936 226.583 L 393.213 246.949 L 355.132 329.719 L 319.855 309.353 Z"></path>
+        <path class="panel" data-row="0" data-col="3" d="M 401.007 251.449 L 436.284 271.815 L 398.203 354.585 L 362.926 334.219 Z"></path>
+        <path class="panel" data-row="0" data-col="4" d="M 444.078 276.315 L 479.355 296.68 L 441.274 379.451 L 405.997 359.085 Z"></path>
+        <path class="panel" data-row="1" data-col="0" d="M 229.951 267.798 L 265.228 288.164 L 227.147 370.934 L 191.87 350.569 Z"></path>
+        <path class="panel" data-row="1" data-col="1" d="M 273.022 292.664 L 308.299 313.03 L 270.218 395.8 L 234.941 375.434 Z"></path>
+        <path class="panel" data-row="1" data-col="2" d="M 316.093 317.53 L 351.37 337.896 L 313.289 420.666 L 278.012 400.3 Z"></path>
+        <path class="panel" data-row="1" data-col="3" d="M 359.164 342.395 L 394.441 362.761 L 356.36 445.531 L 321.083 425.166 Z"></path>
+        <path class="panel" data-row="1" data-col="4" d="M 402.236 367.261 L 437.512 387.627 L 399.431 470.397 L 364.155 450.031 Z"></path>
       </g>
       <path id="kabel-solar" class="cable" d="M 482.013 434.441 L 498.85 441.051 L 460.345 501.712 L 471.094 504.802 L 543.612 470.504" style="">
         <title>kabel-solar</title>
       </path>
-      <g id="label-solar-text" transform="matrix(1, 0, 0, 1, -223.817825, -16.112965)">
+      <g id="label-solar-text" transform="matrix(1, 0, 0, 1, -177.832458, -22.5945)">
         <title>Text</title>
-        <text x="302.586" y="130.628" style="white-space: pre;">
-          <tspan class="t-header" style="font-size: 30.4px; word-spacing: 0px;">Solar</tspan>
-          <tspan class="v_live" style="font-size: 20.8px; word-spacing: 0px;">4.5kW</tspan>, <tspan class="v_total" style="font-size: 19.2px; word-spacing: 0px;">25kWh</tspan><tspan class="t-box" dy="0.5rem" style="font-size: 19.2px; word-spacing: 0px;">
-          	<tspan class="t-sub" style="font-size: 19.2px; word-spacing: 0px;">Dach Ost</tspan> <tspan class="v_sub_live" style="font-size: 19.2px; word-spacing: 0px;">10kw</tspan>
-          	<tspan class="t-sub" style="font-size: 19.2px; word-spacing: 0px;">Dach West</tspan> <tspan class="v_sub_live" style="font-size: 19.2px; word-spacing: 0px;">15kw</tspan>
-           </tspan>
-        </text>
+<text x="302.586" y="130.628"><tspan class="t-header">Solar</tspan>
+<tspan class="v_live">4.5kW</tspan>, <tspan class="v_total">25kWh</tspan><tspan class="t-box" dy="0.5rem">
+<tspan class="t-sub">Dach Ost</tspan> <tspan class="v_sub_live">10kw</tspan>
+<tspan class="t-sub">Dach West</tspan> <tspan class="v_sub_live">15kw</tspan>
+</tspan>
+</text>
       </g>
     </g>
     <g id="label-wallbox" class="label">
       <title>Wallbox</title>
       <g id="wallbox" class="device" transform="matrix(1.343973, 0, -0.007703, 0.966777, -188.823166, 44.816444)" style="">
         <title>wallbox-geraet</title>
-        <path class="sockel" d="M 742.99 440.64 Q 744.28 439.9 744.28 438.4 L 744.28 418.25 Q 744.28 416.75 742.99 417.5 L 741.02 418.62 Q 739.73 419.37 739.73 420.87 L 739.73 441.03 Q 739.73 442.53 741.02 441.78 Z"/>
-        <path class="face side" d="M 740.48 445.8 Q 743.06 444.3 743.06 441.3 L 743.06 415.1 Q 743.06 412.1 740.48 413.6 L 738.89 414.49 Q 736.31 415.99 736.31 418.99 L 736.31 445.19 Q 736.31 448.19 738.89 446.69 Z"/>
-        <path class="face front" d="M 736.17 445.16 Q 736.17 448.16 733.38 447.08 L 713.94 439.62 Q 711.15 438.54 711.15 435.54 L 710.53 409.41 Q 710.53 406.41 713.32 407.49 L 733.38 414.88 Q 736.17 415.96 736.17 418.96 Z"/>
-        <path class="face top" d="M 714.6 403.82 Q 717.18 402.32 719.97 403.4 L 740.24 411.21 Q 743.03 412.29 740.45 413.79 L 739.21 414.48 Q 736.63 415.98 733.84 414.9 L 713.39 407.13 Q 710.6 406.05 713.18 404.55 Z"/>
-        <path class="icon" d="M 726.379 419.686 L 720.169 425.286 L 726.528 428.986 L 720.322 434.886" style="stroke-width: 2.64803px;"/>
+        <path class="sockel" d="M 742.99 440.64 Q 744.28 439.9 744.28 438.4 L 744.28 418.25 Q 744.28 416.75 742.99 417.5 L 741.02 418.62 Q 739.73 419.37 739.73 420.87 L 739.73 441.03 Q 739.73 442.53 741.02 441.78 Z"></path>
+        <path class="face side" d="M 740.48 445.8 Q 743.06 444.3 743.06 441.3 L 743.06 415.1 Q 743.06 412.1 740.48 413.6 L 738.89 414.49 Q 736.31 415.99 736.31 418.99 L 736.31 445.19 Q 736.31 448.19 738.89 446.69 Z"></path>
+        <path class="face front" d="M 736.17 445.16 Q 736.17 448.16 733.38 447.08 L 713.94 439.62 Q 711.15 438.54 711.15 435.54 L 710.53 409.41 Q 710.53 406.41 713.32 407.49 L 733.38 414.88 Q 736.17 415.96 736.17 418.96 Z"></path>
+        <path class="face top" d="M 714.6 403.82 Q 717.18 402.32 719.97 403.4 L 740.24 411.21 Q 743.03 412.29 740.45 413.79 L 739.21 414.48 Q 736.63 415.98 733.84 414.9 L 713.39 407.13 Q 710.6 406.05 713.18 404.55 Z"></path>
+        <path class="icon" d="M 726.379 419.686 L 720.169 425.286 L 726.528 428.986 L 720.322 434.886" style="stroke-width: 2.64803px;"></path>
       </g>
       <path id="kabel-wallbox" class="cable" d="M 800.444 439.994 L 800.388 412.365 L 811.182 415.573 L 811.219 410.627 L 804.637 408.803 L 666.367 452.263 L 666.51 430.899 L 686.687 440.502 L 617.246 462.92" mask="url(#wand-maske)" style="">
         <title>kabel-wallbox</title>
       </path>
       <g id="label-wallbox-text" transform="matrix(1, 0, 0, 1, -48.650562, 50.689007)">
         <title>Text</title>
-        <text x="560" y="165" style="white-space: pre;">
-          <tspan class="t-header">Wallbox</tspan><tspan class="t-box" dy="0.5rem">
-          <tspan class="wstation"><tspan class="t-sub">Carport</tspan> <tspan class="v_cap">80%</tspan><tspan class="v_live">11kW</tspan>, <tspan class="v_total">50kWh</tspan></tspan>
-          <tspan dy="0.25rem" class="wstation"><tspan class="t-sub">Gerage</tspan> <tspan class="v_cap">80%</tspan><tspan class="v_live">11kW</tspan>, <tspan class="v_total">50kWh</tspan></tspan>
-          </tspan>
-        </text>
+<text y="165" x="600"><tspan class="t-header">Wallbox</tspan><tspan class="t-box" dy="0.5rem">
+<tspan class="wstation"><tspan class="t-sub">Carport</tspan> <tspan class="v_cap">80%</tspan><tspan class="v_live">11kW</tspan>, <tspan class="v_total">50kWh</tspan></tspan>
+<tspan dy="0.25rem" class="wstation"><tspan class="t-sub">Gerage</tspan> <tspan class="v_cap">80%</tspan><tspan class="v_live">11kW</tspan>, <tspan class="v_total">50kWh</tspan></tspan>
+</tspan>
+</text>
       </g>
     </g>
     <g id="label-netz" class="label">
       <title>Netz</title>
-      <path class="cable" d="M 691.442 574.094 L 678.095 570.469 L 629.157 593.469 L 612.746 588.668 L 612.853 491.989" style=""/>
-      <g id="label-netz-text" transform="matrix(1, 0, 0, 1, -18.589014, 28.902037)">
+      <path class="cable" d="M 691.442 574.094 L 678.095 570.469 L 629.157 593.469 L 612.746 588.668 L 612.853 491.989" style=""></path>
+      <g id="label-netz-text" transform="matrix(1, 0, 0, 1, 34.144436, 25.004732)">
         <title>Text</title>
-        <text x="630" y="572" style="white-space: pre;">
-          <tspan class="t-header">Netz</tspan>
-          <tspan class="v_live">2kW</tspan>, <tspan class="v_total">10kWh</tspan><tspan dy="0.5rem" class="t-box">
-          <tspan class="t-sub">Bezug</tspan> <tspan class="v_in">5kWh</tspan>
-          <tspan class="t-sub">Einspeisung</tspan> <tspan class="v_out">3kWh</tspan>
-          </tspan>
-        </text>
+<text x="625" y="595"><tspan class="t-header">Netz</tspan>
+<tspan class="v_live">2kW</tspan>, <tspan class="v_total">10kWh</tspan><tspan dy="0.5rem" class="t-box">
+<tspan class="t-sub">Bezug</tspan> <tspan class="v_in">5kWh</tspan>
+<tspan class="t-sub">Einspeisung</tspan> <tspan class="v_out">3kWh</tspan>
+</tspan>
+</text>
       </g>
     </g>
     <g id="label-batterie" class="label">
       <title>Batterie</title>
       <g id="battery" class="device" transform="matrix(1.168783, 0, 0, 0.866328, -40.398525, 98.562454)" style="">
         <title>batterie-geraet</title>
-        <path class="face sockel-side" d="M 410.3 629.5 Q 410.3 631.5 408.57 632.5 L 399.93 637.5 Q 398.2 638.5 398.2 636.5 L 398.2 630.7 Q 398.2 628.7 399.93 627.7 L 408.57 622.7 Q 410.3 621.7 410.3 623.7 Z"/>
-        <path class="face sockel-front" d="M 398.2 636.5 Q 398.2 638.5 396.47 637.5 L 358.73 615.7 Q 357.0 614.7 357.0 612.7 L 357.0 606.9 Q 357.0 604.9 358.73 605.9 L 396.47 627.7 Q 398.2 628.7 398.2 630.7 Z"/>
-        <path class="face sockel-top" d="M 364.77 600.4 Q 369.1 597.9 373.43 600.4 L 405.97 619.2 Q 410.3 621.7 405.97 624.2 L 402.53 626.2 Q 398.2 628.7 393.87 626.2 L 361.33 607.4 Q 357.0 604.9 361.33 602.4 Z"/>
-        <path class="face side" d="M 409.57 623.3 Q 413.9 620.8 413.9 615.8 L 413.9 557.4 Q 413.9 552.4 409.57 554.9 L 403.73 558.3 Q 399.4 560.8 399.4 565.8 L 399.4 627.2 Q 399.4 632.2 403.73 629.7 Z"/>
-        <path class="face front" d="M 399.4 627.2 Q 399.4 632.2 395.07 629.7 L 355.23 606.7 Q 350.9 604.2 350.9 599.2 L 350.9 537.8 Q 350.9 532.8 355.23 535.3 L 395.07 558.3 Q 399.4 560.8 399.4 565.8 Z"/>
-        <path class="face top" d="M 361.07 526.9 Q 365.4 524.4 369.73 526.9 L 409.57 549.9 Q 413.9 552.4 409.57 554.9 L 403.73 558.3 Q 399.4 560.8 395.07 558.3 L 355.23 535.3 Q 350.9 532.8 355.23 530.3 Z"/>
+        <path class="face sockel-side" d="M 410.3 629.5 Q 410.3 631.5 408.57 632.5 L 399.93 637.5 Q 398.2 638.5 398.2 636.5 L 398.2 630.7 Q 398.2 628.7 399.93 627.7 L 408.57 622.7 Q 410.3 621.7 410.3 623.7 Z"></path>
+        <path class="face sockel-front" d="M 398.2 636.5 Q 398.2 638.5 396.47 637.5 L 358.73 615.7 Q 357.0 614.7 357.0 612.7 L 357.0 606.9 Q 357.0 604.9 358.73 605.9 L 396.47 627.7 Q 398.2 628.7 398.2 630.7 Z"></path>
+        <path class="face sockel-top" d="M 364.77 600.4 Q 369.1 597.9 373.43 600.4 L 405.97 619.2 Q 410.3 621.7 405.97 624.2 L 402.53 626.2 Q 398.2 628.7 393.87 626.2 L 361.33 607.4 Q 357.0 604.9 361.33 602.4 Z"></path>
+        <path class="face side" d="M 409.57 623.3 Q 413.9 620.8 413.9 615.8 L 413.9 557.4 Q 413.9 552.4 409.57 554.9 L 403.73 558.3 Q 399.4 560.8 399.4 565.8 L 399.4 627.2 Q 399.4 632.2 403.73 629.7 Z"></path>
+        <path class="face front" d="M 399.4 627.2 Q 399.4 632.2 395.07 629.7 L 355.23 606.7 Q 350.9 604.2 350.9 599.2 L 350.9 537.8 Q 350.9 532.8 355.23 535.3 L 395.07 558.3 Q 399.4 560.8 399.4 565.8 Z"></path>
+        <path class="face top" d="M 361.07 526.9 Q 365.4 524.4 369.73 526.9 L 409.57 549.9 Q 413.9 552.4 409.57 554.9 L 403.73 558.3 Q 399.4 560.8 395.07 558.3 L 355.23 535.3 Q 350.9 532.8 355.23 530.3 Z"></path>
         <g id="soc" transform="matrix(1, 0.577, 0, 1, 359.127, 596.95)">
           <title>batterie-ladestand</title>
           <rect id="soc-track" x="0" y="-50.4" width="9" height="50.4" rx="4.5">
@@ -351,18 +359,17 @@
             <title>batterie-ladestand-balken</title>
           </rect>
         </g>
-        <path class="icon" d="M 389.943 568.163 L 377.36 579.261 L 375.03 581.316 L 390.537 590.007 L 375.64 603.865" style="stroke-width: 3px;"/>
+        <path class="icon" d="M 389.943 568.163 L 377.36 579.261 L 375.03 581.316 L 390.537 590.007 L 375.64 603.865" style="stroke-width: 3px;"></path>
       </g>
-      <path class="cable" d="M 444.219 603.316 L 452.634 605.969 L 453.373 537.959 L 460.369 540.808 L 544.369 505.854" style=""/>
-      <g id="label-batterie-text" transform="matrix(0.912976, 0, 0, 0.9228, 86.040718, 77.952553)" style="">
+      <path class="cable" d="M 444.219 603.316 L 452.634 605.969 L 453.373 537.959 L 460.369 540.808 L 544.369 505.854" style=""></path>
+      <g id="label-batterie-text" transform="matrix(1, 0, 0, 1, 55.879063, 79.539398)" style="">
         <title>Text</title>
-        <text x="199.602" y="645.271" style="white-space: pre;">
-          <tspan class="t-header" style="font-size: 30.4px; word-spacing: 0px;">Batterie</tspan>
-          <tspan class="v_live" style="font-size: 20.8px; word-spacing: 0px;">5kW</tspan>, <tspan class="v_total" style="font-size: 19.2px; word-spacing: 0px;">20kWh</tspan><tspan dy="0.5rem" class="box" style="font-size: 19.2px; word-spacing: 0px;">
-          <tspan class="t-sub" style="font-size: 19.2px; word-spacing: 0px;">Geladen </tspan><tspan class="v_in" style="font-size: 19.2px; word-spacing: 0px;">7kWh</tspan>
-          <tspan class="t-sub" style="font-size: 19.2px; word-spacing: 0px;">Entladen </tspan><tspan class="v_out" style="font-size: 19.2px; word-spacing: 0px;">2kWh</tspan>
-          </tspan>
-        </text>
+<text y="600" x="211.97"><tspan class="t-header">Batterie</tspan>
+<tspan class="v_live">5kW</tspan>, <tspan class="v_total">20kWh</tspan><tspan dy="0.5rem" class="box">
+<tspan class="t-sub">Geladen</tspan> <tspan class="v_in">7kWh</tspan>
+<tspan class="t-sub">Entladen</tspan> <tspan class="v_out">2kWh</tspan>
+</tspan>
+</text>
       </g>
     </g>
     <g id="label-waermepumpe" class="label">
@@ -378,43 +385,41 @@
         <path class="face sockel-top" d="M 511.97 577.1 Q 516.3 574.6 520.63 577.1 L 536.27 586.1 Q 540.6 588.6 536.27 591.1 L 489.13 618.3 Q 484.8 620.8 480.47 618.3 L 464.93 609.3 Q 460.6 606.8 464.93 604.3 Z">
           <title>sockel-oben</title>
         </path>
-        <path class="face side" d="M 543.57 591.1 Q 547.9 588.6 547.9 583.6 L 547.9 548.8 Q 547.9 543.8 543.57 546.3 L 489.13 577.7 Q 484.8 580.2 484.8 585.2 L 484.8 620.0 Q 484.8 625.0 489.13 622.5 Z"/>
-        <path class="face front" d="M 484.8 620.0 Q 484.8 625.0 480.47 622.5 L 457.63 609.3 Q 453.3 606.8 453.3 601.8 L 453.3 567.0 Q 453.3 562.0 457.63 564.5 L 480.47 577.7 Q 484.8 580.2 484.8 585.2 Z"/>
+        <path class="face side" d="M 543.57 591.1 Q 547.9 588.6 547.9 583.6 L 547.9 548.8 Q 547.9 543.8 543.57 546.3 L 489.13 577.7 Q 484.8 580.2 484.8 585.2 L 484.8 620.0 Q 484.8 625.0 489.13 622.5 Z"></path>
+        <path class="face front" d="M 484.8 620.0 Q 484.8 625.0 480.47 622.5 L 457.63 609.3 Q 453.3 606.8 453.3 601.8 L 453.3 567.0 Q 453.3 562.0 457.63 564.5 L 480.47 577.7 Q 484.8 580.2 484.8 585.2 Z"></path>
         <path class="fan-disc" d="M 516.962 584.717 C 516.962 576.212 522.934 565.87 530.3 561.617 C 537.666 557.364 543.637 560.812 543.637 569.317 C 543.637 577.822 537.666 588.164 530.3 592.417 C 522.934 596.67 516.962 593.222 516.962 584.717 Z">
           <title>luefter</title>
         </path>
         <path class="fan icon" d="M 530.3 577.017 L 530.121 566.041 M 530.3 577.017 L 538.72 577.797 M 530.3 577.017 L 521.276 588.568">
           <title>luefter-blaetter</title>
         </path>
-        <path class="face top" d="M 511.97 528.1 Q 516.3 525.6 520.63 528.1 L 543.57 541.3 Q 547.9 543.8 543.57 546.3 L 489.13 577.7 Q 484.8 580.2 480.47 577.7 L 457.63 564.5 Q 453.3 562.0 457.63 559.5 Z"/>
+        <path class="face top" d="M 511.97 528.1 Q 516.3 525.6 520.63 528.1 L 543.57 541.3 Q 547.9 543.8 543.57 546.3 L 489.13 577.7 Q 484.8 580.2 480.47 577.7 L 457.63 564.5 Q 453.3 562.0 457.63 559.5 Z"></path>
       </g>
-      <path class="cable" d="M 561.815 511.818 L 562.437 558.199" style="transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(-1, 0, 0, -1, -1.070953, 0.408936)"/>
-      <g id="label-waermepumpe-text" transform="matrix(1, 0, 0, 1, -5.928053, -7.294254)">
+      <path class="cable" d="M 561.815 511.818 L 562.437 558.199" style="transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(-1, 0, 0, -1, -1.070953, 0.408936)"></path>
+      <g id="label-waermepumpe-text" transform="matrix(1, 0, 0, 1, 25.410934, -3.834377)">
         <title>Text</title>
-        <text x="418" y="685" style="white-space: pre;">
-          <tspan class="t-header">Wärmepumpe</tspan>
-          <tspan class="v_live">3kW</tspan>, <tspan class="v_total">12kWh</tspan>
-        </text>
+<text x="413" y="705"><tspan class="t-header">Wärmepumpe</tspan>
+<tspan class="v_live">3kW</tspan>, <tspan class="v_total">12kWh</tspan>
+</text>
       </g>
     </g>
     <g id="ha-box" class="device" transform="matrix(1.168783, 0, 0, 0.866328, -40.39854, 98.562447)" style="">
       <title>Steuerelement</title>
-      <path class="face side" d="M 561.83 458.854 C 565.08 457.314 566.705 454.869 566.705 451.521 L 566.705 396.321 C 566.705 392.972 565.08 392.068 561.83 393.608 L 517.552 414.905 C 514.302 416.445 512.677 418.89 512.677 422.238 L 512.612 478.252 C 512.612 481.6 514.236 482.504 517.486 480.964 L 561.83 458.854 Z" style=""/>
-      <path class="sockel" d="M 504.944 471.371 C 504.944 472.71 504.236 473.199 502.819 472.837 L 497.385 471.461 C 495.968 471.099 495.26 470.248 495.26 468.909 L 495.26 423.192 C 495.26 421.853 495.968 421.364 497.385 421.726 L 502.819 423.102 C 504.236 423.464 504.944 424.314 504.944 425.653 L 504.944 471.371 Z" style=""/>
-      <path class="face front" d="M 512.612 478.252 C 512.612 481.6 510.841 482.873 507.299 482.069 L 502.655 480.632 C 499.112 479.829 497.342 477.752 497.342 474.404 L 497.342 418.742 C 497.342 415.394 499.112 414.121 502.655 414.925 L 507.364 416.01 C 510.907 416.813 512.677 418.89 512.677 422.238 L 512.612 478.252 Z" style=""/>
-      <path class="face top" d="M 551.161 388.123 C 554.41 386.583 557.624 386.65 560.801 388.324 L 561.94 388.786 C 565.117 390.461 565.08 392.068 561.83 393.608 L 517.552 414.905 C 514.302 416.445 510.907 416.813 507.364 416.01 L 502.655 414.925 C 499.112 414.121 498.966 412.949 502.216 411.409 L 551.161 388.123 Z" style=""/>
-      <ellipse class="highlight-bg" cx="538.218" cy="438.402" rx="21.493" ry="23.26" transform="matrix(0.895603, -0.444854, 0, 1.116566, 57.628737, 187.209665)" style=""/>
-      <path class="icon icon-fill" d="M 552.37 441.85 L 552.244 427.45 L 540.33 419.091 L 527.13 439.28 L 526.947 455.157 L 552.37 441.85 Z" style=""/>
-      <path class="icon-out" d="M 539.867 427.995 L 539.859 447.331 M 539.958 437.989 L 544.531 430.557 M 539.124 443.697 L 534.941 443.446" style="stroke-width: 3px;"/>
+      <path class="face side" d="M 561.83 458.854 C 565.08 457.314 566.705 454.869 566.705 451.521 L 566.705 396.321 C 566.705 392.972 565.08 392.068 561.83 393.608 L 517.552 414.905 C 514.302 416.445 512.677 418.89 512.677 422.238 L 512.612 478.252 C 512.612 481.6 514.236 482.504 517.486 480.964 L 561.83 458.854 Z" style=""></path>
+      <path class="sockel" d="M 504.944 471.371 C 504.944 472.71 504.236 473.199 502.819 472.837 L 497.385 471.461 C 495.968 471.099 495.26 470.248 495.26 468.909 L 495.26 423.192 C 495.26 421.853 495.968 421.364 497.385 421.726 L 502.819 423.102 C 504.236 423.464 504.944 424.314 504.944 425.653 L 504.944 471.371 Z" style=""></path>
+      <path class="face front" d="M 512.612 478.252 C 512.612 481.6 510.841 482.873 507.299 482.069 L 502.655 480.632 C 499.112 479.829 497.342 477.752 497.342 474.404 L 497.342 418.742 C 497.342 415.394 499.112 414.121 502.655 414.925 L 507.364 416.01 C 510.907 416.813 512.677 418.89 512.677 422.238 L 512.612 478.252 Z" style=""></path>
+      <path class="face top" d="M 551.161 388.123 C 554.41 386.583 557.624 386.65 560.801 388.324 L 561.94 388.786 C 565.117 390.461 565.08 392.068 561.83 393.608 L 517.552 414.905 C 514.302 416.445 510.907 416.813 507.364 416.01 L 502.655 414.925 C 499.112 414.121 498.966 412.949 502.216 411.409 L 551.161 388.123 Z" style=""></path>
+      <ellipse class="highlight-bg" cx="538.218" cy="438.402" rx="21.493" ry="23.26" transform="matrix(0.895603, -0.444854, 0, 1.116566, 57.628737, 187.209665)" style=""></ellipse>
+      <path class="icon icon-fill" d="M 552.37 441.85 L 552.244 427.45 L 540.33 419.091 L 527.13 439.28 L 526.947 455.157 L 552.37 441.85 Z" style=""></path>
+      <path class="icon-out" d="M 539.867 427.995 L 539.859 447.331 M 539.958 437.989 L 544.531 430.557 M 539.124 443.697 L 534.941 443.446" style="stroke-width: 3px;"></path>
     </g>
-    <g id="label-haushalt" class="label" transform="matrix(0.86687, 0, 0, 1.154616, -6.006975, -16.013775)" style="">
+    <g id="label-haushalt" class="label" style="">
       <title>Haushalt</title>
       <g id="group-3" transform="matrix(1, 0, 0, 1, -338.293579, -163.739349)">
         <title>Text</title>
-        <text x="436.598" y="688.758" style="white-space: pre;">
-          <tspan class="t-header" style="font-size: 30.4px; word-spacing: 0px;">Haushalt</tspan>
-          <tspan class="v_live" style="font-size: 20.8px; word-spacing: 0px;">1.5kW</tspan>, <tspan class="v_total" style="font-size: 19.2px; word-spacing: 0px;">8kWh</tspan>
-        </text>
+<text x="460" y="770"><tspan class="t-header">Haushalt</tspan>
+<tspan class="v_live">1.5kW</tspan>, <tspan class="v_total">8kWh</tspan>
+</text>
       </g>
     </g>
   </g>
