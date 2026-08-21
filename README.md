@@ -11,6 +11,7 @@ Die Karten liegen in der Integration selbst und werden von ihr ausgeliefert —
 **ein einziger Ordner zu kopieren, keine Lovelace-Ressource von Hand
 einzutragen.**
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zipferlacke&repository=homeassistent-energy&category=integration)
 ## Was gehoert wohin
 
 | Aus dem Paket | Ziel in Home Assistant |
