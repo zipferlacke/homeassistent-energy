@@ -1,5 +1,11 @@
 # wuefl Energie für Home Assistant
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=DEIN-GITHUB-NAME&repository=DEIN-REPO-NAME&category=integration)
+
+*Vor dem Veroeffentlichen: `DEIN-GITHUB-NAME` und `DEIN-REPO-NAME` oben durch
+deinen echten GitHub-Benutzernamen und Repository-Namen ersetzen — sonst
+zeigt der Button auf ein nicht existierendes Repository.*
+
 Drei Karten (Live-Energiefluss, Energiebilanz, Wallbox) plus eine kleine
 Integration, die alle Entitäten an einer zentralen Stelle zuordnet.
 
@@ -11,7 +17,6 @@ Die Karten liegen in der Integration selbst und werden von ihr ausgeliefert —
 **ein einziger Ordner zu kopieren, keine Lovelace-Ressource von Hand
 einzutragen.**
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zipferlacke&repository=homeassistent-energy&category=integration)
 ## Was gehoert wohin
 
 | Aus dem Paket | Ziel in Home Assistant |
@@ -81,9 +86,12 @@ Wenn dieses Paket in einem eigenen GitHub-Repository liegt, laesst es sich als
 Wurzelverzeichnis macht das moeglich. Danach ist eine neue Version nur noch
 ein Klick auf "Neu herunterladen" statt Dateien von Hand zu kopieren:
 
-1. In HACS → drei Punkte oben rechts → **Benutzerdefinierte Repositories**.
-2. URL des eigenen Repositories eintragen, Kategorie **Integration**.
-3. "wuefl Energie" suchen, installieren, Home Assistant neu starten.
+1. Auf den Button ganz oben in diesem README klicken (funktioniert nur, wenn
+   dort schon der echte GitHub-Name eingetragen ist) — oeffnet HACS direkt mit
+   dem Repository vorausgefuellt. Oder von Hand:
+2. In HACS → drei Punkte oben rechts → **Benutzerdefinierte Repositories**.
+3. URL des eigenen Repositories eintragen, Kategorie **Integration**.
+4. "wuefl Energie" suchen, installieren, Home Assistant neu starten.
 
 Da alles — Integration und Karten — in `custom_components/wuefl_energy/`
 liegt, reicht die Kategorie *Integration* fuer beides; es ist kein separater

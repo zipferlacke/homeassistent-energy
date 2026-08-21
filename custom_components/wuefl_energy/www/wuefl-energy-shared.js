@@ -18,7 +18,7 @@
 export const TOKENS_CSS = `
 :host {
   /* Flächen und Text */
-  --w-bg:          var(--ha-card-background, var(--card-background-color, #fff));
+  --w-bg:          var(--card-background-color, #fff);
   --w-bg-soft:     var(--secondary-background-color, rgba(127, 127, 127, .12));
   --w-bg-hover:    rgba(127, 127, 127, .22);
   --w-text:        var(--primary-text-color, #212121);
@@ -31,10 +31,10 @@ export const TOKENS_CSS = `
   --w-danger:      var(--error-color, #db4437);
 
   /* Maße */
-  --w-radius:      var(--ha-card-border-radius, 12px);
+  --w-radius:      12px;
   --w-pad:         14px;
   --w-input-h:     36px;
-  --w-shadow:      var(--ha-card-box-shadow, 0 6px 18px rgba(0, 0, 0, .18));
+  --w-shadow:      0 2px 8px rgba(0, 0, 0, .12);
 
   /* Schrift */
   --w-fs-sm:       .82rem;

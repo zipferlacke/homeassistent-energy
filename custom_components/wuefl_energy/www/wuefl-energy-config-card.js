@@ -499,6 +499,13 @@ const CSS = `
               gap: .6rem; margin-top: .9rem; padding-top: .8rem; }
   & .filter label { cursor: pointer; font-size: var(--w-fs-sm); }
   & .filter .why { color: var(--w-text-soft); display: block; font-size: var(--w-fs-sm); }
+  & .save-status {
+    border-radius: var(--w-radius); font-size: var(--w-fs-sm); font-weight: 500;
+    margin-top: .8rem; padding: .55rem .75rem;
+
+    &.ok { background: color-mix(in srgb, var(--w-batt-out) 18%, transparent); color: var(--w-batt-out); }
+    &.error { background: color-mix(in srgb, var(--w-danger) 16%, transparent); color: var(--w-danger); }
+  }
 }
 
 .block {
@@ -631,6 +638,7 @@ class WueflEnergyConfigCard extends HTMLElement {
               setzt seine Integration keine Einheit — dann hier ausschalten.</span>
           </label>
         </div>
+        <p class="save-status" hidden></p>
       </div>
       <div class="blocks"></div>
       <dialog class="edit">
@@ -651,6 +659,7 @@ class WueflEnergyConfigCard extends HTMLElement {
       card, blocks: q('.blocks'), dialog: q('dialog.edit'),
       dialogTitle: q('dialog h3'), formbox: q('.formbox'),
       preset: q('select.preset'), report: q('.report'),
+      saveStatus: q('.save-status'),
     };
 
     for (const [id, p] of Object.entries(PRESETS)) {
@@ -793,6 +802,33 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.dialog.close();
   }
 
+  /**
+   * Speichert und zeigt das Ergebnis sichtbar an — vorher lief ein
+   * Fehlschlag hier stillschweigend in die Browser-Konsole, während die
+   * Oberfläche schon optimistisch aktualisiert war. Das sah aus wie
+   * "gespeichert", war es aber nicht.
+   */
+  async #persist(next) {
+    const el = this.#els.saveStatus;
+    if (el) { el.hidden = true; el.className = 'save-status'; }
+    try {
+      await saveConfig(this.#hass, next);
+      if (el) {
+        el.hidden = false;
+        el.textContent = 'Gespeichert.';
+        el.className = 'save-status ok';
+        setTimeout(() => { el.hidden = true; }, 3000);
+      }
+    } catch (err) {
+      console.error('[wuefl-energy] Speichern fehlgeschlagen', err);
+      if (el) {
+        el.hidden = false;
+        el.className = 'save-status error';
+        el.textContent = `Speichern fehlgeschlagen: ${err?.message ?? err}`;
+      }
+    }
+  }
+
   async #commit() {
     const { block, index } = this.#editing ?? {};
     if (!block) return;
@@ -814,7 +850,7 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#config = next;
     this.#closeDialog();
     this.#render();
-    await saveConfig(this.#hass, next);
+    await this.#persist(next);
   }
 
   async #remove(block, index) {
@@ -833,7 +869,7 @@ class WueflEnergyConfigCard extends HTMLElement {
 
     this.#config = next;
     this.#render();
-    await saveConfig(this.#hass, next);
+    await this.#persist(next);
   }
 
   /* ------------------------------ Vorlage --------------------------- */
@@ -894,7 +930,7 @@ class WueflEnergyConfigCard extends HTMLElement {
 
     this.#config = next;
     this.#render();
-    await saveConfig(this.#hass, next);
+    await this.#persist(next);
 
     this.#els.report.innerHTML = filled
       ? `<strong>${filled} Felder gefüllt.</strong>`

@@ -142,15 +142,20 @@ class WueflEnergyDashboardStrategy {
       { type: 'custom:wuefl-energy-settings-card' },
     ], 1));
 
-    // Die Zuordnung ist eine ganze Seite, kein Kachelraster: sie ist lang,
-    // und die Blöcke brauchen die volle Breite.
+    // Die Zuordnung war als randloses "panel" gedacht, weil sie lang ist —
+    // das bedeutet bei Home Assistant aber ausdrücklich volle Breite ohne
+    // die übliche Begrenzung. "sections" gibt ihr dieselbe angenehme
+    // Breite wie jede andere Ansicht; "subview" bleibt, damit sie weiterhin
+    // kein eigener Reiter ist, sondern nur über den Knopf in den
+    // Einstellungen erreichbar (mit Zurück-Pfeil statt Reiterleiste).
     views.push({
       title: 'Zuordnung',
       path: 'zuordnung',
       icon: 'mdi:format-list-checks',
-      panel: true,
+      type: 'sections',
       subview: true,
-      cards: [{ type: 'custom:wuefl-energy-config-card' }],
+      max_columns: 1,
+      sections: [section([{ type: 'custom:wuefl-energy-config-card' }])],
     });
 
     return { title: 'wuefl Energie', views };
