@@ -987,8 +987,29 @@ export function cssColor(element, colorString, fallback) {
  */
 
 /** In jede Karte einbinden, die tileHtml()/toggleHtml() benutzt. */
+/**
+ * Allgemeiner Seiten-Aufbau: zentriertes, einspaltiges Grid mit maximal
+ * 1000px Breite. In jede Karte, die sich so begrenzen soll, direkt in den
+ * äußeren Container einsetzen (nicht als eigene Klasse — einfach als
+ * Eigenschaften in die vorhandene Wurzel-Regel einbetten):
+ *
+ *   .card { ${GRID_CSS} ... weitere eigene Regeln ... }
+ *
+ * Wer mehr als eine Spalte braucht (z. B. die Energie-Ansicht: Diagramm
+ * neben den Kacheln), überschreibt grid-template-columns selbst per
+ * @media-Regel — GRID_CSS liefert nur die gemeinsame Basis.
+ */
+export const GRID_CSS = `
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+  margin: 0 auto;
+  max-width: 1000px;
+  width: 100%;
+`;
+
 export const TILE_CSS = `
-.ha-tile-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.ha-tile-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
 .ha-tile {
   border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
   border-radius: var(--ha-card-border-radius, 12px);
@@ -1063,4 +1084,134 @@ export function tileHtml({ icon, color, title, value, subtitle, entity, click })
   return attr
     ? `<ha-card class="ha-tile"><button type="button" class="ha-tile" style="background:none;border:0;width:100%;padding:0" ${attr}>${inner}</button></ha-card>`
     : `<ha-card class="ha-tile">${inner}</ha-card>`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Geteilter Zeitraum für die Energie-Ansicht
+ * ------------------------------------------------------------------ *
+ * Die Energie-Ansicht besteht aus mehreren eigenständigen Karten in
+ * getrennten nativen Abschnitten (Zeitraum-Auswahl, Diagramm, Kennzahlen,
+ * Speicher, Solarproduktion) — sie sind unterschiedliche Custom Elements,
+ * keine gemeinsame Klasse mehr. Damit trotzdem alle denselben Zeitraum
+ * zeigen, ohne dass sich die Karten gegenseitig referenzieren, liegt der
+ * aktuelle Zeitraum hier als einziger Ort der Wahrheit: ein ES-Modul wird
+ * pro Seite genau einmal ausgeführt, der Zustand ist also automatisch
+ * zwischen allen Karten geteilt, die "wuefl-energy-shared.js" importieren.
+ */
+const PERIOD_EVENT = 'wuefl-energy-period-changed';
+let currentPeriod = null;
+
+function defaultPeriodRange() {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  return { period: 'day', start, end: now };
+}
+
+/** Aktuellen Zeitraum lesen — beim allerersten Aufruf "heute". */
+export function getPeriod() {
+  if (!currentPeriod) currentPeriod = defaultPeriodRange();
+  return currentPeriod;
+}
+
+/** Zeitraum ändern und alle anderen Energie-Karten benachrichtigen. */
+export function setPeriod(range) {
+  currentPeriod = range;
+  window.dispatchEvent(new CustomEvent(PERIOD_EVENT, { detail: range }));
+}
+
+/** In #connectedCallback() aufrufen; gibt die Aufräum-Funktion zurück. */
+export function onPeriodChange(fn) {
+  const handler = (ev) => fn(ev.detail);
+  window.addEventListener(PERIOD_EVENT, handler);
+  return () => window.removeEventListener(PERIOD_EVENT, handler);
+}
+
+/** Zeitfenster in eine passende Statistik-Auflösung übersetzen. */
+export function periodResolution(range) {
+  const days = (range.end - range.start) / 86_400_000;
+  if (range.period === 'day') return 'hour';
+  if (range.period === 'week' || range.period === 'month') return 'day';
+  if (range.period === 'custom') return days <= 3 ? 'hour' : days <= 90 ? 'day' : 'month';
+  return 'month';
+}
+
+/** Gemeinsamer Aufruf für recorder/statistics_during_period, mit Fehlerabsicherung. */
+export async function fetchStats(hass, ids, range, types = ['change']) {
+  if (!hass || !ids.length) return {};
+  try {
+    return await hass.callWS({
+      type: 'recorder/statistics_during_period',
+      start_time: range.start.toISOString(),
+      end_time: range.end.toISOString(),
+      statistic_ids: ids,
+      period: periodResolution(range),
+      types,
+    });
+  } catch {
+    return {};
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Diagramm-Karte einbetten ("energy-custom-graph-card" von Thyraz)
+ * ------------------------------------------------------------------ *
+ * Alle Energie-Diagramme (Hauptverteilung, Speicher, Solarproduktion)
+ * betten dieselbe fremde Karte auf dieselbe Art ein — deshalb hier einmal
+ * zentral statt in jeder Karte einzeln kopiert.
+ */
+export const CHART_HINT_CSS = `
+.missing {
+  padding: 16px;
+  & h3 { margin: 0 0 8px; }
+  & p { color: var(--secondary-text-color); line-height: 1.5; margin: 0 0 12px; }
+  & a { color: var(--primary-color); }
+  & .links { display: flex; flex-wrap: wrap; gap: 12px; }
+}
+.state { color: var(--secondary-text-color); padding: 24px 0; text-align: center; }
+`;
+
+export const THYRAZ_REPO_URL = 'https://github.com/Thyraz/energy-custom-graph';
+export const THYRAZ_HACS_URL = 'https://my.home-assistant.io/redirect/hacs_repository/'
+  + '?owner=Thyraz&repository=energy-custom-graph&category=dashboard';
+
+export function missingChartHtml() {
+  return `<ha-card><div class="missing">
+    <h3>Diagramm-Karte fehlt</h3>
+    <p>Diese Ansicht nutzt <strong>Energy Custom Graph</strong> von Thyraz — reuse von
+      HA's eigener ECharts-Instanz statt einer eigenen Diagramm-Bibliothek.</p>
+    <div class="links">
+      <a href="${THYRAZ_HACS_URL}" target="_blank" rel="noreferrer">In HACS öffnen</a>
+      <a href="${THYRAZ_REPO_URL}" target="_blank" rel="noreferrer">Projektseite auf GitHub</a>
+    </div>
+  </div></ha-card>`;
+}
+
+/**
+ * Legt die Diagramm-Karte im übergebenen Slot an oder aktualisiert sie.
+ * `existingCard` ist der zuvor zurückgegebene Wert — beim ersten Aufruf
+ * null. Gibt die (ggf. neu erzeugte) Karteninstanz zurück, oder null, wenn
+ * nichts angezeigt werden konnte.
+ */
+export async function embedGraphCard(hass, existingCard, slotEl, config) {
+  if (!customElements.get('energy-custom-graph-card')) {
+    slotEl.innerHTML = missingChartHtml();
+    return null;
+  }
+  if (!config || !config.series?.length) {
+    slotEl.innerHTML = '<div class="state">Keine Daten vorhanden.</div>';
+    return null;
+  }
+  let card = existingCard;
+  if (!card) {
+    const helpers = await window.loadCardHelpers?.();
+    card = helpers ? helpers.createCardElement(config) : document.createElement('energy-custom-graph-card');
+    if (!helpers) card.setConfig?.(config);
+    card.hass = hass;
+    slotEl.replaceChildren(card);
+  } else {
+    card.setConfig?.(config);
+    card.hass = hass;
+  }
+  return card;
 }

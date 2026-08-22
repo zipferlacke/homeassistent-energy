@@ -21,6 +21,10 @@ function ensureCards() {
     cardsLoaded = Promise.all([
       import('./wuefl-energy-live-card.js'),
       import('./wuefl-energy-history-card.js'),
+      import('./wuefl-energy-period-card.js'),
+      import('./wuefl-energy-tiles-card.js'),
+      import('./wuefl-energy-battery-chart-card.js'),
+      import('./wuefl-energy-solar-chart-card.js'),
       import('./wuefl-wallbox-card.js'),
       import('./wuefl-energy-settings-card.js'),
       import('./wuefl-energy-config-card.js'),
@@ -29,14 +33,28 @@ function ensureCards() {
   return cardsLoaded;
 }
 
-const section = (cards) => ({ type: 'grid', cards });
-const view = (title, path, icon, cards, max_columns) => {
+const section = (cards, title) => ({ type: 'grid', cards, ...(title ? { title } : {}) });
+
+/**
+ * `groups` ist entweder eine flache Kartenliste (ein einzelner Abschnitt,
+ * ohne Überschrift — das bisherige Verhalten) oder ein Array aus
+ * { title, cards }-Objekten, wird dann zu je einem eigenen Abschnitt mit
+ * eigenem Rahmen und eigener Überschrift. Mehrere Abschnitte fließen bei
+ * Home Assistant von selbst nebeneinander, bis max_columns erreicht ist —
+ * dafür ist das Sections-Layout gebaut, keine eigene Grid-Arbeit nötig.
+ */
+const view = (title, path, icon, groups, max_columns) => {
+  const isGrouped = Array.isArray(groups) && groups.length > 0 && groups[0]?.cards !== undefined;
+  const sections = isGrouped
+    ? groups.map((g) => section(g.cards, g.title))
+    : [section(groups)];
   const result = {
     title: title,
     path: path,
     icon: icon,
+    show_icon_and_title: true,
     type: 'sections',
-    sections: [section(cards)]
+    sections,
   };
   if (max_columns !== undefined) {
     result.max_columns = max_columns;
@@ -85,19 +103,30 @@ class WueflEnergyDashboardStrategy {
 
     if (hasEnergyEntities) {
       views.push(view('Energie', 'energie', 'mdi:chart-box', [
-        { type: 'custom:wuefl-energy-history-card', grid_options: { columns: 'full' } },
+        { title: 'Zeitraum', cards: [{ type: 'custom:wuefl-energy-period-card' }] },
+        { title: 'Verteilung', cards: [{ type: 'custom:wuefl-energy-history-card' }] },
+        { title: 'Kennzahlen', cards: [{ type: 'custom:wuefl-energy-tiles-card' }] },
+        { title: 'Speicher', cards: [{ type: 'custom:wuefl-energy-battery-chart-card' }] },
+        { title: 'Solarproduktion', cards: [{ type: 'custom:wuefl-energy-solar-chart-card' }] },
       ], 2));
     }
 
     if (raw.wallboxes.length) {
+      // Bei einer Wallbox reicht ein Abschnitt ohne eigene Überschrift —
+      // der Name steht ja schon in der Karte selbst. Bei mehreren bekommt
+      // jede ihren eigenen Abschnitt mit dem Namen als Überschrift, statt
+      // alle Karten ununterschieden nebeneinanderzustellen.
+      const groups = raw.wallboxes.length === 1
+        ? [{ type: 'custom:wuefl-wallbox-card', slot: 1, grid_options: { columns: 'full' } }]
+        : raw.wallboxes.map((wb, i) => ({
+            title: wb.name || `Wallbox ${i + 1}`,
+            cards: [{ type: 'custom:wuefl-wallbox-card', slot: i + 1 }],
+          }));
       views.push(view(
         raw.wallboxes.length > 1 ? 'Wallboxen' : 'Wallbox',
         'wallbox',
         'mdi:ev-station',
-        raw.wallboxes.map((_, i) => ({
-          type: 'custom:wuefl-wallbox-card', slot: i + 1,
-          ...(raw.wallboxes.length === 1 ? { grid_options: { columns: 'full' } } : {}),
-        })),
+        groups,
         Math.max(2, Math.min(2, raw.wallboxes.length)),
       ));
     }

@@ -11,11 +11,14 @@
 import {
   adoptSheet, num, icon, esc,
   registerCard, centralConfig, mergeConfig, entityIds, statesChanged,
-  COLORS, WueflFormEditor, sel,
+  COLORS, WueflFormEditor, sel, GRID_CSS,
 } from './wuefl-energy-shared.js';
 
 const CSS = `
-.card { display: flex; flex-direction: column; gap: .2rem; }
+.card {
+  ${GRID_CSS}
+  gap: .2rem;
+}
 
 .group {
   margin-top: 1.3rem;

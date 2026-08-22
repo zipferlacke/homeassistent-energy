@@ -13,7 +13,7 @@ import {
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtEuro, esc, icon, registerCard,
   weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
   entityIds, statesChanged, pvForecast, todayTotals, todaySum,
-  COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml,
+  COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
 } from './wuefl-energy-shared.js';
 
 // Wird von der Integration selbst ausgeliefert (siehe __init__.py,
@@ -34,6 +34,7 @@ const PARTS = {
 const CSS = `
 ${TILE_CSS}
 .card {
+  ${GRID_CSS}
   & .head { align-items: start; display: flex; gap: .5rem; justify-content: space-between; }
 }
 

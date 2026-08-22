@@ -13,7 +13,7 @@
 
 import {
   adoptSheet, icon, esc, registerCard, rawConfig, saveConfig, normalizeConfig,
-  asList, WueflFormEditor, sel,
+  asList, WueflFormEditor, sel, GRID_CSS,
 } from './wuefl-energy-shared.js';
 
 /* ------------------------------------------------------------------ *
@@ -101,6 +101,7 @@ const BLOCKS = [
     schema: [
       { name: 'name', selector: () => text() },
       { name: 'power', selector: () => watt() },
+      { name: 'energy_total', selector: () => kwh() },
     ],
   },
   {
@@ -293,6 +294,7 @@ const LABELS = {
   strings: {
     name: 'Bezeichnung',
     power: 'Leistung dieser Fläche',
+    energy_total: 'Zähler dieser Fläche',
   },
   battery: {
     name: 'Bezeichnung',
@@ -370,6 +372,9 @@ const HELPERS = {
   strings: {
     name: 'Erscheint als Beschriftung in der Live-Ansicht, z. B. "Dach Ost".',
     power: 'Live-Wert in Watt (W) dieser einzelnen Fläche.',
+    energy_total: 'Gesamt-Zähler in kWh dieser Fläche — nur damit erscheint sie einzeln '
+      + 'im Diagramm der Energie-Ansicht. Ohne diesen Zähler bleibt sie dort weg, weil '
+      + 'sich Leistung (W) nicht als Energie über einen Zeitraum summieren lässt.',
   },
   battery: {
     name: 'Erscheint als Beschriftung in der Live-Ansicht.',
@@ -505,7 +510,11 @@ function findEntity(states, part) {
  * ------------------------------------------------------------------ */
 
 const CSS = `
-.card { padding: 0; background: none; }
+.card {
+  ${GRID_CSS}
+  padding: 0;
+  background: none;
+}
 
 .intro {
   background: var(--w-bg);

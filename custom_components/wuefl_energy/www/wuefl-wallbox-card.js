@@ -9,7 +9,7 @@ import {
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtDuration, moreInfo,
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
-  esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml,
+  esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
 } from './wuefl-energy-shared.js';
 
 /* Der Modus wird am Namen der Option erkannt – eigene Bezeichnungen im
@@ -25,6 +25,9 @@ const modeInfo = (label) => MODE_KINDS.find((m) => m.match.test(label)) ?? { ico
 
 const CSS = `
 ${TILE_CSS}
+.card {
+  ${GRID_CSS}
+}
 .top {
   & .head { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; }
   & .name { font-size: 1.35rem; font-weight: 600; line-height: 1.25; }
