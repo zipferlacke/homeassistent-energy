@@ -117,24 +117,38 @@ const CSS = `
 
 .money {
   display: grid;
-  gap: .55rem;
-  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   margin-top: .75rem;
 
-  /* Bilanz ist die Aussage, Bezug und Einspeisung sind die Herleitung –
-     deshalb stehen sie klein darunter statt als gleichwertige Kacheln. */
-  & .split {
-    display: flex; flex-wrap: wrap; gap: .1rem .7rem; margin-top: .15rem;
-
-    & span { font-size: var(--w-fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
-    & .in { color: var(--w-batt-out); }
-    & .out { color: var(--w-danger); }
+  /* Kacheln sind echte ha-card statt selbstgebauter Kästen — dadurch
+     folgen Hintergrund, Rundung und Schatten dem Theme des Nutzers. */
+  & .energy-value-card {
+    border-left: 4px solid transparent;
+    cursor: default;
+    display: block;
+    text-align: left;
+    width: 100%;
   }
+  & button.energy-value-card { cursor: pointer; font: inherit; }
+  & .balance-border { border-left-color: var(--primary-color); }
+  & .saved-border { border-left-color: var(--energy-solar-color, #ff9800); }
+  & .payback-border { border-left-color: var(--energy-battery-out-color, #4db0a2); }
 
-  & .hint {
-    align-items: center; display: inline-flex; gap: .3rem;
+  & .card-content { padding: 16px; }
+  & .card-title {
+    align-items: center; color: var(--secondary-text-color);
+    display: flex; font-size: 14px; gap: .3rem;
     & ha-icon { --mdc-icon-size: 15px; opacity: .65; }
   }
+  & .main-value {
+    color: var(--primary-text-color);
+    font-size: 24px; font-weight: bold; margin: 4px 0;
+  }
+  & .sub-values { display: flex; flex-wrap: wrap; font-size: 12px; gap: 16px; margin-top: 8px; }
+  & .sub-values .in { color: var(--energy-battery-out-color, #4db0a2); }
+  & .sub-values .out { color: var(--error-color, #db4437); }
+  & .sub-label { color: var(--secondary-text-color); }
 }
 
 .explain {
@@ -732,32 +746,40 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     if (earned !== null || paid !== null) {
       const balance = (earned ?? 0) - (paid ?? 0);
-      tiles.push(`<div class="tile">
-        <span class="k">Bilanz heute</span>
-        <span class="v">${fmtEuro(balance)}</span>
-        <span class="split">
-          ${earned !== null ? `<span class="in">${fmtEuro(earned)} eingespeist</span>` : ''}
-          ${paid !== null ? `<span class="out">${fmtEuro(-paid)} bezogen</span>` : ''}
-        </span>
-      </div>`);
+      tiles.push(`<ha-card class="energy-value-card balance-border">
+        <div class="card-content">
+          <div class="card-title">Bilanz heute</div>
+          <div class="main-value">${fmtEuro(balance)}</div>
+          <div class="sub-values">
+            ${earned !== null ? `<div class="in">${fmtEuro(earned)}<span class="sub-label"> eingespeist</span></div>` : ''}
+            ${paid !== null ? `<div class="out">${fmtEuro(-paid)}<span class="sub-label"> bezogen</span></div>` : ''}
+          </div>
+        </div>
+      </ha-card>`);
     }
 
     if (saved !== null) {
-      tiles.push(`<button type="button" class="tile" data-explain="saved">
-        <span class="k hint">Durch PV gespart ${icon('mdi:information-outline')}</span>
-        <span class="v">${fmtEuro(saved, { signed: false })}</span>
-      </button>`);
+      tiles.push(`<ha-card class="energy-value-card saved-border">
+        <button type="button" class="card-content" data-explain="saved"
+                style="background:none;border:0;width:100%;text-align:left;cursor:pointer">
+          <div class="card-title">Durch PV gespart ${icon('mdi:information-outline')}</div>
+          <div class="main-value">${fmtEuro(saved, { signed: false })}</div>
+        </button>
+      </ha-card>`);
     }
 
     // Amortisation: was der heutige Tag zu den Anschaffungskosten beiträgt.
     const cost = Number(c.system_cost);
     if (Number.isFinite(cost) && cost > 0 && (saved !== null || earned !== null)) {
       const today = (saved ?? 0) + (earned ?? 0);
-      tiles.push(`<button type="button" class="tile" data-explain="payback">
-        <span class="k hint">Zur Amortisation ${icon('mdi:information-outline')}</span>
-        <span class="v">${fmtEuro(today, { signed: false })}</span>
-        <span class="split"><span>${((today / cost) * 100).toFixed(3).replace('.', ',')} % der Anlage</span></span>
-      </button>`);
+      tiles.push(`<ha-card class="energy-value-card payback-border">
+        <button type="button" class="card-content" data-explain="payback"
+                style="background:none;border:0;width:100%;text-align:left;cursor:pointer">
+          <div class="card-title">Zur Amortisation ${icon('mdi:information-outline')}</div>
+          <div class="main-value">${fmtEuro(today, { signed: false })}</div>
+          <div class="sub-values"><span class="sub-label">${((today / cost) * 100).toFixed(3).replace('.', ',')} % der Anlage</span></div>
+        </button>
+      </ha-card>`);
     }
 
     this.#els.money.innerHTML = tiles.join('');

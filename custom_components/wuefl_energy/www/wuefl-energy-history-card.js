@@ -1,123 +1,119 @@
 /**
  * wuefl-energy-history-card
- * Balken-/Flächendiagramm für die Gesamtzähler aus der Zuordnung.
+ * Rahmen um die Energie-Ansicht: Zeitraum-Auswahl, Diagramm, Kennzahlen.
  *
- * Bewusst an Home Assistants eigener Energie-Ansicht orientiert: dieselben
- * Farbvariablen (--energy-solar-color usw., über COLORS/TOKENS_CSS), Fläche
- * oberhalb der Nulllinie für Erzeugung, unterhalb für Verbrauch. Anders als
- * die native Karte braucht das kein separat eingerichtetes Energie-Dashboard
- * — nur die ohnehin gepflegte Zuordnung, gelesen über die ganz normale,
- * dokumentierte Langzeitstatistik-Abfrage.
+ * Das Diagramm zeichnet diese Karte NICHT selbst. Sie bettet
+ * "energy-custom-graph-card" von Thyraz ein (HACS), die Home Assistants
+ * eigene ECharts-Instanz nutzt. Ist sie nicht installiert, erscheint an
+ * ihrer Stelle ein Hinweis mit Link — bewusst ohne eigenes Ersatz-Diagramm,
+ * damit es nur eine einzige Darstellung gibt und nicht zwei, die sich
+ * unterscheiden.
+ *
+ * Bedienelemente und Kacheln sind Home-Assistant-Komponenten
+ * (mwc-button, ha-date-range-picker, ha-card) statt selbstgebauter
+ * Nachbauten — dadurch folgen sie Theme, Dark Mode und Schriftarten des
+ * Nutzers von allein.
  */
 
 import {
-  adoptSheet, asList, fmtEnergy, fmtPercent, icon, esc,
-  registerCard, centralConfig, COLORS, WueflFormEditor, sel,
+  asList, fmtEnergy, esc, registerCard, centralConfig, WueflFormEditor, sel,
 } from './wuefl-energy-shared.js';
+
+const REPO_URL = 'https://github.com/Thyraz/energy-custom-graph';
+const HACS_URL = 'https://my.home-assistant.io/redirect/hacs_repository/'
+  + '?owner=Thyraz&repository=energy-custom-graph&category=dashboard';
 
 const PERIODS = [
   { id: 'day', label: 'Tag' },
   { id: 'week', label: 'Woche' },
   { id: 'month', label: 'Monat' },
   { id: 'year', label: 'Jahr' },
-  { id: 'custom', label: 'Benutzerdefiniert' },
 ];
 
-/* Erzeugung oberhalb der Nulllinie, Verbrauch unterhalb — wie bei HA's
-   eigener Energie-Ansicht. "pair" gruppiert Gegenstücke (Netz, Speicher)
-   in der Legende zu einem Knopf mit zwei Punkten. */
+/* Erzeugung oberhalb der Nulllinie, Verbrauch unterhalb — wie in HA's
+   eigener Energie-Ansicht. "pair" fasst Gegenstücke (Netz, Speicher) in
+   einer gemeinsamen Kachel zusammen. Die Farben sind bewusst die
+   HA-Energie-Variablen, damit alles zum Rest des Dashboards passt. */
 const SERIES = [
-  { key: 'pv_energy', label: 'Erzeugung', sign: 1, color: COLORS.pv },
-  { key: 'battery_out', label: 'Speicher entladen', sign: 1, color: COLORS.battery_out, pair: 'battery', short: 'entladen' },
-  { key: 'grid_export', label: 'Einspeisung', sign: -1, color: COLORS.grid_export, pair: 'grid', short: 'Einspeisung' },
-  { key: 'grid_import', label: 'Netzbezug', sign: -1, color: COLORS.grid_import, pair: 'grid', short: 'Bezug' },
-  { key: 'battery_in', label: 'Speicher geladen', sign: -1, color: COLORS.battery_in, pair: 'battery', short: 'geladen' },
-  { key: 'house_energy', label: 'Haushalt', sign: -1, color: COLORS.house },
-  { key: 'wallbox_energy', label: 'Wallbox', sign: -1, color: COLORS.wallbox },
-  { key: 'heatpump_energy', label: 'Wärmepumpe', sign: -1, color: COLORS.heatpump },
+  { key: 'pv_energy', label: 'Solar', sign: 1, color: '--energy-solar-color', cls: 'solar-border' },
+  { key: 'battery_out', label: 'Speicher', sign: 1, color: '--energy-battery-out-color', cls: 'battery-border', pair: 'battery', short: 'entladen' },
+  { key: 'battery_in', label: 'Speicher', sign: -1, color: '--energy-battery-in-color', cls: 'battery-border', pair: 'battery', short: 'geladen' },
+  { key: 'grid_import', label: 'Netz', sign: -1, color: '--energy-grid-consumption-color', cls: 'grid-border', pair: 'grid', short: 'Bezug' },
+  { key: 'grid_export', label: 'Netz', sign: -1, color: '--energy-grid-return-color', cls: 'grid-border', pair: 'grid', short: 'Einspeisung' },
+  { key: 'house_energy', label: 'Haushalt', sign: -1, color: '--wuefl-house-color', cls: 'house-border' },
+  { key: 'wallbox_energy', label: 'Wallbox', sign: -1, color: '--wuefl-wallbox-color', cls: 'wallbox-border' },
+  { key: 'heatpump_energy', label: 'Wärmepumpe', sign: -1, color: '--wuefl-heatpump-color', cls: 'heatpump-border' },
 ];
 
 const PAIR_NAMES = { grid: 'Netz', battery: 'Speicher' };
 
 const CSS = `
-.card { display: flex; flex-direction: column; gap: .7rem; }
+:host { display: block; }
 
-.periods {
-  background: var(--w-bg-soft);
-  border-radius: var(--w-radius);
-  display: grid;
-  gap: 3px;
-  grid-template-columns: repeat(4, 1fr) auto;
-  padding: 3px;
+.energy-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 0 0 16px;
+}
+.time-buttons { display: flex; gap: 8px; }
+mwc-button { --mdc-theme-primary: var(--primary-color); }
+.range-picker-container { max-width: 320px; }
 
-  & .btn {
-    background: transparent; border-radius: calc(var(--w-radius) - 3px);
-    font-size: var(--w-fs-sm); height: auto; padding: .5rem .4rem;
-    white-space: nowrap;
-
-    &:hover { background: var(--w-bg-hover); }
-    &[aria-pressed="true"] { background: var(--w-accent); color: var(--w-on-accent); }
-  }
-  & .btn.custom { padding: .5rem; }
+/* Notbehelf, falls ha-date-range-picker in dieser Umgebung fehlt
+   (z. B. in der eigenständigen Vorschau ohne Home Assistant). */
+.fallback-range { align-items: center; display: flex; gap: 8px; }
+.fallback-range input {
+  background: var(--secondary-background-color);
+  border: 0; border-radius: 8px; color: var(--primary-text-color);
+  font: inherit; height: 36px; padding: 0 8px;
 }
 
-.customrange {
-  align-items: center; display: flex; flex-wrap: wrap; gap: .5rem;
+.chart-slot { display: block; margin-bottom: 16px; }
 
-  & input {
-    background: var(--w-bg-soft); border: 0; border-radius: var(--w-radius);
-    color: inherit; font: inherit; height: var(--w-input-h); padding: 0 .6rem;
-  }
-  & span { color: var(--w-text-soft); font-size: var(--w-fs-sm); }
+.missing {
+  padding: 16px;
+  & h3 { margin: 0 0 8px; }
+  & p { color: var(--secondary-text-color); line-height: 1.5; margin: 0 0 12px; }
+  & a { color: var(--primary-color); }
+  & .links { display: flex; flex-wrap: wrap; gap: 12px; }
 }
-
-.chips { display: flex; flex-wrap: wrap; gap: .35rem; }
-.chips button {
-  align-items: center; background: var(--w-bg-soft); border: 1px solid var(--w-line);
-  border-radius: 999px; color: inherit; cursor: pointer; display: inline-flex;
-  font: inherit; font-size: var(--w-fs-sm); gap: .4rem; padding: .3rem .7rem;
-
-  &:hover { background: var(--w-bg-hover); }
-  & .dot { border-radius: 3px; flex: none; height: .55rem; width: .55rem; }
-  &.off { opacity: .45; text-decoration: line-through; }
-}
-
-.chart { position: relative; }
-.chart svg { display: block; height: auto; width: 100%; }
-.chart .axis { fill: var(--w-text-soft); font-size: 15px; font-variant-numeric: tabular-nums; }
-.chart .grid-line { stroke: var(--w-line); stroke-width: 1; }
-.chart .zero { stroke: var(--w-text); stroke-width: 1.5; }
-
-.state { min-height: 10rem; }
 
 .tiles {
-  display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-
-  & .tile {
-    border-left: 3px solid var(--tile-color, var(--w-line));
-    display: flex; flex-direction: column; gap: .15rem;
-
-    & .k { align-items: center; color: var(--w-text-soft); display: flex; font-size: var(--w-fs-sm); gap: .35rem; }
-    & .v { font-size: 1.05rem; font-variant-numeric: tabular-nums; font-weight: 700; }
-    & .split { display: flex; font-size: var(--w-fs-sm); gap: .6rem; }
-    & .split .in { color: var(--w-batt-out); }
-    & .split .out { color: var(--w-danger); }
-  }
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
-.footer { display: flex; justify-content: flex-end; }
-.footer .btn {
-  font-size: var(--w-fs-sm); height: auto; padding: .4rem .8rem;
+.energy-value-card {
+  border-left: 4px solid transparent;
+  display: block;
+  position: relative;
 }
+.solar-border { border-left-color: var(--energy-solar-color, #ff9800); }
+.battery-border { border-left-color: var(--energy-battery-out-color, #4db0a2); }
+.grid-border { border-left-color: var(--energy-grid-consumption-color, #488fc2); }
+.house-border { border-left-color: var(--wuefl-house-color, #488fc2); }
+.wallbox-border { border-left-color: var(--wuefl-wallbox-color, #7f77dd); }
+.heatpump-border { border-left-color: var(--wuefl-heatpump-color, #d85a30); }
+
+.card-content { padding: 16px; }
+.card-title { color: var(--secondary-text-color); font-size: 14px; }
+.main-value {
+  color: var(--primary-text-color);
+  font-size: 24px; font-weight: bold; margin: 4px 0;
+}
+.sub-values { display: flex; font-size: 12px; gap: 16px; margin-top: 8px; }
+.sub-label { color: var(--secondary-text-color); display: block; }
+.discharge-text { color: var(--energy-battery-out-color, #4db0a2); }
+.charge-text { color: var(--energy-battery-in-color, #f6c34c); }
+.import-text { color: var(--energy-grid-consumption-color, #488fc2); }
+.export-text { color: var(--energy-grid-return-color, #8353d1); }
+
+.state { color: var(--secondary-text-color); padding: 24px 0; text-align: center; }
 `;
-
-/** Zwei Werte, die HA-typisch oberhalb/unterhalb der Nulllinie stehen: nur
- *  Balken, keine gerundeten Kanten, ein sanfter Verlauf zur Achse hin. */
-function areaPath(points, x, yZero, ySign) {
-  if (!points.length) return '';
-  const top = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${p.toFixed(1)}`).join(' ');
-  return `${top} L${x(points.length - 1).toFixed(1)} ${yZero} L${x(0).toFixed(1)} ${yZero} Z`;
-}
 
 class WueflEnergyHistoryCard extends HTMLElement {
   #own = {};
@@ -126,21 +122,23 @@ class WueflEnergyHistoryCard extends HTMLElement {
   #hass = null;
   #built = false;
   #period = 'day';
-  #hidden = new Set();
+  #range = null;
   #els = {};
-  #cache = new Map();
+  #chartCard = null;
+  #stats = {};
 
   static getConfigElement() { return document.createElement('wuefl-energy-history-card-editor'); }
   static getStubConfig() { return { title: 'Energie' }; }
 
   setConfig(config) {
     this.#own = config ?? {};
-    this.#apply();
+    this.#config = { title: 'Energie', ...this.#central, ...this.#own };
   }
 
   set hass(hass) {
     const first = !this.#hass;
     this.#hass = hass;
+    if (this.#chartCard) this.#chartCard.hass = hass;
     if (first) {
       this.#loadCentral();
       window.addEventListener('wuefl-energy-config-changed', () => this.#loadCentral());
@@ -148,90 +146,119 @@ class WueflEnergyHistoryCard extends HTMLElement {
     if (!this.#built) this.#build();
   }
 
-  getCardSize() { return 6; }
+  getCardSize() { return 10; }
 
   async #loadCentral() {
     this.#central = await centralConfig(this.#hass, 'history');
-    this.#apply();
-    this.#loadData();
-  }
-
-  #apply() {
     this.#config = { title: 'Energie', ...this.#central, ...this.#own };
-    this.#cache.clear();
+    this.#refresh();
   }
 
   /* ------------------------------ Aufbau ---------------------------- */
 
   #build() {
     const root = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
-    adoptSheet(root, CSS, 'history');
+    if (!root.adoptedStyleSheets?.length) {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(CSS);
+      root.adoptedStyleSheets = [sheet];
+    }
 
-    const card = document.createElement('div');
-    card.className = 'card';
+    const card = document.createElement('ha-card');
     card.innerHTML = `
-      <h2></h2>
-      <div class="periods">
-        ${PERIODS.filter((p) => p.id !== 'custom').map((p) => `<button type="button" class="btn" data-period="${p.id}"
-          aria-pressed="${p.id === this.#period}">${p.label}</button>`).join('')}
-        <button type="button" class="btn custom" data-period="custom"
-          aria-pressed="${this.#period === 'custom'}" aria-label="Benutzerdefinierter Zeitraum">
-          ${icon('mdi:calendar-range')}
-        </button>
-      </div>
-      <div class="customrange" hidden>
-        <input type="date" class="from">
-        <span>bis</span>
-        <input type="date" class="to">
-        <button type="button" class="btn apply-range">Anzeigen</button>
-      </div>
-      <div class="chips"></div>
-      <div class="chart"><div class="state">Lädt …</div></div>
-      <div class="tiles"></div>
-      <div class="footer">
-        <button type="button" class="btn export">${icon('mdi:download')}CSV exportieren</button>
+      <div class="card-content">
+        <div class="energy-toolbar">
+          <div class="time-buttons"></div>
+          <div class="range-picker-container"></div>
+        </div>
+        <div class="chart-slot"></div>
+        <div class="tiles"></div>
       </div>
     `;
-    root.appendChild(card);
+    root.replaceChildren(card);
 
-    const q = (x) => card.querySelector(x);
     this.#els = {
-      card, title: q('h2'), periods: q('.periods'), chips: q('.chips'), chart: q('.chart'),
-      tiles: q('.tiles'), customRange: q('.customrange'), from: q('.from'), to: q('.to'),
+      card,
+      buttons: card.querySelector('.time-buttons'),
+      picker: card.querySelector('.range-picker-container'),
+      chart: card.querySelector('.chart-slot'),
+      tiles: card.querySelector('.tiles'),
     };
 
-    for (const btn of card.querySelectorAll('[data-period]')) {
-      btn.addEventListener('click', () => {
-        this.#period = btn.dataset.period;
-        for (const b of card.querySelectorAll('[data-period]')) {
-          b.setAttribute('aria-pressed', String(b === btn));
-        }
-        this.#els.customRange.hidden = this.#period !== 'custom';
-        if (this.#period !== 'custom') this.#loadData();
-      });
-    }
-    q('.apply-range').addEventListener('click', () => this.#loadData());
-    q('.export').addEventListener('click', () => this.#exportCsv());
-
+    this.#buildButtons();
+    this.#buildPicker();
     this.#built = true;
-    this.#loadData();
+    this.#refresh();
   }
 
-  /* ------------------------------ Daten ------------------------------ */
-
-  #used() {
-    return SERIES.filter((s) => asList(this.#config[s.key]).length);
-  }
-
-  #range() {
-    const now = new Date();
-    if (this.#period === 'custom') {
-      const fromVal = this.#els.from?.value;
-      const toVal = this.#els.to?.value;
-      const start = fromVal ? new Date(`${fromVal}T00:00:00`) : new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = toVal ? new Date(`${toVal}T23:59:59`) : now;
-      return { start, end };
+  /** Zeitraum-Knöpfe als native mwc-button, nicht selbst nachgebaut. */
+  #buildButtons() {
+    this.#els.buttons.replaceChildren();
+    for (const p of PERIODS) {
+      const btn = document.createElement('mwc-button');
+      btn.setAttribute('dense', '');
+      if (p.id === this.#period) btn.setAttribute('raised', '');
+      btn.textContent = p.label;
+      btn.addEventListener('click', () => {
+        this.#period = p.id;
+        this.#range = null;
+        this.#buildButtons();
+        this.#refresh();
+      });
+      this.#els.buttons.appendChild(btn);
     }
+  }
+
+  /**
+   * Bereichswähler von Home Assistant. Fehlt die Komponente (etwa in der
+   * eigenständigen Vorschau), greift ein schlichter Notbehelf aus zwei
+   * Datumsfeldern — sonst wäre der freie Zeitraum dort gar nicht bedienbar.
+   */
+  #buildPicker() {
+    const box = this.#els.picker;
+    box.replaceChildren();
+
+    if (customElements.get('ha-date-range-picker')) {
+      const picker = document.createElement('ha-date-range-picker');
+      picker.hass = this.#hass;
+      const { start, end } = this.#currentRange();
+      picker.startDate = start;
+      picker.endDate = end;
+      picker.addEventListener('value-changed', (ev) => {
+        const { startDate, endDate } = ev.detail ?? {};
+        if (!startDate || !endDate) return;
+        this.#range = { start: new Date(startDate), end: new Date(endDate) };
+        this.#period = 'custom';
+        this.#buildButtons();
+        this.#refresh();
+      });
+      box.appendChild(picker);
+      return;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'fallback-range';
+    wrap.innerHTML = '<input type="date" class="from"><span>–</span><input type="date" class="to">';
+    const apply = () => {
+      const from = wrap.querySelector('.from').value;
+      const to = wrap.querySelector('.to').value;
+      if (!from || !to) return;
+      this.#range = { start: new Date(`${from}T00:00:00`), end: new Date(`${to}T23:59:59`) };
+      this.#period = 'custom';
+      this.#buildButtons();
+      this.#refresh();
+    };
+    for (const input of wrap.querySelectorAll('input')) {
+      input.addEventListener('change', apply);
+    }
+    box.appendChild(wrap);
+  }
+
+  /* ------------------------------ Zeitraum -------------------------- */
+
+  #currentRange() {
+    if (this.#range) return this.#range;
+    const now = new Date();
     const start = new Date(now);
     if (this.#period === 'day') start.setHours(0, 0, 0, 0);
     else if (this.#period === 'week') { start.setDate(now.getDate() - now.getDay() + 1); start.setHours(0, 0, 0, 0); }
@@ -240,241 +267,160 @@ class WueflEnergyHistoryCard extends HTMLElement {
     return { start, end: now };
   }
 
-  async #loadData() {
-    if (!this.#hass) return;
-    this.#els.title.textContent = this.#config.title ?? 'Energie';
-    const used = this.#used();
-    this.#renderChips(used);
+  #used() {
+    return SERIES.filter((s) => asList(this.#config[s.key]).length);
+  }
 
-    if (!used.length) {
-      this.#els.chart.innerHTML = '<div class="state">Noch keine Gesamtzähler zugeordnet.</div>';
-      this.#els.tiles.innerHTML = '';
+  /* ------------------------------ Diagramm -------------------------- */
+
+  /**
+   * Baut die Konfiguration für die Thyraz-Karte, angelehnt an deren
+   * eigenes Beispiel "Recreate the energy dashboard usage card": alle
+   * Reihen als gestapelte Balken, Verbrauch mit multiply -1 unter die
+   * Nulllinie, Farben aus der HA-Energie-Palette.
+   */
+  #chartConfig() {
+    const { start, end } = this.#currentRange();
+    const series = [];
+    for (const s of this.#used()) {
+      for (const id of asList(this.#config[s.key])) {
+        series.push({
+          statistic_id: id,
+          name: s.pair ? `${PAIR_NAMES[s.pair]} ${s.short}` : s.label,
+          stat_type: 'change',
+          chart_type: 'bar',
+          stack: 'energie',
+          color: s.color,
+          ...(s.sign < 0 ? { multiply: -1 } : {}),
+        });
+      }
+    }
+    return {
+      type: 'custom:energy-custom-graph-card',
+      timespan: { mode: 'fixed', start: start.toISOString(), end: end.toISOString() },
+      series,
+    };
+  }
+
+  async #renderChart() {
+    const slot = this.#els.chart;
+    if (!customElements.get('energy-custom-graph-card')) {
+      this.#chartCard = null;
+      slot.innerHTML = `
+        <ha-card>
+          <div class="missing">
+            <h3>Diagramm-Karte fehlt</h3>
+            <p>Die Energie-Ansicht nutzt <strong>Energy Custom Graph</strong> von Thyraz.
+              Die Karte greift auf die ECharts-Instanz zu, die Home Assistant ohnehin
+              mitbringt — dadurch sieht das Diagramm nativ aus, ohne dass eine zweite
+              Diagramm-Bibliothek geladen werden muss.</p>
+            <p>Einmal über HACS installieren (Kategorie <em>Dashboard</em>), Browser-Cache
+              leeren, Seite neu laden — danach erscheint das Diagramm hier automatisch.</p>
+            <div class="links">
+              <a href="${HACS_URL}" target="_blank" rel="noreferrer">In HACS öffnen</a>
+              <a href="${REPO_URL}" target="_blank" rel="noreferrer">Projektseite auf GitHub</a>
+            </div>
+          </div>
+        </ha-card>`;
       return;
     }
 
-    const { start, end } = this.#range();
-    const cacheKey = `${this.#period}:${start.getTime()}`;
-    let totals = this.#cache.get(cacheKey);
-
-    if (!totals) {
-      const ids = used.flatMap((s) => asList(this.#config[s.key]));
-      const spanDays = (end - start) / 86_400_000;
-      const period = this.#period === 'day' ? 'hour'
-        : this.#period === 'week' || this.#period === 'month' ? 'day'
-        : this.#period === 'custom' ? (spanDays <= 3 ? 'hour' : spanDays <= 90 ? 'day' : 'month')
-        : 'month';
-      let stats = {};
-      try {
-        stats = await this.#hass.callWS({
-          type: 'recorder/statistics_during_period',
-          start_time: start.toISOString(),
-          end_time: end.toISOString(),
-          statistic_ids: ids,
-          period,
-          types: ['change'],
-        });
-      } catch {
-        stats = {};
-      }
-      totals = { stats, period };
-      this.#cache.set(cacheKey, totals);
+    const config = this.#chartConfig();
+    if (!config.series.length) {
+      this.#chartCard = null;
+      slot.innerHTML = '<div class="state">Noch keine Gesamtzähler zugeordnet.</div>';
+      return;
     }
 
-    this.#renderChart(used, totals.stats, totals.period, start, end);
-    this.#renderTiles(used, totals.stats);
-  }
-
-  /* ------------------------------ Legende ---------------------------- */
-
-  #renderChips(used) {
-    const items = [];
-    const seen = new Set();
-    for (const s of used) {
-      if (!s.pair) { items.push({ keys: [s.key], label: s.label, colors: [s.color] }); continue; }
-      if (seen.has(s.pair)) continue;
-      seen.add(s.pair);
-      const both = used.filter((x) => x.pair === s.pair);
-      items.push({
-        keys: both.map((x) => x.key),
-        label: both.length > 1 ? `${PAIR_NAMES[s.pair]} ${both.map((x) => x.short).join(' / ')}` : s.label,
-        colors: both.map((x) => x.color),
-      });
-    }
-
-    this.#els.chips.innerHTML = items.map((i) => {
-      const off = i.keys.every((k) => this.#hidden.has(k));
-      const dots = i.colors.map((c, n) => `<span class="dot" style="background:${c}; opacity:${n ? .6 : 1}"></span>`).join('');
-      return `<button type="button" data-keys="${i.keys.join(',')}" class="${off ? 'off' : ''}">${dots}${esc(i.label)}</button>`;
-    }).join('');
-
-    for (const btn of this.#els.chips.querySelectorAll('[data-keys]')) {
-      btn.addEventListener('click', () => {
-        const keys = btn.dataset.keys.split(',');
-        const off = keys.every((k) => this.#hidden.has(k));
-        for (const k of keys) { if (off) this.#hidden.delete(k); else this.#hidden.add(k); }
-        this.#loadData();
-      });
+    // Über die Karten-Helfer erzeugen, damit die fremde Karte genauso
+    // eingebunden wird wie von Lovelace selbst.
+    if (!this.#chartCard) {
+      const helpers = await window.loadCardHelpers?.();
+      this.#chartCard = helpers
+        ? helpers.createCardElement(config)
+        : document.createElement('energy-custom-graph-card');
+      if (!helpers) this.#chartCard.setConfig?.(config);
+      this.#chartCard.hass = this.#hass;
+      slot.replaceChildren(this.#chartCard);
+    } else {
+      this.#chartCard.setConfig?.(config);
+      this.#chartCard.hass = this.#hass;
     }
   }
 
-  /* ------------------------------ Diagramm ---------------------------- */
+  /* ------------------------------ Daten ----------------------------- */
 
-  #renderChart(used, stats, period, start, end) {
-    const buckets = [];
-    const cursor = new Date(start);
-    while (cursor < end) {
-      buckets.push(new Date(cursor));
-      if (period === 'hour') cursor.setHours(cursor.getHours() + 1);
-      else if (period === 'day') cursor.setDate(cursor.getDate() + 1);
-      else cursor.setMonth(cursor.getMonth() + 1);
+  async #refresh() {
+    if (!this.#built || !this.#hass) return;
+    await this.#renderChart();
+
+    const used = this.#used();
+    if (!used.length) {
+      this.#els.tiles.replaceChildren();
+      return;
     }
-    if (!buckets.length) buckets.push(new Date(start));
-    const bucketMs = buckets.map((b) => +b);
 
-    const bucketIndex = (t) => {
-      for (let i = bucketMs.length - 1; i >= 0; i--) if (t >= bucketMs[i]) return i;
-      return 0;
-    };
-
-    const series = used
-      .filter((s) => !this.#hidden.has(s.key))
-      .map((s) => {
-        const values = new Array(buckets.length).fill(0);
-        for (const id of asList(this.#config[s.key])) {
-          for (const row of stats[id] ?? []) {
-            values[bucketIndex(row.start)] += Number(row.change) || 0;
-          }
-        }
-        return { ...s, values: values.map((v) => v * s.sign) };
+    const { start, end } = this.#currentRange();
+    const ids = used.flatMap((s) => asList(this.#config[s.key]));
+    try {
+      this.#stats = await this.#hass.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        statistic_ids: ids,
+        period: 'day',
+        types: ['change'],
       });
-
-    const up = series.filter((s) => s.sign > 0);
-    const dn = series.filter((s) => s.sign < 0);
-    const upTotals = buckets.map((_, i) => up.reduce((a, s) => a + s.values[i], 0));
-    const dnTotals = buckets.map((_, i) => dn.reduce((a, s) => a + s.values[i], 0));
-    const max = Math.max(1, ...upTotals);
-    const min = Math.min(-1, ...dnTotals);
-
-    const W = 1000, H = 260, L = 46, R = 12, T = 14, B = 26;
-    const pw = W - L - R, ph = H - T - B;
-    const x = (i) => L + (buckets.length > 1 ? (i / (buckets.length - 1)) * pw : pw / 2);
-    const span = max - min || 1;
-    const y = (v) => T + ph - ((v - min) / span) * ph;
-    const yZero = y(0);
-
-    const out = [
-      `<line class="grid-line" x1="${L}" y1="${y(max)}" x2="${W - R}" y2="${y(max)}"/>`,
-      `<text class="axis" x="${L - 8}" y="${y(max) + 5}" text-anchor="end">${fmtEnergy(max)}</text>`,
-      `<line class="grid-line" x1="${L}" y1="${y(min)}" x2="${W - R}" y2="${y(min)}"/>`,
-      `<text class="axis" x="${L - 8}" y="${y(min) + 5}" text-anchor="end">${fmtEnergy(min)}</text>`,
-      `<line class="zero" x1="${L}" y1="${yZero}" x2="${W - R}" y2="${yZero}"/>`,
-    ];
-
-    // Liniendiagramm: jede Serie als eigene Linie, Erzeugung oberhalb,
-    // Verbrauch unterhalb der Nulllinie, keine Fläche mehr.
-    for (const s of [...up, ...dn]) {
-      const pts = s.values.map((v, i) => `${x(i).toFixed(1)} ${y(v).toFixed(1)}`);
-      out.push(`<path d="M${pts.join(' L')}" fill="none" stroke-width="2.5"
-        stroke-linejoin="round" stroke-linecap="round" style="stroke: ${s.color}"/>`);
+    } catch {
+      this.#stats = {};
     }
-
-    const tickEvery = Math.max(1, Math.ceil(buckets.length / 8));
-    buckets.forEach((b, i) => {
-      if (i % tickEvery && i !== buckets.length - 1) return;
-      const label = period === 'hour' ? `${String(b.getHours()).padStart(2, '0')}`
-        : period === 'day' ? `${b.getDate()}.${b.getMonth() + 1}.`
-        : `${b.toLocaleString('de-DE', { month: 'short' })}`;
-      out.push(`<text class="axis" x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${label}</text>`);
-    });
-
-    this.#els.chart.innerHTML =
-      `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Energie">${out.join('')}</svg>`;
+    this.#renderTiles(used);
   }
 
-  /* ------------------------------ Kacheln ---------------------------- */
-
-  #renderTiles(used, stats) {
-    const total = (s) => asList(this.#config[s.key]).reduce(
-      (a, id) => a + (stats[id] ?? []).reduce((b, r) => b + (Number(r.change) || 0), 0), 0,
+  #total(series) {
+    return asList(this.#config[series.key]).reduce(
+      (a, id) => a + (this.#stats[id] ?? []).reduce((b, r) => b + (Number(r.change) || 0), 0), 0,
     );
-    const soc = asList(this.#config.battery_soc);
-    let socAvg = null;
-    if (soc.length) {
-      const vals = soc.map((id) => {
-        const rows = stats[id] ?? [];
-        return rows.length ? rows.reduce((a, r) => a + (Number(r.mean ?? r.state) || 0), 0) / rows.length : null;
-      }).filter((v) => v !== null);
-      if (vals.length) socAvg = vals.reduce((a, v) => a + v, 0) / vals.length;
-    }
+  }
 
-    const visible = used.filter((s) => !this.#hidden.has(s.key));
-    const tiles = [];
-    const seenPair = new Set();
+  /* ------------------------------ Kacheln --------------------------- */
 
-    for (const s of visible) {
-      // Gegenstücke (Netz, Speicher) landen in einer gemeinsamen Kachel mit
-      // beiden Werten, statt zwei fast gleich aussehenden Einzelkacheln.
+  #renderTiles(used) {
+    const html = [];
+    const seen = new Set();
+
+    for (const s of used) {
       if (s.pair) {
-        if (seenPair.has(s.pair)) continue;
-        seenPair.add(s.pair);
-        const both = visible.filter((x) => x.pair === s.pair);
-        const inSeries = both.find((x) => x.sign > 0) ?? both[0];
-        const outSeries = both.find((x) => x.sign < 0) ?? both[1];
-        const inVal = inSeries ? total(inSeries) : 0;
-        const outVal = outSeries ? total(outSeries) : 0;
-        tiles.push(`<div class="tile" style="--tile-color: ${inSeries?.color ?? outSeries?.color}">
-          <span class="k">${esc(PAIR_NAMES[s.pair])}</span>
-          <span class="v">${fmtEnergy(inVal + outVal)}</span>
-          <span class="split">
-            ${inSeries ? `<span class="in">${fmtEnergy(inVal)} ${esc(inSeries.short)}</span>` : ''}
-            ${outSeries ? `<span class="out">${fmtEnergy(outVal)} ${esc(outSeries.short)}</span>` : ''}
-          </span>
-        </div>`);
+        if (seen.has(s.pair)) continue;
+        seen.add(s.pair);
+        const both = used.filter((x) => x.pair === s.pair);
+        const total = both.reduce((a, x) => a + this.#total(x), 0);
+        const subs = both.map((x) => {
+          const cls = x.short === 'entladen' ? 'discharge-text'
+            : x.short === 'geladen' ? 'charge-text'
+            : x.short === 'Bezug' ? 'import-text' : 'export-text';
+          return `<div class="sub-item ${cls}">
+            <span>${fmtEnergy(this.#total(x))}</span>
+            <span class="sub-label">${esc(x.short)}</span>
+          </div>`;
+        }).join('');
+        html.push(`<ha-card class="energy-value-card ${s.cls}">
+          <div class="card-content">
+            <div class="card-title">${esc(PAIR_NAMES[s.pair])}</div>
+            <div class="main-value">${fmtEnergy(total)}</div>
+            <div class="sub-values">${subs}</div>
+          </div>
+        </ha-card>`);
         continue;
       }
-      tiles.push(`<div class="tile" style="--tile-color: ${s.color}">
-        <span class="k">${esc(s.label)}</span>
-        <span class="v">${fmtEnergy(total(s))}</span>
-      </div>`);
+      html.push(`<ha-card class="energy-value-card ${s.cls}">
+        <div class="card-content">
+          <div class="card-title">${esc(s.label)}</div>
+          <div class="main-value">${fmtEnergy(this.#total(s))}</div>
+        </div>
+      </ha-card>`);
     }
-    if (socAvg !== null) {
-      tiles.push(`<div class="tile"><span class="k">Ladestand ⌀</span><span class="v">${fmtPercent(socAvg)}</span></div>`);
-    }
-    this.#els.tiles.innerHTML = tiles.join('');
-  }
-
-  /* ------------------------------ Export ------------------------------ */
-
-  #exportCsv() {
-    const cacheKey = [...this.#cache.keys()].pop();
-    const totals = cacheKey ? this.#cache.get(cacheKey) : null;
-    if (!totals) return;
-
-    const used = this.#used().filter((s) => !this.#hidden.has(s.key));
-    const rows = [['Zeitpunkt', ...used.map((s) => s.label)]];
-    const byTime = new Map();
-
-    for (const s of used) {
-      for (const id of asList(this.#config[s.key])) {
-        for (const row of totals.stats[id] ?? []) {
-          const t = new Date(row.start).toISOString();
-          if (!byTime.has(t)) byTime.set(t, {});
-          byTime.get(t)[s.key] = (byTime.get(t)[s.key] ?? 0) + (Number(row.change) || 0);
-        }
-      }
-    }
-    for (const [t, vals] of [...byTime.entries()].sort()) {
-      rows.push([t, ...used.map((s) => (vals[s.key] ?? 0).toFixed(3))]);
-    }
-
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `energie-${this.#period}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    this.#els.tiles.innerHTML = html.join('');
   }
 }
 
@@ -492,5 +438,5 @@ customElements.define('wuefl-energy-history-card-editor', WueflEnergyHistoryCard
 registerCard({
   type: 'wuefl-energy-history-card',
   name: 'wuefl Energie',
-  description: 'Balkendiagramm im Stil von Home Assistants Energie-Ansicht, gespeist aus der Zuordnung.',
+  description: 'Zeitraum-Auswahl, Diagramm (Energy Custom Graph) und Kennzahlen.',
 });

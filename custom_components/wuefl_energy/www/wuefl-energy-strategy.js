@@ -19,49 +19,6 @@ import './wuefl-energy-config-card.js';
 
 const section = (cards) => ({ type: 'grid', cards });
 
-/**
- * Baut die Kartenkonfiguration für die Energie-Ansicht.
- *
- * Ist "Thyraz/energy-custom-graph" installiert (per HACS, erkennbar am
- * registrierten Custom Element), nutzen wir die — deren Beispiel Nr. 4 in
- * der eigenen Dokumentation baut exakt HA's Energie-Ansicht nach, mit
- * denselben Farbvariablen, und braucht wie unsere eigene Karte nur die
- * Entitäten direkt, kein separates Energie-Dashboard. Ohne Installation
- * bleibt es bei unserer eigenen, mitgelieferten Karte — funktioniert immer,
- * ohne zusätzliche Abhängigkeit.
- */
-function energyCard(entities) {
-  if (customElements.get('energy-custom-graph-card')) {
-    const stack = 'energie';
-    const bar = (statistic_id, name, color, invert = false) => ({
-      statistic_id, name, chart_type: 'bar', stack, color,
-      ...(invert ? { multiply: -1 } : {}),
-    });
-    const series = [
-      ...entities.pv.map((id) => bar(id, 'Erzeugung', '--energy-solar-color')),
-      ...entities.batteryOut.map((id) => bar(id, 'Speicher entladen', '--energy-battery-out-color')),
-      ...entities.gridExport.map((id) => bar(id, 'Einspeisung', '--energy-grid-return-color', true)),
-      ...entities.gridImport.map((id) => bar(id, 'Netzbezug', '--energy-grid-consumption-color', true)),
-      ...entities.batteryIn.map((id) => bar(id, 'Speicher geladen', '--energy-battery-in-color', true)),
-      ...entities.house.map((id) => bar(id, 'Haushalt', '--w-house', true)),
-      ...entities.wallbox.map((id) => bar(id, 'Wallbox', '--w-wallbox', true)),
-      ...entities.heatpump.map((id) => bar(id, 'Wärmepumpe', '--w-heatpump', true)),
-    ];
-    return { type: 'custom:energy-custom-graph-card', title: 'Energie', series };
-  }
-  return { type: 'custom:wuefl-energy-history-card' };
-}
-
-/** Eine Ansicht im Sections-Layout. */
-const view = (title, path, iconName, cards, columns = 2) => ({
-  title,
-  path,
-  icon: iconName,
-  type: 'sections',
-  max_columns: columns,
-  sections: [section(cards)],
-});
-
 async function loadConfig(hass) {
   try {
     return normalizeConfig(await hass.callWS({ type: 'wuefl_energy/get' }));
@@ -96,23 +53,9 @@ class WueflEnergyDashboardStrategy {
     };
     const hasEnergyEntities = Object.values(energyGroups).some((l) => l.length);
 
-    // Hat der Nutzer zusätzlich Home Assistants eigenes Energie-Dashboard
-    // eingerichtet (Einstellungen → Energie), kommt dessen native
-    // Verteilungs-Karte obendrauf — reiner Lesezugriff, nichts wird
-    // verändert. Fehlt die Konfiguration, wirft der Aufruf, dann bleibt es
-    // bei der Karte aus der Zuordnung.
-    let hasNativeEnergy = false;
-    try {
-      const prefs = await hass.callWS({ type: 'energy/get_prefs' });
-      hasNativeEnergy = (prefs?.energy_sources?.length ?? 0) > 0;
-    } catch {
-      hasNativeEnergy = false;
-    }
-
-    if (hasEnergyEntities || hasNativeEnergy) {
+    if (hasEnergyEntities) {
       views.push(view('Energie', 'energie', 'mdi:chart-box', [
-        ...(hasNativeEnergy ? [{ type: 'energy-usage-graph', title: 'Verteilung' }] : []),
-        ...(hasEnergyEntities ? [energyCard(energyGroups)] : []),
+        { type: 'custom:wuefl-energy-history-card' },
       ], 1));
     }
 

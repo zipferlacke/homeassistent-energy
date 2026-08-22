@@ -141,9 +141,20 @@ details {
 }
 
 .stats {
-  display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); margin-top: .75rem;
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: .75rem;
 
-  & .tile .v { font-size: 1.05rem; }
+  /* Echte ha-card statt eigener Kästen — Hintergrund, Rundung und Schatten
+     kommen damit aus dem Theme des Nutzers. */
+  & .energy-value-card { display: block; }
+  & .card-content {
+    background: none; border: 0; cursor: pointer; display: block;
+    font: inherit; padding: 16px; text-align: left; width: 100%;
+  }
+  & .card-title { color: var(--secondary-text-color); font-size: 14px; }
+  & .main-value {
+    color: var(--primary-text-color); font-size: 24px; font-weight: bold; margin: 4px 0;
+  }
 }
 `;
 
@@ -596,8 +607,12 @@ class WueflWallboxCard extends HTMLElement {
     if (price !== null) items.push({ e: c.price_entity, k: 'Strompreis', v: `${fmtPrice(price)}/kWh` });
 
     this.#els.stats.innerHTML = items
-      .map((i) => `<button type="button" class="tile" data-entity="${esc(i.e ?? '')}">
-          <span class="k">${i.k}</span><span class="v">${i.v}</span></button>`)
+      .map((i) => `<ha-card class="energy-value-card">
+          <button type="button" class="card-content" data-entity="${esc(i.e ?? '')}">
+            <div class="card-title">${i.k}</div>
+            <div class="main-value">${i.v}</div>
+          </button>
+        </ha-card>`)
       .join('');
     for (const btn of this.#els.stats.querySelectorAll('[data-entity]')) {
       btn.addEventListener('click', () => moreInfo(this, btn.dataset.entity));
