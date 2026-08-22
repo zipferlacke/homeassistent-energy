@@ -8,6 +8,7 @@ import {
   adoptSheet, asList, power, energy, num, sum,
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtDuration, moreInfo,
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
+  chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel,
 } from './wuefl-energy-shared.js';
 
@@ -24,7 +25,17 @@ const modeInfo = (label) => MODE_KINDS.find((m) => m.match.test(label)) ?? { ico
 
 const CSS = `
 .top {
+  & .head { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; }
   & .name { font-size: 1.35rem; font-weight: 600; line-height: 1.25; }
+  & .badge {
+    align-items: center;
+    background: color-mix(in srgb, var(--badge-color, var(--w-text-soft)) 16%, transparent);
+    border-radius: 999px;
+    color: var(--badge-color, var(--w-text-soft));
+    display: inline-flex; font-size: var(--w-fs-sm); font-weight: 600;
+    gap: .3rem; padding: .2rem .6rem .2rem .45rem;
+    & ha-icon { --mdc-icon-size: 16px; }
+  }
   & .state { color: var(--w-text-soft); font-size: var(--w-fs-sm); margin-top: .1rem; }
 }
 
@@ -224,7 +235,10 @@ class WueflWallboxCard extends HTMLElement {
     card.className = 'card';
     card.innerHTML = `
       <div class="top">
-        <div class="name"></div>
+        <div class="head">
+          <div class="name"></div>
+          <div class="badge" hidden><ha-icon></ha-icon><span></span></div>
+        </div>
         <div class="state"></div>
       </div>
 
@@ -274,6 +288,8 @@ class WueflWallboxCard extends HTMLElement {
       track: q('.track'), fill: q('.fill'),
       markTarget: q('.mark.target'), markOld: q('.mark.old'),
       scale: q('.scale'),
+      head: q('.head'), badge: q('.badge'),
+      badgeIcon: q('.badge ha-icon'), badgeText: q('.badge span'),
       goalRow: q('.goalrow'), goalLeft: q('.goalrow .left'), goalRight: q('.goalrow .right'),
       scaleNote: q('.scale .note'),
       modes: q('.modes'),
@@ -442,14 +458,30 @@ class WueflWallboxCard extends HTMLElement {
     const target = num(h, c.target_soc_entity);
     const goal = target ?? 100;
     const pw = power(h, c.power_entity) ?? 0;
-    const charging = pw > 50;
 
     const modeState = c.mode_entity ? h.states[c.mode_entity] : null;
     const kind = modeState ? modeInfo(modeState.state).kind : 'other';
 
+    // Ladezustand, den die Wallbox selbst meldet — herstellerneutral auf
+    // sechs bekannte Zustände übersetzt.
+    const state = chargeState(h, c.status_entity, c.status_map);
+    const plugged = state !== null && state !== 'frei';
+    this.#els.badge.hidden = state === null;
+    if (state) {
+      const info = CHARGE_STATES[state];
+      this.#els.badge.style.setProperty('--badge-color', info.color);
+      this.#els.badgeIcon.setAttribute('icon', info.icon);
+      this.#els.badgeText.textContent = info.label;
+    }
+
     // Ladestand hängt am Namen, nicht in einer eigenen Ecke.
     this.#els.name.textContent =
       (c.name ?? 'Wallbox') + (soc === null ? '' : `, ${fmtPercent(soc)}`);
+
+    // Meldet die Wallbox ihren Zustand, gilt der — er ist verlässlicher als
+    // aus der Leistung zu raten (kurze Pausen der Ladeelektronik sähen sonst
+    // wie "fertig" aus).
+    const charging = state ? state === 'laedt' : pw > 50;
 
     // Einmal-Ladung endet mit dem Ladevorgang: bei 100 %, beim Abstecken
     // und beim Umschalten auf Aus.
@@ -461,9 +493,11 @@ class WueflWallboxCard extends HTMLElement {
     this.#wasCharging = charging;
 
     let label;
-    if (kind === 'off') label = 'Laden aus';
+    if (state === 'frei') label = 'kein Fahrzeug angeschlossen';
+    else if (kind === 'off') label = 'Laden aus';
     else if (charging) label = 'lädt';
     else if (soc !== null && soc >= goal) label = 'Ladeziel erreicht';
+    else if (state === 'fehler') label = 'Störung an der Wallbox';
     else label = 'angeschlossen, lädt nicht';
 
     // Statt Zustand, Ladestand und Sitzungsmenge stehen hier die zwei Zahlen,
@@ -479,14 +513,19 @@ class WueflWallboxCard extends HTMLElement {
     // unter dem Balken, nicht hier oben. Ohne Ladestand-Entität gibt es
     // weder ein "Ziel erreicht" noch eine Zeitschätzung — die Grundlage
     // dafür (wo steht der Akku gerade?) fehlt schlicht.
+    // Hängt gar kein Fahrzeug dran, ergeben Ladeziel und Restzeit keinen
+    // Sinn — dann bleibt der ganze Bereich leer statt eine Zeit zu zeigen,
+    // die niemanden betrifft.
     const needed = soc === null ? 0 : ((goal - soc) / 100) * (c.capacity ?? 58);
-    const est = soc === null ? { main: '', left: '', note: '' } : this.#estimate(kind, needed, goal);
+    const est = (soc === null || state === 'frei')
+      ? { main: '', left: '', note: '' }
+      : this.#estimate(kind, needed, goal);
     this.#els.goalRow.hidden = !est.main && !est.left;
     this.#els.goalLeft.textContent = est.left ?? '';
     this.#els.goalRight.textContent = est.main ?? '';
 
     // Balken mit Ladestand, Zielmarke und altem Ziel
-    this.#els.track.hidden = soc === null;
+    this.#els.track.hidden = soc === null || state === 'frei';
     this.#els.scale.hidden = soc === null || !est.note;
     if (soc !== null) {
       this.#els.fill.style.width = `${Math.max(0, Math.min(100, soc))}%`;

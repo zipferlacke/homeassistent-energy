@@ -691,6 +691,61 @@ export function todaySum(totals, ids) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Ladezustand der Wallbox
+ * ------------------------------------------------------------------ */
+
+/**
+ * Die sechs Zustände, auf die alles abgebildet wird. Jede Wallbox meldet
+ * ihren Zustand anders — Mennekes als Text ("Auto lädt (State C)"), andere
+ * als Rohzahl, wieder andere in OCPP-Englisch ("SuspendedEV"). Die Karte
+ * kennt deshalb nur diese sechs und übersetzt beim Einlesen.
+ */
+export const CHARGE_STATES = {
+  frei:      { label: 'kein Fahrzeug', icon: 'mdi:ev-plug-type2', color: 'var(--w-text-soft)' },
+  verbunden: { label: 'angeschlossen', icon: 'mdi:ev-plug-type2', color: 'var(--w-accent)' },
+  laedt:     { label: 'lädt', icon: 'mdi:battery-charging', color: 'var(--w-batt-out)' },
+  pausiert:  { label: 'pausiert', icon: 'mdi:pause-circle-outline', color: 'var(--w-price)' },
+  fertig:    { label: 'abgeschlossen', icon: 'mdi:check-circle-outline', color: 'var(--w-batt-out)' },
+  fehler:    { label: 'Störung', icon: 'mdi:alert-circle-outline', color: 'var(--w-danger)' },
+};
+
+/* Reihenfolge ist entscheidend, weil sich die Texte überschneiden:
+   "Kein Auto angesteckt" enthält "angesteckt", und "lädt nicht" enthält
+   "lädt". Deshalb stehen alle Verneinungen ganz vorn — sonst gewinnt das
+   Teilwort und der Zustand wird falsch erkannt. */
+const STATE_PATTERNS = [
+  ['frei', /kein auto|kein fahrzeug|nicht angesteckt|nicht verbunden/i],
+  ['fehler', /fehler|störung|stoerung|fault|error|state\s*e/i],
+  ['verbunden', /lädt nicht|laedt nicht|nicht laden|state\s*b|suspendedevse/i],
+  ['laedt', /lädt|laedt|laden aktiv|charging|state\s*c|state\s*d/i],
+  ['pausiert', /pausiert|suspended|paused|unterbrochen/i],
+  ['fertig', /beendet|abgeschlossen|fertig|finish|complete/i],
+  ['verbunden', /angesteckt|angeschlossen|belegt|vorbereitung|preparing|connected|occupied/i],
+  ['frei', /verfügbar|verfuegbar|available|frei|idle|state\s*a/i],
+];
+
+/**
+ * Übersetzt den gemeldeten Zustand in einen der sechs bekannten.
+ *
+ * `map` erlaubt eine ausdrückliche Zuordnung je Wallbox — nötig bei
+ * Sensoren, die nur eine Rohzahl liefern, denn "3" ist ohne Kontext nicht
+ * eindeutig. Ohne Zuordnung greift die Mustererkennung über den Text.
+ */
+export function chargeState(hass, entityId, map) {
+  const raw = entityId ? hass?.states?.[entityId]?.state : null;
+  if (raw === null || raw === undefined || raw === 'unknown' || raw === 'unavailable') return null;
+
+  const mapped = map?.[String(raw).trim()];
+  if (mapped && CHARGE_STATES[mapped]) return mapped;
+
+  const text = String(raw);
+  for (const [state, pattern] of STATE_PATTERNS) {
+    if (pattern.test(text)) return state;
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ *
  * Zentrale Zuordnung aus der Integration
  * ------------------------------------------------------------------ */
 

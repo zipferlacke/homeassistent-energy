@@ -199,6 +199,7 @@ const BLOCKS = [
       }) },
       { name: 'power', selector: () => watt() },
       { name: 'energy_total', selector: () => kwh() },
+      { name: 'status_entity', selector: () => ({ entity: { filter: { domain: 'sensor' } } }) },
       {
         type: 'expandable',
         name: 'more',
@@ -209,6 +210,7 @@ const BLOCKS = [
           { name: 'phases', selector: () => number(1, 3, 1) },
           { name: 'max_power', selector: () => number(1000, 30000, 100) },
           { name: 'car_soc', selector: () => percent() },
+          { name: 'status_map', selector: () => ({ object: {} }) },
         ],
       },
     ],
@@ -321,6 +323,8 @@ const LABELS = {
     power: 'Ladeleistung',
     energy_total: 'Zähler gesamt',
     energy_session: 'Aktuelle Ladung',
+    status_entity: 'Ladezustand',
+    status_map: 'Zuordnung der Rohwerte',
     current_actual_entity: 'Ladestrom-Sensor',
     phases: 'Phasen',
     max_power: 'Maximale Leistung',
@@ -399,6 +403,13 @@ const HELPERS = {
     power: 'Live-Wert in Watt (W), die aktuelle Ladeleistung.',
     energy_total: 'Gesamt-Zähler in kWh.',
     energy_session: 'kWh seit Steckerstart, falls die Wallbox das meldet — sonst leer lassen.',
+    status_entity: 'Der Sensor, der meldet was gerade los ist: kein Fahrzeug, angeschlossen, '
+      + 'lädt, pausiert, abgeschlossen, Störung. Texte werden automatisch erkannt — '
+      + 'deutsch wie "Auto lädt (State C)" ebenso wie OCPP-Englisch ("Charging", '
+      + '"SuspendedEV"). Ohne diesen Sensor rät die Karte aus der Ladeleistung.',
+    status_map: 'Nur nötig, wenn der Sensor bloße Zahlen liefert — "3" allein ist nicht '
+      + 'eindeutig. Dann hier zuordnen, z. B. {"1":"frei","2":"verbunden","3":"laedt",'
+      + '"4":"laedt","5":"fehler"}. Erlaubt: frei, verbunden, laedt, pausiert, fertig, fehler.',
     current_actual_entity: 'Live-Wert in Ampere (A), falls die Wallbox den tatsächlichen '
       + 'Strom meldet. Sonst wird er aus Leistung und Phasenzahl gerechnet.',
     phases: 'Nur zum Umrechnen der Leistung in Ampere. Dreiphasig ist der Normalfall.',
@@ -427,6 +438,21 @@ const HELPERS = {
  * ------------------------------------------------------------------ */
 
 const PRESETS = {
+  mennekes: {
+    label: 'Mennekes AMTRON (Modbus)',
+    wallboxes: [{
+      name: 'Wallbox',
+      power: ['mennekes_gesamtleistung'],
+      energy_total: ['mennekes_gesamtzaehlerstand'],
+      energy_session: ['mennekes_energie_aktueller_ladevorgang'],
+      status_entity: ['mennekes_kabel_fahrzeug', 'mennekes_status'],
+      current_actual_entity: ['mennekes_strom_l1'],
+    }],
+    hint: 'Die AMTRON meldet keinen Ladestand des Fahrzeugs — den liefert nur eine '
+      + 'Fahrzeug-Integration. Ohne sie bleiben Ladeziel und Restzeit aus. '
+      + 'Für das Solarladen brauchst du zusätzlich die HEMS-Stromvorgabe '
+      + '(number.mennekes_hems_stromvorgabe) in der Automation; 0 A bedeutet Pause.',
+  },
   sungrow: {
     label: 'Sungrow Hybrid (Modbus)',
     grid: {

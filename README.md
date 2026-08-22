@@ -234,6 +234,73 @@ mitgelieferte Automation liest sie über ihre neuen, festen Namen; bei
 mehreren Wallboxen findest du die tatsächlichen Namen unter Einstellungen →
 Geräte & Dienste → Entitäten.
 
+## Was eine Wallbox liefern muss
+
+Herstellerneutral — die Karte kennt keine Marken, nur Rollen. Was deine
+Wallbox nicht liefert, blendet sich aus.
+
+| Rolle | Einheit | Pflicht? | Wofuer |
+|---|---|---|---|
+| Ladeleistung | W | ja | Live-Ansicht, Ladestrom-Anzeige |
+| Gesamtzaehler | kWh | ja | Energie-Ansicht, Tageswerte |
+| **Ladezustand** | Text oder Zahl | empfohlen | angeschlossen / laedt / pausiert / Stoerung |
+| Aktuelle Ladung | kWh | nein | kWh seit Steckerstart |
+| Ladestrom-Sensor | A | nein | sonst aus Leistung und Phasenzahl gerechnet |
+| Ladestand des Fahrzeugs | % | nein | ohne ihn kein Ladeziel und keine Restzeit |
+
+**Fuer das Solarladen** braucht die Automation zusaetzlich einen
+schreibbaren Zahlen-Helfer fuer den Ladestrom in Ampere. Bei den meisten
+Wallboxen bedeutet **0 A = Pause**, ein eigener Ein/Aus-Schalter ist dann
+nicht noetig.
+
+### Ladezustand: Texte werden erkannt
+
+Der Zustand wird auf sechs Faelle abgebildet: `frei`, `verbunden`, `laedt`,
+`pausiert`, `fertig`, `fehler`. Deutsche wie englische Texte erkennt die
+Karte von allein — geprueft gegen echte Werte:
+
+| Meldung der Wallbox | wird erkannt als |
+|---|---|
+| `Kein Auto angesteckt (State A)` | frei |
+| `Auto angesteckt, lädt nicht (State B)` | verbunden |
+| `Auto lädt (State C)` | laedt |
+| `Fehler (State E)` | fehler |
+| `Available` / `Preparing` / `Charging` | frei / verbunden / laedt |
+| `SuspendedEV` / `SuspendedEVSE` | pausiert / verbunden |
+| `Finishing` / `Faulted` | fertig / fehler |
+
+Liefert dein Sensor nur **Rohzahlen**, ist "3" nicht eindeutig — dann unter
+*Weitere Angaben → Zuordnung der Rohwerte* eintragen:
+
+```json
+{"1": "frei", "2": "verbunden", "3": "laedt", "4": "laedt", "5": "fehler"}
+```
+
+### Mennekes AMTRON
+
+Vorlage vorhanden. Sie belegt Leistung, Zaehler, aktuelle Ladung, Ladestrom
+und Ladezustand aus der Modbus-Einbindung. Zwei Dinge zum Wissen:
+
+* Die AMTRON meldet **keinen Ladestand des Fahrzeugs** — Modbus gibt nur den
+  Zustand A–E her. Ohne eine Fahrzeug-Integration bleiben Ladeziel und
+  Restzeit deshalb aus.
+* Fuer das Solarladen ist `number.mennekes_hems_stromvorgabe` (Register 1000)
+  der Stellwert; 0 A bedeutet Pause.
+
+### Sungrow
+
+Wichtig zur Einordnung: Die verbreitete Sungrow-Einbindung von *mkaiser*
+deckt **Wechselrichter, Batterie und Zaehler** ab — dort sind keine
+Wallbox-Entitaeten enthalten. Fuer die Sungrow-Wallbox (AC011E-01) braucht es
+eine **zusaetzliche** Einbindung, etwa
+[Louisbertelsmann/Sungrow-Wallbox-Modbus-HomeAssistant](https://github.com/Louisbertelsmann/Sungrow-Wallbox-Modbus-HomeAssistant).
+Danach ordnest du deren Entitaeten genau wie oben beschrieben zu — eine
+eigene Vorlage gibt es dafuer nicht, weil ich die Entitaetsnamen dieser
+Einbindung nicht gegen eine echte Installation pruefen konnte.
+
+Die Sungrow-Vorlage in der Zuordnung fuellt entsprechend nur Netz, PV,
+Speicher und Haushalt.
+
 ## Strompreis ohne dynamischen Tarif
 
 Du brauchst keinen Preissensor. Trag im Block Strompreis einfach deinen

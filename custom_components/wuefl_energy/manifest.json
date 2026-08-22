@@ -1,7 +1,7 @@
 {
   "domain": "wuefl_energy",
   "name": "wuefl Energie",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "documentation": "https://github.com/",
   "issue_tracker": "https://github.com/",
   "dependencies": [
