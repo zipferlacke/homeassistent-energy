@@ -13,7 +13,7 @@ import {
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtEuro, esc, icon, registerCard,
   weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
   entityIds, statesChanged, pvForecast, todayTotals, todaySum,
-  COLORS, WueflFormEditor, sel,
+  COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml,
 } from './wuefl-energy-shared.js';
 
 // Wird von der Integration selbst ausgeliefert (siehe __init__.py,
@@ -32,6 +32,7 @@ const PARTS = {
 };
 
 const CSS = `
+${TILE_CSS}
 .card {
   & .head { align-items: start; display: flex; gap: .5rem; justify-content: space-between; }
 }
@@ -118,37 +119,8 @@ const CSS = `
 .money {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-top: .75rem;
-
-  /* Kacheln sind echte ha-card statt selbstgebauter Kästen — dadurch
-     folgen Hintergrund, Rundung und Schatten dem Theme des Nutzers. */
-  & .energy-value-card {
-    border-left: 4px solid transparent;
-    cursor: default;
-    display: block;
-    text-align: left;
-    width: 100%;
-  }
-  & button.energy-value-card { cursor: pointer; font: inherit; }
-  & .balance-border { border-left-color: var(--primary-color); }
-  & .saved-border { border-left-color: var(--energy-solar-color, #ff9800); }
-  & .payback-border { border-left-color: var(--energy-battery-out-color, #4db0a2); }
-
-  & .card-content { padding: 16px; }
-  & .card-title {
-    align-items: center; color: var(--secondary-text-color);
-    display: flex; font-size: 14px; gap: .3rem;
-    & ha-icon { --mdc-icon-size: 15px; opacity: .65; }
-  }
-  & .main-value {
-    color: var(--primary-text-color);
-    font-size: 24px; font-weight: bold; margin: 4px 0;
-  }
-  & .sub-values { display: flex; flex-wrap: wrap; font-size: 12px; gap: 16px; margin-top: 8px; }
-  & .sub-values .in { color: var(--energy-battery-out-color, #4db0a2); }
-  & .sub-values .out { color: var(--error-color, #db4437); }
-  & .sub-label { color: var(--secondary-text-color); }
 }
 
 .explain {
@@ -746,46 +718,39 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     if (earned !== null || paid !== null) {
       const balance = (earned ?? 0) - (paid ?? 0);
-      tiles.push(`<ha-card class="energy-value-card balance-border">
-        <div class="card-content">
-          <div class="card-title">Bilanz heute</div>
-          <div class="main-value">${fmtEuro(balance)}</div>
-          <div class="sub-values">
-            ${earned !== null ? `<div class="in">${fmtEuro(earned)}<span class="sub-label"> eingespeist</span></div>` : ''}
-            ${paid !== null ? `<div class="out">${fmtEuro(-paid)}<span class="sub-label"> bezogen</span></div>` : ''}
-          </div>
-        </div>
-      </ha-card>`);
+      const subtitle = `
+        ${earned !== null ? `<span class="sub-item" style="color: var(--energy-battery-out-color, #4db0a2)">${esc(fmtEuro(earned))} eingespeist</span>` : ''}
+        ${paid !== null ? `<span class="sub-item" style="color: var(--error-color, #db4437)">${esc(fmtEuro(-paid))} bezogen</span>` : ''}
+      `;
+      tiles.push(tileHtml({
+        icon: 'mdi:cash-multiple', color: cssColor(this, '--primary-color', '#03a9f4'),
+        title: 'Bilanz heute', value: fmtEuro(balance), subtitle,
+      }));
     }
 
     if (saved !== null) {
-      tiles.push(`<ha-card class="energy-value-card saved-border">
-        <button type="button" class="card-content" data-explain="saved"
-                style="background:none;border:0;width:100%;text-align:left;cursor:pointer">
-          <div class="card-title">Durch PV gespart ${icon('mdi:information-outline')}</div>
-          <div class="main-value">${fmtEuro(saved, { signed: false })}</div>
-        </button>
-      </ha-card>`);
+      tiles.push(tileHtml({
+        icon: 'mdi:solar-power', color: cssColor(this, '--energy-solar-color', '#ff9800'),
+        title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }), click: 'saved',
+      }));
     }
 
     // Amortisation: was der heutige Tag zu den Anschaffungskosten beiträgt.
     const cost = Number(c.system_cost);
     if (Number.isFinite(cost) && cost > 0 && (saved !== null || earned !== null)) {
       const today = (saved ?? 0) + (earned ?? 0);
-      tiles.push(`<ha-card class="energy-value-card payback-border">
-        <button type="button" class="card-content" data-explain="payback"
-                style="background:none;border:0;width:100%;text-align:left;cursor:pointer">
-          <div class="card-title">Zur Amortisation ${icon('mdi:information-outline')}</div>
-          <div class="main-value">${fmtEuro(today, { signed: false })}</div>
-          <div class="sub-values"><span class="sub-label">${((today / cost) * 100).toFixed(3).replace('.', ',')} % der Anlage</span></div>
-        </button>
-      </ha-card>`);
+      const percent = `${((today / cost) * 100).toFixed(3).replace('.', ',')} % der Anlage`;
+      tiles.push(tileHtml({
+        icon: 'mdi:cash-clock', color: cssColor(this, '--energy-battery-out-color', '#4db0a2'),
+        title: 'Zur Amortisation', value: fmtEuro(today, { signed: false }),
+        subtitle: `<span class="sub-item">${esc(percent)}</span>`, click: 'payback',
+      }));
     }
 
     this.#els.money.innerHTML = tiles.join('');
 
-    for (const btn of this.#els.money.querySelectorAll('[data-explain]')) {
-      btn.addEventListener('click', () => this.#toggleExplain(btn.dataset.explain));
+    for (const btn of this.#els.money.querySelectorAll('[data-click]')) {
+      btn.addEventListener('click', () => this.#toggleExplain(btn.dataset.click));
     }
     this.#renderExplain();
   }

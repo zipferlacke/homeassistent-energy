@@ -9,7 +9,7 @@ import {
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtDuration, moreInfo,
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
-  esc, icon, COLORS, WueflFormEditor, sel,
+  esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml,
 } from './wuefl-energy-shared.js';
 
 /* Der Modus wird am Namen der Option erkannt – eigene Bezeichnungen im
@@ -24,6 +24,7 @@ const MODE_KINDS = [
 const modeInfo = (label) => MODE_KINDS.find((m) => m.match.test(label)) ?? { icon: 'mdi:tune', kind: 'other' };
 
 const CSS = `
+${TILE_CSS}
 .top {
   & .head { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; }
   & .name { font-size: 1.35rem; font-weight: 600; line-height: 1.25; }
@@ -66,28 +67,33 @@ const CSS = `
   & .note { color: var(--w-text-soft); font-size: var(--w-fs-sm); line-height: 1.45; }
 }
 
-/* Modus-Auswahl im Stil der Home-Assistant-Bedienelemente. */
+/* Modus-Auswahl im selben Segmented-Control-Look wie Tag/Woche/Monat/Jahr
+   in der Energie-Ansicht: heller Rahmen-Hintergrund, aktive Option als
+   weiße, leicht erhabene Pille statt einer eingefärbten Fläche. */
 .modes {
-  background: var(--w-bg-soft);
-  border-radius: var(--w-radius);
+  background: var(--secondary-background-color, rgba(127, 127, 127, .12));
+  border-radius: 12px;
   display: grid;
-  gap: 3px;
+  gap: 2px;
   grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
   margin: .8rem 0;
   padding: 3px;
 
   & .btn {
     background: transparent;
-    border-radius: calc(var(--w-radius) - 3px);
+    border-radius: 9px;
+    color: var(--secondary-text-color, #727272);
     flex-direction: column; gap: .2rem; height: auto; padding: .6rem .4rem;
+    transition: all .2s ease;
 
     & ha-icon { --mdc-icon-size: 22px; }
-    & .txt { font-size: var(--w-fs-sm); line-height: 1.2; text-align: center; }
-    &:hover { background: var(--w-bg-hover); }
+    & .txt { font-size: var(--w-fs-sm); font-weight: 500; line-height: 1.2; text-align: center; }
+    &:hover { color: var(--primary-text-color, #212121); }
     &[aria-pressed="true"] {
-      background: var(--w-accent);
-      box-shadow: 0 1px 3px rgb(0 0 0 / .2);
-      color: var(--w-on-accent);
+      background: var(--card-background-color, #fff);
+      box-shadow: 0 1px 3px rgb(0 0 0 / .12);
+      color: var(--primary-text-color, #212121);
+      font-weight: 600;
     }
   }
 }
@@ -154,18 +160,6 @@ details {
 .stats {
   display: grid; gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: .75rem;
-
-  /* Echte ha-card statt eigener Kästen — Hintergrund, Rundung und Schatten
-     kommen damit aus dem Theme des Nutzers. */
-  & .energy-value-card { display: block; }
-  & .card-content {
-    background: none; border: 0; cursor: pointer; display: block;
-    font: inherit; padding: 16px; text-align: left; width: 100%;
-  }
-  & .card-title { color: var(--secondary-text-color); font-size: 14px; }
-  & .main-value {
-    color: var(--primary-text-color); font-size: 24px; font-weight: bold; margin: 4px 0;
-  }
 }
 `;
 
@@ -635,23 +629,19 @@ class WueflWallboxCard extends HTMLElement {
     const h = this.#hass;
     const items = [];
 
+    const wbColor = cssColor(this, '--w-wallbox', '#7f77dd');
     const today = energy(h, c.today_energy_entity);
-    if (today !== null) items.push({ e: c.today_energy_entity, k: 'Heute geladen', v: fmtEnergy(today) });
+    if (today !== null) items.push({ e: c.today_energy_entity, icon: 'mdi:calendar-today', color: wbColor, k: 'Heute geladen', v: fmtEnergy(today) });
     const total = energy(h, c.total_energy_entity);
-    if (total !== null) items.push({ e: c.total_energy_entity, k: 'Gesamt', v: fmtEnergy(total) });
+    if (total !== null) items.push({ e: c.total_energy_entity, icon: 'mdi:counter', color: wbColor, k: 'Gesamt', v: fmtEnergy(total) });
     const socs = asList(c.battery_soc_entity);
     const batt = sum(h, socs, num);
-    if (batt !== null) items.push({ e: socs[0], k: 'Hausakku', v: fmtPercent(batt / socs.length) });
+    if (batt !== null) items.push({ e: socs[0], icon: 'mdi:home-battery', color: cssColor(this, '--energy-battery-out-color', '#4db0a2'), k: 'Hausakku', v: fmtPercent(batt / socs.length) });
     const price = priceInfo(h, c, 'import').now;
-    if (price !== null) items.push({ e: c.price_entity, k: 'Strompreis', v: `${fmtPrice(price)}/kWh` });
+    if (price !== null) items.push({ e: c.price_entity, icon: 'mdi:currency-eur', color: cssColor(this, '--w-price', '#fbaa00'), k: 'Strompreis', v: `${fmtPrice(price)}/kWh` });
 
     this.#els.stats.innerHTML = items
-      .map((i) => `<ha-card class="energy-value-card">
-          <button type="button" class="card-content" data-entity="${esc(i.e ?? '')}">
-            <div class="card-title">${i.k}</div>
-            <div class="main-value">${i.v}</div>
-          </button>
-        </ha-card>`)
+      .map((i) => tileHtml({ icon: i.icon, color: i.color, title: i.k, value: i.v, entity: i.e ?? '' }))
       .join('');
     for (const btn of this.#els.stats.querySelectorAll('[data-entity]')) {
       btn.addEventListener('click', () => moreInfo(this, btn.dataset.entity));

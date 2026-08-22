@@ -29,6 +29,7 @@ Karten über zwei WebSocket-Befehle bereit. Gepflegt wird sie in der Ansicht
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -62,6 +63,24 @@ STRATEGY_FILE = "wuefl-energy-strategy.js"
 CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Any(dict, None)}, extra=vol.ALLOW_EXTRA)
 
 
+async def _integration_version(hass: HomeAssistant) -> str:
+    """Version aus manifest.json, nur für das Cache-Busting der Ressourcen-URL.
+
+    Läuft über den Executor, weil Dateizugriff sonst den Event-Loop blockiert.
+    Schlägt das Lesen fehl, wird die aktuelle Uhrzeit als Ersatzwert
+    verwendet — dann funktioniert das Cache-Busting weiterhin, auch wenn
+    kein sauberer Versionsstring ermittelt werden konnte.
+    """
+    def _read() -> str:
+        try:
+            path = Path(__file__).parent / "manifest.json"
+            return json.loads(path.read_text(encoding="utf-8")).get("version", "0")
+        except Exception:  # noqa: BLE001 - Cache-Busting darf nie den Start verhindern
+            return "0"
+
+    return await hass.async_add_executor_job(_read)
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Nur für die klassische YAML-Zeile zuständig: legt beim ersten Start
     automatisch einen Config Entry an, falls noch keiner existiert. Die
@@ -81,9 +100,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         [StaticPathConfig(URL_BASE, web_path, cache_headers=False)]
     )
     # Meldet die Ressource automatisch bei Lovelace an. Die Strategy-Datei
-    # importiert die übrigen Karten relativ zu sich selbst, ein Eintrag
-    # genügt also.
-    add_extra_js_url(hass, f"{URL_BASE}/{STRATEGY_FILE}")
+    # importiert die übrigen Karten selbst dynamisch (siehe dort), ein
+    # Eintrag genügt also.
+    #
+    # Der Anhang "?v=<Version>" ist eigenes Cache-Busting: Browser cachen
+    # eine einmal geladene JS-Datei gern hartnäckig, auch mit
+    # cache_headers=False am Server. HACS' eigener "hacstag"-Mechanismus
+    # greift hier nicht — der gilt nur, wenn HACS selbst die
+    # Lovelace-Ressource verwaltet (Kategorie "plugin"), nicht bei uns, wo
+    # die Integration die Ressource anmeldet. Ändert sich die Manifest-
+    # Version bei einem Update, ändert sich die URL, der Browser lädt neu —
+    # ohne dass jemand manuell den Cache leeren muss.
+    version = await _integration_version(hass)
+    add_extra_js_url(hass, f"{URL_BASE}/{STRATEGY_FILE}?v={version}")
 
     websocket_api.async_register_command(hass, websocket_get_config)
     websocket_api.async_register_command(hass, websocket_save_config)

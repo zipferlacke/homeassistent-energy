@@ -10,14 +10,39 @@
 
 import { deriveConfig, normalizeConfig } from './wuefl-energy-shared.js';
 
-/* Die Karten müssen geladen sein, bevor die Ansichten sie benutzen. */
-import './wuefl-energy-live-card.js';
-import './wuefl-energy-history-card.js';
-import './wuefl-wallbox-card.js';
-import './wuefl-energy-settings-card.js';
-import './wuefl-energy-config-card.js';
+/* Die Karten werden NICHT hier oben statisch importiert. Home Assistant
+   gibt nur ein kurzes Zeitfenster, um die Strategie anzumelden — fünf
+   Karten-Module vorab zu laden würde das unnötig verzögern und im
+   schlimmsten Fall zum Timeout führen. Stattdessen lädt ensureCards() sie
+   erst, wenn die Strategie wirklich gebraucht wird (siehe generate()). */
+let cardsLoaded = null;
+function ensureCards() {
+  if (!cardsLoaded) {
+    cardsLoaded = Promise.all([
+      import('./wuefl-energy-live-card.js'),
+      import('./wuefl-energy-history-card.js'),
+      import('./wuefl-wallbox-card.js'),
+      import('./wuefl-energy-settings-card.js'),
+      import('./wuefl-energy-config-card.js'),
+    ]);
+  }
+  return cardsLoaded;
+}
 
 const section = (cards) => ({ type: 'grid', cards });
+const view = (title, path, icon, cards, max_columns) => {
+  const result = {
+    title: title,
+    path: path,
+    icon: icon,
+    type: 'sections',
+    sections: [section(cards)]
+  };
+  if (max_columns !== undefined) {
+    result.max_columns = max_columns;
+  }
+  return result;
+};
 
 async function loadConfig(hass) {
   try {
@@ -31,6 +56,11 @@ async function loadConfig(hass) {
 
 class WueflEnergyDashboardStrategy {
   static async generate(config, hass) {
+    // Erst hier laden, nicht beim Modul-Start — die Klasse selbst ist
+    // sofort registriert (siehe ganz unten), unabhängig davon, wie lange
+    // das Nachladen der Karten dauert.
+    await ensureCards();
+
     const raw = await loadConfig(hass);
     const derived = deriveConfig(raw);
     const views = [];
@@ -38,8 +68,8 @@ class WueflEnergyDashboardStrategy {
     const hasLive = !!raw.grid?.power || !!raw.solar?.power || raw.battery.length > 0;
     if (hasLive) {
       views.push(view('Live', 'live', 'mdi:home-lightning-bolt', [
-        { type: 'custom:wuefl-energy-live-card' },
-      ], 1));
+        { type: 'custom:wuefl-energy-live-card', grid_options: { columns: 'full' } },
+      ], 2));
     }
 
     // Die Energie-Ansicht nutzt eine Karte im Stil von HA's Energie-Ansicht
@@ -55,8 +85,8 @@ class WueflEnergyDashboardStrategy {
 
     if (hasEnergyEntities) {
       views.push(view('Energie', 'energie', 'mdi:chart-box', [
-        { type: 'custom:wuefl-energy-history-card' },
-      ], 1));
+        { type: 'custom:wuefl-energy-history-card', grid_options: { columns: 'full' } },
+      ], 2));
     }
 
     if (raw.wallboxes.length) {
@@ -64,8 +94,11 @@ class WueflEnergyDashboardStrategy {
         raw.wallboxes.length > 1 ? 'Wallboxen' : 'Wallbox',
         'wallbox',
         'mdi:ev-station',
-        raw.wallboxes.map((_, i) => ({ type: 'custom:wuefl-wallbox-card', slot: i + 1 })),
-        Math.min(2, raw.wallboxes.length),
+        raw.wallboxes.map((_, i) => ({
+          type: 'custom:wuefl-wallbox-card', slot: i + 1,
+          ...(raw.wallboxes.length === 1 ? { grid_options: { columns: 'full' } } : {}),
+        })),
+        Math.max(2, Math.min(2, raw.wallboxes.length)),
       ));
     }
 

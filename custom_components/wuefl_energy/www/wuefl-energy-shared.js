@@ -960,3 +960,107 @@ export function mergeConfig(central, own) {
   }
   return out;
 }
+
+/**
+ * Löst eine CSS-Variable (bloßer Name, z. B. "--energy-solar-color") gegen
+ * das aktuell aktive Theme auf. `element` muss die eigene Karte sein
+ * (nicht document.documentElement), sonst greift nicht garantiert das
+ * gewählte Theme. Ist colorString gar keine Variable, sondern schon eine
+ * fertige Farbe, kommt sie unverändert zurück.
+ */
+export function cssColor(element, colorString, fallback) {
+  if (!colorString) return fallback;
+  const cleanVar = colorString.startsWith('var(') ? colorString.slice(4, -1).trim() : colorString;
+  if (cleanVar.startsWith('--')) {
+    const computed = getComputedStyle(element).getPropertyValue(cleanVar).trim();
+    if (computed) return computed;
+  }
+  return cleanVar.startsWith('--') ? fallback : cleanVar;
+}
+
+/* ------------------------------------------------------------------ *
+ * Kachel- und Umschalter-Optik im HA-Tile-Stil
+ * ------------------------------------------------------------------ *
+ * Erst in der Energie-Ansicht entstanden, jetzt zentral hier — damit
+ * Live-Karte und Wallbox-Karte exakt dieselbe Optik bekommen, statt drei
+ * leicht unterschiedliche Kopien zu pflegen.
+ */
+
+/** In jede Karte einbinden, die tileHtml()/toggleHtml() benutzt. */
+export const TILE_CSS = `
+.ha-tile-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.ha-tile {
+  border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
+  border-radius: var(--ha-card-border-radius, 12px);
+  box-shadow: var(--ha-card-box-shadow, none);
+  background: var(--ha-card-background, var(--card-background-color, #fff));
+  padding: 12px; display: flex; align-items: center; min-height: 100%; box-sizing: border-box;
+}
+button.ha-tile { border: 0; cursor: pointer; font: inherit; text-align: left; width: 100%; }
+.tile-content { display: flex; align-items: center; gap: 12px; width: 100%; }
+.tile-icon-container {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--icon-bg); color: var(--icon-color);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.tile-icon-container ha-icon { display: flex; align-items: center; justify-content: center; }
+.tile-info { display: flex; flex-direction: column; justify-content: center; flex: 1; overflow: hidden; }
+.tile-title { font-size: 13px; font-weight: 500; color: var(--secondary-text-color); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.tile-value { font-size: 16px; font-weight: 600; color: var(--primary-text-color); margin-top: 1px; }
+.tile-subtitle { font-size: 11px; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.sub-item { display: flex; align-items: center; gap: 2px; }
+`;
+
+/** Segmented Control wie bei Tag/Woche/Monat/Jahr in der Energie-Ansicht. */
+export const TOGGLE_CSS = `
+.time-buttons {
+  background: var(--secondary-background-color, rgba(127, 127, 127, 0.12));
+  border-radius: 12px;
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+}
+.time-btn {
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  color: var(--secondary-text-color, #727272);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  transition: all 0.2s ease;
+}
+.time-btn:hover { color: var(--primary-text-color, #212121); }
+.time-btn.active {
+  background: var(--card-background-color, #fff);
+  color: var(--primary-text-color, #212121);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+`;
+
+/**
+ * Baut eine ha-tile-Kachel: Icon links in einem farbigen Kreis, Titel/Wert/
+ * Untertitel daneben. Mit `entity` oder `click` wird daraus ein echter
+ * <button> mit passendem data-Attribut (für moreInfo bzw. eigene
+ * Klick-Logik wie die Erklär-Tiles); ohne beides bleibt es ein reines
+ * <ha-card>.
+ */
+export function tileHtml({ icon, color, title, value, subtitle, entity, click }) {
+  const style = `--icon-color: ${color}; --icon-bg: color-mix(in srgb, ${color} 18%, transparent);`;
+  const inner = `
+    <div class="tile-content">
+      <div class="tile-icon-container" style="${style}"><ha-icon icon="${esc(icon)}"></ha-icon></div>
+      <div class="tile-info">
+        <div class="tile-title">${esc(title)}</div>
+        <div class="tile-value">${esc(value)}</div>
+        ${subtitle ? `<div class="tile-subtitle">${subtitle}</div>` : ''}
+      </div>
+    </div>`;
+  const attr = entity ? `data-entity="${esc(entity)}"` : click ? `data-click="${esc(click)}"` : '';
+  return attr
+    ? `<ha-card class="ha-tile"><button type="button" class="ha-tile" style="background:none;border:0;width:100%;padding:0" ${attr}>${inner}</button></ha-card>`
+    : `<ha-card class="ha-tile">${inner}</ha-card>`;
+}

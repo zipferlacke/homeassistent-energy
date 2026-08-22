@@ -26,32 +26,45 @@ automatisch.
 
 ## Installation
 
-### Option A: von Hand
+### Option A: über HACS (empfohlen)
 
-**1. Integration kopieren**
+Wenn dieses Paket in einem eigenen GitHub-Repository liegt, laesst es sich als
+**benutzerdefiniertes Repository** in HACS eintragen — die `hacs.json` im
+Wurzelverzeichnis macht das moeglich. Danach ist eine neue Version nur noch
+ein Klick auf "Neu herunterladen" statt Dateien von Hand zu kopieren.
 
-`custom_components/wuefl_energy/` nach `config/custom_components/` kopieren.
-In `configuration.yaml` auf oberster Ebene ergaenzen — nicht in einem Package:
+**1. Repository eintragen**
 
-```yaml
-wuefl_energy:
-```
+Auf den Button ganz oben in diesem README klicken — oeffnet HACS direkt mit
+dem Repository vorausgefuellt. Oder von Hand: HACS → drei Punkte oben rechts
+→ **Benutzerdefinierte Repositories** → URL eintragen, Kategorie
+**Integration**.
 
-**2. Neu starten.**
+**2. Installieren**
 
-Home Assistant legt beim ersten Start automatisch einen Eintrag unter
-Einstellungen → Geraete & Dienste an — das ist erwartet, da steht nichts
-einzustellen. Der Eintrag existiert nur, damit die Helfer-Entitaeten
-(Laderegler, Lademodus je Wallbox) zuverlaessig geladen werden, und damit die
-Integration ihre Karten unter `/wuefl_energy_files/` ausliefern und als
-Lovelace-Ressource anmelden kann. Beides passiert automatisch — keine
-Ressource von Hand einzutragen, kein `www/`-Ordner zu kopieren.
+"wuefl Energie" in HACS suchen, installieren, Home Assistant neu starten.
+Da alles — Integration und Karten — in `custom_components/wuefl_energy/`
+liegt, reicht die Kategorie *Integration* fuer beides; es ist kein separater
+HACS-Eintrag fuer die Karten noetig.
 
-**3. Dashboard anlegen**
+**3. Integration hinzufuegen**
+
+HACS installiert nur die Dateien — aktiv wird die Integration erst, wenn du
+sie einrichtest:
+
+Einstellungen → Geraete & Dienste → **+ Integration hinzufuegen** (unten
+rechts) → nach **"wuefl Energie"** suchen → auswaehlen → Dialog bestaetigen.
+
+Es gibt dabei nichts einzustellen, der Dialog zeigt nur einen
+Bestaetigungsschritt. Das legt den Eintrag an, der die Helfer-Entitaeten
+(Laderegler, Lademodus je Wallbox) zuverlaessig laedt und die Karten unter
+`/wuefl_energy_files/` ausliefert. Ohne diesen Schritt bleibt die
+Integration installiert, aber inaktiv.
+
+**4. Dashboard anlegen**
 
 Einstellungen → Dashboards → Dashboard hinzufuegen → **wuefl Energie**
-auswaehlen. Erscheint es nicht in der Liste, den Browser-Cache leeren und die
-Seite neu laden.
+auswaehlen. Erscheint es nicht in der Liste, die Seite einmal neu laden.
 
 Alternativ von Hand, im Raw-Konfigurationseditor eines leeren Dashboards:
 
@@ -60,12 +73,12 @@ strategy:
   type: custom:wuefl-energy
 ```
 
-**4. Zuordnen**
+**5. Zuordnen**
 
 Im neuen Dashboard die Ansicht **Zuordnung** oeffnen und die Entitaeten
 eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 
-**5. Helfer und Ladeautomatik (optional)**
+**6. Helfer und Ladeautomatik (optional)**
 
 `packages/wuefl_wallbox.yaml` nach `config/packages/` kopieren. Dafuer muss in
 `configuration.yaml` stehen:
@@ -74,24 +87,6 @@ eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 homeassistant:
   packages: !include_dir_named packages
 ```
-
-### Option B: über HACS (empfohlen für Entwicklung/Updates)
-
-Wenn dieses Paket in einem eigenen GitHub-Repository liegt, laesst es sich als
-**benutzerdefiniertes Repository** in HACS eintragen — die `hacs.json` im
-Wurzelverzeichnis macht das moeglich. Danach ist eine neue Version nur noch
-ein Klick auf "Neu herunterladen" statt Dateien von Hand zu kopieren:
-
-1. Auf den Button ganz oben in diesem README klicken (funktioniert nur, wenn
-   dort schon der echte GitHub-Name eingetragen ist) — oeffnet HACS direkt mit
-   dem Repository vorausgefuellt. Oder von Hand:
-2. In HACS → drei Punkte oben rechts → **Benutzerdefinierte Repositories**.
-3. URL des eigenen Repositories eintragen, Kategorie **Integration**.
-4. "wuefl Energie" suchen, installieren, Home Assistant neu starten.
-
-Da alles — Integration und Karten — in `custom_components/wuefl_energy/`
-liegt, reicht die Kategorie *Integration* fuer beides; es ist kein separater
-HACS-Eintrag fuer die Karten noetig.
 
 ## Wie die Ansichten entstehen
 
@@ -145,8 +140,6 @@ konnte. Die Umschaltung erkennt nur, ob du sie selbst installiert hast, und
 Hast du zusätzlich Einstellungen → Energie ausgefüllt, erscheint obendrauf
 noch Home Assistants eigene `energy-usage-graph`-Karte — reiner Lesezugriff
 (`energy/get_prefs`), nichts wird verändert oder automatisch eingerichtet.
-
-## Null, eins oder viele
 
 ## Null, eins oder viele
 
@@ -433,3 +426,29 @@ Maße und Schriftgrößen hängen an `--w-radius`, `--w-pad`, `--w-input-h` und
   Testumgebung geprüft, die eigens `async_forward_entry_setups` nachbildet,
   nicht gegen eine echte, laufende Home-Assistant-Instanz. Melde dich, falls
   beim ersten Start etwas nicht wie beschrieben erscheint.
+
+## Manuelle Installation, ohne HACS
+
+Gleicher Ablauf wie oben, nur ohne HACS-Verwaltung:
+
+**1. Integration kopieren**
+
+`custom_components/wuefl_energy/` nach `config/custom_components/` kopieren.
+Danach entweder über Einstellungen → Geraete & Dienste → Integration
+hinzufuegen (wie oben, Schritt 3) einrichten, oder klassisch per YAML — in
+`configuration.yaml` auf oberster Ebene ergaenzen, nicht in einem Package:
+
+```yaml
+wuefl_energy:
+```
+
+Mit der YAML-Zeile legt Home Assistant den Eintrag beim naechsten Neustart
+automatisch selbst an.
+
+**2. Neu starten, Dashboard anlegen, Zuordnen, Helfer (optional)**
+
+Identisch zu den Schritten 4–6 oben.
+
+**Nachteil gegenueber HACS:** jedes Update bedeutet, den Ordner erneut von
+Hand zu ersetzen, statt "Neu herunterladen" zu klicken.
+
