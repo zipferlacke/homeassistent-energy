@@ -1,134 +1,71 @@
 /**
  * wuefl-energy-solar-chart-card
- * "Gesamt" plus eine Linie je Dachfläche, als Mittelwert der Leistung (W)
- * — braucht dafür keinen eigenen kWh-Zähler pro Fläche, nur den ohnehin
- * vorhandenen Leistungssensor. Eigener Abschnitt, blendet sich selbst
- * aus, wenn keine Solaranlage zugeordnet ist.
+ * "Gesamt" plus eine Linie je Dachfläche, als Mittelwert der Leistung.
+ *
+ * Der Chip zeigt bewusst NICHT einen Wert aus dem Diagramm: das zeigt
+ * Leistung (W), und deren Mittelwert ist keine Energiemenge. Er hängt
+ * stattdessen am kWh-Gesamtzähler — nur so steht dort die tatsächliche
+ * Gesamterzeugung.
  */
-import {
-  registerCard, centralConfig, WueflFormEditor, sel, GRID_CSS,
-  cssColor, getPeriod, onPeriodChange, embedGraphCard, CHART_HINT_CSS,
-} from './wuefl-energy-shared.js';
+import { asList, registerCard, WueflFormEditor, sel } from './wuefl-energy-shared.js';
+import { WueflChartWrapper } from './wuefl-energy-chart-base.js';
 
-const CSS = `
-:host { display: block; }
-.card { ${GRID_CSS} }
-${CHART_HINT_CSS}
-.chart-slot { display: block; }
-`;
+const STRING_COLORS = [
+  'var(--energy-grid-consumption-color, #488fc2)',
+  'var(--wuefl-wallbox-color, #ba68c8)',
+  'var(--energy-battery-out-color, #4db0a2)',
+  'var(--wuefl-heatpump-color, #d85a30)',
+];
 
-class WueflEnergySolarChartCard extends HTMLElement {
-  #own = {};
-  #central = {};
-  #config = {};
-  #hass = null;
-  #built = false;
-  #stopPeriod = null;
-  #card = null;
-  #els = {};
-
+class WueflEnergySolarChartCard extends WueflChartWrapper {
   static getConfigElement() { return document.createElement('wuefl-energy-solar-chart-card-editor'); }
   static getStubConfig() { return { title: 'Solarproduktion' }; }
 
-  setConfig(config) {
-    this.#own = config ?? {};
-    this.#config = { title: 'Solarproduktion', ...this.#central, ...this.#own };
-  }
+  get defaultTitle() { return 'Solarproduktion'; }
 
-  set hass(hass) {
-    const first = !this.#hass;
-    this.#hass = hass;
-    if (this.#card) this.#card.hass = hass;
-    if (first) {
-      this.#loadCentral();
-      window.addEventListener('wuefl-energy-config-changed', () => this.#loadCentral());
-      this.#stopPeriod = onPeriodChange(() => this.#refresh());
-    }
-    if (!this.#built) this.#build();
-  }
-
-  disconnectedCallback() { this.#stopPeriod?.(); }
-  getCardSize() { return 3; }
-
-  async #loadCentral() {
-    this.#central = await centralConfig(this.#hass, 'history');
-    this.#config = { title: 'Solarproduktion', ...this.#central, ...this.#own };
-    this.#refresh();
-  }
-
-  #build() {
-    const root = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
-    if (!root.adoptedStyleSheets?.length) {
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(CSS);
-      root.adoptedStyleSheets = [sheet];
-    }
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = '<div class="chart-slot"></div>';
-    root.replaceChildren(card);
-    this.#els = { slot: card.querySelector('.chart-slot') };
-    this.#built = true;
-    this.#refresh();
-  }
-
-  #chartConfig(range) {
+  buildChartConfig(range) {
+    const mainPower = this._central?.raw?.solar?.power;
+    const strings = (this._central?.raw?.strings ?? []).filter((s) => s.power);
     const series = [];
-    const mainPower = this.#central?.raw?.solar?.power;
+
     if (mainPower) {
       series.push({
-        statistic_id: mainPower,
-        chart_type: 'line',
-        id: 'series_total',
+        entity: mainPower,
         name: 'Gesamt',
+        color: 'var(--energy-solar-color, #ff9800)',
         stat_type: 'mean',
-        fill: true,
-        gradient_fill: true,
-        line_style: 'dashed',
-        smooth: 1,
-        color: cssColor(this, '--energy-solar-color', '#ff9800'),
+        fill: 'gradient',
       });
     }
-
-    const strings = this.#central?.raw?.strings ?? [];
     strings.forEach((str, i) => {
-      const entity = str.power;
-      if (entity && !series.some((s) => s.statistic_id === entity)) {
-        series.push({
-          statistic_id: entity,
-          chart_type: 'line',
-          id: `series_${i + 1}`,
-          name: str.name || `Fläche ${i + 1}`,
-          stat_type: 'mean',
-          fill: true,
-          gradient_fill: true,
-          smooth: 1,
-        });
-      }
+      series.push({
+        entity: str.power,
+        name: str.name || `Fläche ${i + 1}`,
+        color: STRING_COLORS[i % STRING_COLORS.length],
+        stat_type: 'mean',
+        fill: 'gradient',
+      });
     });
     if (!series.length) return null;
 
-    const isOneDay = (range.end - range.start) <= 86_400_000;
+    const energyIds = asList(this._config.pv_energy);
     return {
-      type: 'custom:energy-custom-graph-card',
-      chart_height: '180px',
-      y_axes: [{ id: 'left', fit_y_data: true, unit: 'W', center_zero: false }],
-      period: isOneDay ? '5minute' : undefined,
-      timespan: { mode: 'fixed', start: range.start.toISOString(), end: range.end.toISOString() },
+      aggregation: this._aggregation(range),
+      y_axes: [{ unit: 'kW' }],
+      legend: [{ hidden: false, position: 'top-right' }],
       series,
+      ...(energyIds.length
+        ? {
+            chip: {
+              entity: energyIds[0],
+              unit: 'kWh',
+              stat_type: 'change',
+              calc_type: 'sum',
+              color: 'var(--energy-solar-color, #ff9800)',
+            },
+          }
+        : {}),
     };
-  }
-
-  async #refresh() {
-    if (!this.#built || !this.#hass) return;
-    const range = getPeriod();
-    const config = this.#chartConfig(range);
-    if (!config) {
-      this.hidden = true;
-      return;
-    }
-    this.hidden = false;
-    this.#card = await embedGraphCard(this.#hass, this.#card, this.#els.slot, config);
   }
 }
 
@@ -142,5 +79,5 @@ customElements.define('wuefl-energy-solar-chart-card-editor', WueflEnergySolarCh
 registerCard({
   type: 'wuefl-energy-solar-chart-card',
   name: 'wuefl Solarproduktion',
-  description: 'Gesamt- und Einzeldach-Leistung für die Energie-Ansicht.',
+  description: 'Gesamt- und Einzeldach-Leistung, Chip zeigt den Ertrag in kWh.',
 });

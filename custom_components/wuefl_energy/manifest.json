@@ -1,7 +1,7 @@
 {
   "domain": "wuefl_energy",
   "name": "wuefl Energie",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "documentation": "https://github.com/zipferlacke/homeassistent-energy",
   "issue_tracker": "https://github.com/zipferlacke/homeassistent-energy/issues",
   "dependencies": [
