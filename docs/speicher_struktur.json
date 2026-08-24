@@ -1,0 +1,131 @@
+/*
+   entityObj= null | {
+      "id": string,
+      "entity": string, 
+      "name": string, 
+      "color": string, 
+      "transform":null|number //zum invertieren der Richtung
+      },
+*/
+{
+   "grid": {
+      "id": string,
+      "color": string, // vererbt, standmäßig seine Farbe an die anderen unterhalb
+      "live": entityObj,
+      "import_total": entityObj,
+      "export_total": entityObj,
+      "price": {
+         "import": entityObj,
+         "export": entityObj,
+         "forecast": {
+            "import": entityObj,
+            "export": entityObj
+         }
+      }
+   },
+   "solar": [
+      {
+         "id": string,
+         "live": entityObj,
+         "total": entityObj,
+         "forecast": []entityObj,
+         "strings": []entityObj,
+         "temperatur": entityObj
+      }
+   ],
+   "battery": [
+      {
+         "id": string,
+         "name": string,
+         "live": entityObj,
+         "percent": entityObj,
+         "in_total": entityObj,
+         "out_total": entityObj,
+         "temperatur": entityObj
+      }
+   ],
+   "consumers": {
+      "id": string,
+      "live": entityObj,
+      "total": entityObj
+   },
+   "heatpump": [
+      {
+         "id": string,
+         "name": string,
+         "live": entityObj,
+         "total": entityObj,
+         "temperatur": entityObj
+      }
+   ],
+   "wallboxes": [
+      {
+         "id": string,
+         "name": string,
+         "live": entityObj,
+         "total": entityObj, // Gesamt verbrauch
+         "total_session": entityObj, // Geasmtverbrauch beim Ladevorgang
+         "status": entityObj, // Angaben zum Ladevorgang Text
+         "ready_for_charge": bool, // Ob Wallbox bereit ist zu laden ...
+         "car_percent": entityObj, //Akku Zahl vom verbunden Auto
+
+         "phases": {
+            "id": string,
+            "value": integer,
+            "name": "Phasen"
+         },
+         "max_power": {
+            "id": string,
+            "value": integer,
+            "name": "Maximale Leistung"
+         },
+
+         //--- Hidden -----
+         "activate_station": number, // Intern um Laden freizuschalten 1 oder 0...
+         "send_power": number //intern number zwischen 0 und max_power mit der Aute geladen werden soll
+         "charge_type": , // Internentweder  Aus, Solar, Solar + günstig, Schnell 
+         "charge_percent_limit": entityId, // Intern Zahl zwischen 0 und 1, bis wo die Batterie gefüllt werden soll
+         "ignore_percent_limit": bool, //Um Fremdautos auch zuladen hier ohne Akkubeschränkung 
+      }
+   ],
+   //--- Hidden -----
+   "wallboxes_config":{
+         "battery_ussage_charging": entityId,         // Intern erstellt, bool
+         "battery_ussage_limit_charging": entityId,   // Intern erstellt Number 0 bis 1
+         "price_limit_charging": entityId             // Intern erstellt Number in cent 0 bis 500
+   },
+   "water": [
+      {
+         "id": string,
+         "name": string,
+         "live": entityObj,
+         "total": entityObj
+      }
+   ],
+   "systemdata": {
+      "id": string,
+      "system_cost": {
+         "id": string,
+         "value": integer,
+         "name": "Anschaffungskosten"
+      },
+      "commissioned": {
+         "id": string,
+         "value": "2023-05-01",
+         "name": "In Betrieb seit"
+      },
+
+      "house_base_load": entityObj, // Vom System angelegt, soll den Durchschnitsverbrauch betitteln,
+      "weather_entity": {
+         "id": string,
+         "entity": "weather.home",
+         "name": "Wetter",
+         "color": "#dfe6e9"
+      },
+      "temperatures": []entity_ids, // Extra Temperatur Sensoren die der Nutzer sehen will
+      "extra_entities": []entit_ids, // Extra ander Sensoren die der Nutzer sehen will
+      
+      //--- Hidden -----
+      "priority_charging": "Hausakku zuerst"| "Auto zuerst" // Intern erstellt
+   }
+}

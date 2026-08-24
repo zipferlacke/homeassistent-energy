@@ -1,6 +1,6 @@
 /**
- * wuefl-energy-shared.js
- * Gemeinsame Basis für alle wuefl-Energy-Karten.
+ * we-shared.js
+ * Gemeinsame Basis für alle we-Karten.
  *
  * Keine externen Abhängigkeiten: Farben, Abstände und Schriftgrößen kommen
  * aus dem aktiven Home-Assistant-Theme, mit eigenen Werten als Rückfallebene.
@@ -750,6 +750,31 @@ export function chargeState(hass, entityId, map) {
  * ------------------------------------------------------------------ */
 
 /**
+ * Navigiert zu einer Ansichtsseite
+ * @param {*} viewSlug Url der seite nur der letze Teils z.B "settings"
+ */
+export function navigateToView(viewSlug = "settings") {
+  // Aktuellen Pfad in Segmente teilen (z. B. "/lovelace-wuefl/home" -> ["lovelace-wuefl", "home"])
+  const segments = window.location.pathname.split("/").filter(Boolean);
+
+  if (segments.length > 1) {
+    // Letztes Segment ("home") durch den neuen Slug ("settings") ersetzen
+    segments[segments.length - 1] = viewSlug;
+  } else if (segments.length === 1) {
+    // Falls nur der Dashboard-Name steht ("lovelace-wuefl"), Slug anhängen
+    segments.push(viewSlug);
+  } else {
+    // Fallback für Root
+    segments.push("lovelace", viewSlug);
+  }
+
+  const newPath = "/" + segments.join("/");
+
+  history.pushState(null, "", newPath);
+  window.dispatchEvent(new CustomEvent("location-changed"));
+}
+
+/**
  * Leere Zuordnung. Alles, wovon es mehrere geben kann, ist eine Liste —
  * auch wenn es null oder eines ist. Das erspart Sonderfälle an jeder Stelle,
  * an der später gezählt oder summiert wird.
@@ -757,142 +782,18 @@ export function chargeState(hass, entityId, map) {
 export const EMPTY_CONFIG = {
   version: 4,
   grid: {},
-  solar: {},
+  solar: [],
   strings: [],
   battery: [],
   consumers: {},
   heatpump: [],
   wallboxes: [],
-  cars: [],
-  price: {},
   system: {},
-  info: {},
 };
 
 const list = (v) => (Array.isArray(v) ? v : []);
 const pluck = (rows, key) => list(rows).map((r) => r?.[key]).filter(Boolean);
 
-/** Sorgt dafür, dass jede erwartete Liste auch wirklich eine ist. */
-export function normalizeConfig(raw) {
-  const c = { ...EMPTY_CONFIG, ...(raw ?? {}) };
-  for (const key of ['strings', 'battery', 'heatpump', 'wallboxes', 'cars']) c[key] = list(c[key]);
-  for (const key of ['grid', 'solar', 'consumers', 'price', 'system', 'info']) {
-    c[key] = c[key] ?? {};
-  }
-  return c;
-}
-
-/**
- * Übersetzt die Zuordnung in die flachen Abschnitte, mit denen die Karten
- * arbeiten. Die Karten müssen dadurch nichts über Listen, Autos oder
- * Wallbox-Zuordnung wissen — sie bekommen fertige Entitätslisten.
- */
-/**
- * Übersetzt die Zuordnung in die flachen Abschnitte, mit denen die Karten
- * arbeiten. "internal" kommt vom Backend und enthält die Entitäts-IDs der
- * Helfer, die die Integration selbst anlegt (Lademodus, Ladestrom,
- * Ladeziel, die vier anlagenweiten Laderegler) — dafür gibt es keinen
- * Zuordnungsschritt mehr, die Integration weiß es selbst.
- */
-export function deriveConfig(raw, internal = {}) {
-  const c = normalizeConfig(raw);
-  const cars = new Map(c.cars.map((car, i) => [car.id ?? `car_${i}`, car]));
-  const rules = internal.rules ?? {};
-
-  const live = {
-    // Explizit benannt statt "...c.grid" blind zu verteilen: die Live-Karte
-    // erwartet grid_power/invert_grid, der Zuordnungs-Block heißt intern
-    // nur power/invert. Ein reines Spread hätte "power" statt "grid_power"
-    // erzeugt und damit die ganze Netz-Gruppe unsichtbar gemacht.
-    grid_power: c.grid.power,
-    invert_grid: c.grid.invert,
-    pv_power_total: c.solar.power,
-    pv_power: pluck(c.strings, 'power'),
-    // Zusätzlich die Dachflächen samt der in der Zuordnung vergebenen Namen —
-    // pv_power allein enthält nur die Entitäts-IDs, dabei ginge der Name
-    // verloren und die Karte müsste auf den friendly_name des Sensors
-    // zurückfallen.
-    pv_strings: c.strings
-      .filter((s) => s.power)
-      .map((s, i) => ({ entity: s.power, name: s.name || `Fläche ${i + 1}` })),
-    pv_energy_total: asList(c.solar.energy_total),
-    pv_forecast_entities: asList(c.solar.forecast),
-    pv_forecast_attribute: c.solar.forecast_attribute,
-
-    battery_power: pluck(c.battery, 'power'),
-    battery_soc: pluck(c.battery, 'soc'),
-    battery_in_total: pluck(c.battery, 'in_total'),
-    battery_out_total: pluck(c.battery, 'out_total'),
-    // Ein Schalter für alle Batterie: gemischte Vorzeichen wären ohnehin
-    // ein Fehler in der Zuordnung.
-    invert_battery: c.battery.some((b) => b.invert),
-
-    grid_import_total: asList(c.grid.import_total),
-    grid_export_total: asList(c.grid.export_total),
-
-    house_power: c.consumers.house_power,
-    house_energy_total: asList(c.consumers.energy_total),
-    heatpump_power: pluck(c.heatpump, 'power'),
-    heatpump_energy_total: pluck(c.heatpump, 'energy_total'),
-    wallbox_power: pluck(c.wallboxes, 'power'),
-    wallbox_energy_total: pluck(c.wallboxes, 'energy_total'),
-
-    weather_entity: c.info.weather_entity,
-  };
-
-  const history = {
-    pv_energy: live.pv_energy_total,
-    grid_import: live.grid_import_total,
-    grid_export: live.grid_export_total,
-    battery_in: live.battery_in_total,
-    battery_out: live.battery_out_total,
-    battery_soc: live.battery_soc,
-    house_energy: live.house_energy_total,
-    wallbox_energy: live.wallbox_energy_total,
-    heatpump_energy: live.heatpump_energy_total,
-  };
-
-  // Wallbox und Auto sind getrennt gepflegt und werden hier zusammengeführt.
-  // Lademodus, Ladestrom und Ladeziel kommen aus "internal" — die legt die
-  // Integration selbst an, dafür trägt niemand eine Entität ein.
-  const wallboxes = c.wallboxes.map((wb, i) => {
-    const car = cars.get(wb.car) ?? {};
-    const iw = internal.wallboxes?.[wb.id] ?? {};
-    return {
-      ...wb,
-      name: wb.name || car.name || `Wallbox ${i + 1}`,
-      power_entity: wb.power,
-      total_energy_entity: wb.energy_total,
-      session_energy_entity: wb.energy_session,
-      // Ladestand: bevorzugt vom Fahrzeug, sonst was die Wallbox meldet.
-      car_soc_entity: car.soc ?? wb.car_soc,
-      // Ladeziel: eine echte Fahrzeug-Integration darf mitreden, sonst
-      // greift der von der Integration angelegte Regler.
-      target_soc_entity: car.target ?? iw.target_entity,
-      capacity: car.capacity ?? wb.capacity,
-      mode_entity: iw.mode_entity,
-      current_entity: iw.current_entity,
-      ...rules,
-      ...c.price,
-      pv_forecast_entities: live.pv_forecast_entities,
-      pv_forecast_attribute: live.pv_forecast_attribute,
-      house_base_load: c.system.house_base_load,
-    };
-  });
-
-  return {
-    live: { ...live, ...c.price, ...c.system },
-    history: { ...history, title: c.system.history_title },
-    price: c.price,
-    system: c.system,
-    rules,
-    info: c.info,
-    wallboxes,
-    cars: c.cars,
-    hasBattery: c.battery.length > 0,
-    raw: c,
-  };
-}
 
 let centralPromise = null;
 let centralSubscribed = false;
@@ -902,50 +803,50 @@ let centralSubscribed = false;
  * Fehlt die Integration, kommt ein leeres Gerüst zurück und die Karten
  * arbeiten allein mit ihrer eigenen Konfiguration weiter.
  */
-export async function centralConfig(hass, section) {
+export async function centralConfig(hass) {
   if (!hass) return {};
 
   if (!centralPromise) {
-    centralPromise = hass.callWS({ type: 'wuefl_energy/get' }).catch(() => {
+    centralPromise = hass.callWS({ type: 'we/get' }).catch(() => {
       // Fehlschläge nicht dauerhaft merken – sonst bliebe eine noch
       // startende Integration bis zum Seitenwechsel "leer".
       centralPromise = null;
       return {};
     });
   }
-  const payload = (await centralPromise) ?? {};
-  const all = deriveConfig(payload, payload.internal);
+  const config = (await centralPromise) ?? {};
 
   if (!centralSubscribed && hass.connection) {
     centralSubscribed = true;
     hass.connection
       .subscribeEvents(() => {
         centralPromise = null;
-        window.dispatchEvent(new CustomEvent('wuefl-energy-config-changed'));
-      }, 'wuefl_energy_updated')
+        window.dispatchEvent(new CustomEvent('we-config-changed'));
+      }, 'we_updated')
       .catch(() => {
         centralSubscribed = false;
       });
   }
 
-  return (section ? all[section] : all) ?? {};
+  return config
 }
 
 /** Rohe Zuordnung, wie sie geBatteriet ist — für die Einstellungsansicht. */
-export async function rawConfig(hass) {
-  const data = await hass.callWS({ type: 'wuefl_energy/get' }).catch(() => ({}));
+export async function rawConfig(hass, withInternal=false) {
+  const data = await hass.callWS({ type: 'we/get' }).catch(() => ({}));
+  if(withInternal) return data;
   // "internal" ist ein vom Backend berechnetes Zusatzfeld, kein Teil der
   // vom Nutzer gepflegten Zuordnung — beim Bearbeiten und erneuten
   // Batterien soll es nicht versehentlich mit persistiert werden.
   const { internal, ...rest } = data ?? {};
-  return normalizeConfig(rest);
+  return rest;
 }
 
 /** Zuordnung Batterien und alle offenen Karten benachrichtigen. */
 export async function saveConfig(hass, config) {
-  await hass.callWS({ type: 'wuefl_energy/save', config });
+  await hass.callWS({ type: 'we/save', config });
   centralPromise = null;
-  window.dispatchEvent(new CustomEvent('wuefl-energy-config-changed'));
+  window.dispatchEvent(new CustomEvent('we-config-changed'));
 }
 
 /**
@@ -1096,9 +997,9 @@ export function tileHtml({ icon, color, title, value, subtitle, entity, click })
  * zeigen, ohne dass sich die Karten gegenseitig referenzieren, liegt der
  * aktuelle Zeitraum hier als einziger Ort der Wahrheit: ein ES-Modul wird
  * pro Seite genau einmal ausgeführt, der Zustand ist also automatisch
- * zwischen allen Karten geteilt, die "wuefl-energy-shared.js" importieren.
+ * zwischen allen Karten geteilt, die "we-shared.js" importieren.
  */
-const PERIOD_EVENT = 'wuefl-energy-period-changed';
+const PERIOD_EVENT = 'we-period-changed';
 let currentPeriod = null;
 
 /** Hilfsfunktion: Berechnet Kalender- und Zeitspannen-Flags für den Zeitraum */

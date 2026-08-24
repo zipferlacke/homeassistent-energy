@@ -1,5 +1,5 @@
 /**
- * wuefl-energy-grid-container
+ * we-grid-container
  * Light-DOM Version (KEIN Shadow-DOM). 
  * Nutzt das normale DOM, damit HA-Themes und Styles automatisch vererbt werden.
  */
@@ -64,7 +64,7 @@ class WueflEnergyGridContainer extends HTMLElement {
 
       // WICHTIG: Das CSS ist jetzt auf das Tag beschränkt, damit es global nichts zerstört
       const rules = `
-        wuefl-energy-grid-container .grid-container {
+        we-grid-container .grid-container {
           ${v.columns ? `grid-template-columns: ${v.columns};` : ''}
           ${v.rows ? `grid-template-rows: ${v.rows};` : ''}
           ${cleanAreas ? `grid-template-areas: ${cleanAreas};` : ''}
@@ -77,29 +77,29 @@ class WueflEnergyGridContainer extends HTMLElement {
     // DIREKT in this.innerHTML schreiben (kein attachShadow mehr!)
     this.innerHTML = `
       <style>
-        wuefl-energy-grid-container {
+        we-grid-container {
           display: block;
           width: 100%;
           box-sizing: border-box;
         }
-        wuefl-energy-grid-container .grid-wrapper {
+        we-grid-container .grid-wrapper {
           width: 100%;
           max-width: ${maxWidth};
           margin: 0 auto;
           padding: 0 16px;
           box-sizing: border-box;
         }
-        wuefl-energy-grid-container .grid-container {
+        we-grid-container .grid-container {
           display: grid;
           gap: ${gap};
           grid-template-columns: 1fr;
         }
-        wuefl-energy-grid-container .area-group {
+        we-grid-container .area-group {
           display: flex;
           flex-direction: column;
           gap: ${gap};
         }
-        wuefl-energy-grid-container .area-group > * {
+        we-grid-container .area-group > * {
           display: block;
           width: 100%;
           box-sizing: border-box;
@@ -135,6 +135,6 @@ class WueflEnergyGridContainer extends HTMLElement {
   getCardSize() { return 3; }
 }
 
-if (!customElements.get('wuefl-energy-grid-container')) {
-  customElements.define('wuefl-energy-grid-container', WueflEnergyGridContainer);
+if (!customElements.get('we-grid-container')) {
+  customElements.define('we-grid-container', WueflEnergyGridContainer);
 }

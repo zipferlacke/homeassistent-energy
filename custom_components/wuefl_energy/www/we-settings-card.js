@@ -1,5 +1,5 @@
 /**
- * wuefl-energy-settings-card
+ * we-settings-card
  * Die Regeln, die für die ganze Anlage gelten — nicht je Wallbox.
  *
  * Hausakku-Freigabe, Batteriereserve, Priorität bei Überschuss und die
@@ -12,7 +12,7 @@ import {
   adoptSheet, num, icon, esc,
   registerCard, centralConfig, mergeConfig, entityIds, statesChanged,
   COLORS, WueflFormEditor, sel, GRID_CSS,
-} from './wuefl-energy-shared.js';
+} from './we-shared.js';
 
 const CSS = `
 .card {
@@ -113,7 +113,7 @@ class WueflEnergySettingsCard extends HTMLElement {
   #drag = null;
   #els = {};
 
-  static getConfigElement() { return document.createElement('wuefl-energy-settings-card-editor'); }
+  static getConfigElement() { return document.createElement('we-settings-card-editor'); }
   static getStubConfig() { return { title: 'Einstellungen' }; }
 
   setConfig(config) {
@@ -127,7 +127,7 @@ class WueflEnergySettingsCard extends HTMLElement {
     this.#hass = hass;
     if (first) {
       this.#loadCentral();
-      window.addEventListener('wuefl-energy-config-changed', () => this.#loadCentral());
+      window.addEventListener('we-config-changed', () => this.#loadCentral());
     }
     if (first || statesChanged(prev, hass, this.#watch)) this.#update();
   }
@@ -418,11 +418,11 @@ class WueflEnergySettingsCardEditor extends WueflFormEditor {
   labels = LABELS;
 }
 
-customElements.define('wuefl-energy-settings-card', WueflEnergySettingsCard);
-customElements.define('wuefl-energy-settings-card-editor', WueflEnergySettingsCardEditor);
+customElements.define('we-settings-card', WueflEnergySettingsCard);
+customElements.define('we-settings-card-editor', WueflEnergySettingsCardEditor);
 
 registerCard({
-  type: 'wuefl-energy-settings-card',
+  type: 'we-settings-card',
   name: 'wuefl Einstellungen',
   description: 'Laderegeln für alle Wallboxen und der Weg zur Zuordnung.',
 });

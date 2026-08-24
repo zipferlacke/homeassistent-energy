@@ -12,7 +12,7 @@ from __future__ import annotations
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
-DOMAIN = "wuefl_energy"
+DOMAIN = "we"
 
 
 class WueflEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -27,7 +27,7 @@ class WueflEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user")
 
     async def async_step_import(self, import_config: dict | None) -> FlowResult:
-        """Wird automatisch ausgelöst, wenn "wuefl_energy:" in der
+        """Wird automatisch ausgelöst, wenn "we:" in der
         configuration.yaml steht — kein Klicken in der Oberfläche nötig."""
         self._async_abort_entries_match()
         return self.async_create_entry(title="wuefl Energie", data={})

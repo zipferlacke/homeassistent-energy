@@ -1,5 +1,5 @@
 /**
- * wuefl-energy-live-card
+ * we-live-card
  * Live-Ansicht auf Basis von energieflow.svg.
  *
  * Die Grafik wird geladen und beschriftet: Werte in die .val-Texte,
@@ -14,11 +14,11 @@ import {
   weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
   entityIds, statesChanged, pvForecast, todayTotals, todaySum,
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
-} from './wuefl-energy-shared.js';
+} from './we-shared.js';
 
 // Wird von der Integration selbst ausgeliefert (siehe __init__.py,
 // URL_BASE) — kein "/local/..." mehr, das www/ manuell kopiert werden müsste.
-const SVG_URL = '/wuefl_energy_files/energieflow.svg';
+const SVG_URL = '/we_files/energieflow.svg';
 
 /* Kabel sind im SVG alle vom Gerät zum Anschlusskasten gezeichnet.
    "inbound" heißt: Strom fließt in dieser Richtung, also normal abspielen. */
@@ -186,7 +186,7 @@ class WueflEnergyLiveCard extends HTMLElement {
   #today = {};
   #todayTimer = null;
 
-  static getConfigElement() { return document.createElement('wuefl-energy-live-card-editor'); }
+  static getConfigElement() { return document.createElement('we-live-card-editor'); }
   static getStubConfig() { return { title: 'Zuhause', show_totals: true }; }
 
   setConfig(config) {
@@ -206,7 +206,7 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     if (first) {
       this.#loadCentral();
-      window.addEventListener('wuefl-energy-config-changed', () => this.#loadCentral());
+      window.addEventListener('we-config-changed', () => this.#loadCentral());
     }
     if (first || statesChanged(this.#prevHass, hass, this.#watch)) this.#render();
   }
@@ -326,7 +326,7 @@ class WueflEnergyLiveCard extends HTMLElement {
     } catch (err) {
       this.#els.scene.innerHTML =
         `<div class="state">Die Grafik unter ${esc(url)} wurde nicht gefunden.</div>`;
-      console.error('[wuefl-energy] energieflow.svg', err);
+      console.error('[we] energieflow.svg', err);
       return;
     }
 
@@ -949,11 +949,11 @@ class WueflEnergyLiveCardEditor extends WueflFormEditor {
   labels = LABELS_EDIT;
 }
 
-customElements.define('wuefl-energy-live-card', WueflEnergyLiveCard);
-customElements.define('wuefl-energy-live-card-editor', WueflEnergyLiveCardEditor);
+customElements.define('we-live-card', WueflEnergyLiveCard);
+customElements.define('we-live-card-editor', WueflEnergyLiveCardEditor);
 
 registerCard({
-  type: 'wuefl-energy-live-card',
+  type: 'we-live-card',
   name: 'wuefl Live-Energie',
   description: 'Energiefluss-Grafik mit Werten, Pulsieren und laufenden Kabeln.',
 });

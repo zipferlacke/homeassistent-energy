@@ -10,7 +10,7 @@ import {
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
-} from './wuefl-energy-shared.js';
+} from './we-shared.js';
 
 /* Der Modus wird am Namen der Option erkannt – eigene Bezeichnungen im
    Helfer bleiben damit möglich. */
@@ -197,7 +197,7 @@ class WueflWallboxCard extends HTMLElement {
     this.#hass = hass;
     if (first) {
       this.#loadCentral();
-      window.addEventListener('wuefl-energy-config-changed', () => this.#loadCentral());
+      window.addEventListener('we-config-changed', () => this.#loadCentral());
     }
     if (first || statesChanged(prev, hass, this.#watch)) this.#update();
   }

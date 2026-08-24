@@ -44,15 +44,18 @@ automation:
 
     variables:
       # ---- anpassen ----------------------------------------------------
-      grid_power: sensor.netz_leistung # positiv = Bezug, negativ = Einspeisung
-      battery_soc: sensor.hausakku_ladestand
-      battery_max_discharge: 3000 # W, die die Batterie maximal fürs Auto liefern
+      grid_power: sensor.grid_power           # positiv = Bezug, negativ = Einspeisung
+      battery_max_discharge: 3000             # W, die die Batterie maximal fürs Auto liefern
+      battery_soc: sensor.hausakku_ladestand  # Ladezustandbatterie
+      wallbox_power: sensor.wallbox_leistung  # Wallboxladeleistung
+      wallbox_switch: switch.wallbox_laden    # Wallboxschlater
+
+      # Optional
       car_soc: sensor.auto_ladestand
-      wallbox_power: sensor.wallbox_leistung
-      wallbox_switch: switch.wallbox_laden
       price_sensor: sensor.strompreis_bezug
-      phases: 3
-      voltage: 230
+      #-------------------------------------------------------------------
+
+
 
       # Diese sechs kommen von der Integration selbst — Namen stimmen mit
       # der Vorschau/README überein, solange nur eine Wallbox existiert.
@@ -68,7 +71,7 @@ automation:
       # ------------------------------------------------------------------
 
       modus: "{{ states(mode_entity) }}"
-      freigabe: "{{ is_state(use_entity, 'on') }}"
+      freigabe: "{{ is_state (use_entity, 'on') }}"
       reserve: "{{ states(reserve_entity) | float(0) }}"
       ziel_soc: "{{ states(target_entity) | float(100) }}"
       grenze: "{{ states(limit_entity) | float(99) }}"

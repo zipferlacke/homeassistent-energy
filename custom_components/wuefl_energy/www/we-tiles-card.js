@@ -1,13 +1,13 @@
 /**
- * wuefl-energy-tiles-card
+ * we-tiles-card
  * Nur die HA-Tile-Kacheln (Erzeugung/Batterie/Netz/Haushalt/Wallbox) —
  * eigener Abschnitt neben dem Hauptdiagramm, hört auf Zeitraum-Änderungen
- * von wuefl-energy-period-card, ohne diese Karte selbst zu kennen.
+ * von we-period-card, ohne diese Karte selbst zu kennen.
  */
 import {
   asList, fmtEnergy, esc, registerCard, centralConfig, WueflFormEditor, sel,
   cssColor, TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats,
-} from './wuefl-energy-shared.js';
+} from './we-shared.js';
 
 const SERIES = [
   { key: 'pv_energy', label: 'Solar', color: '--energy-solar-color', fallback: '#ff9800', icon: 'mdi:solar-power' },
@@ -41,7 +41,7 @@ class WueflEnergyTilesCard extends HTMLElement {
   #stopPeriod = null;
   #els = {};
 
-  static getConfigElement() { return document.createElement('wuefl-energy-tiles-card-editor'); }
+  static getConfigElement() { return document.createElement('we-tiles-card-editor'); }
   static getStubConfig() { return { title: 'Kennzahlen' }; }
 
   setConfig(config) {
@@ -54,7 +54,7 @@ class WueflEnergyTilesCard extends HTMLElement {
     this.#hass = hass;
     if (first) {
       this.#loadCentral();
-      window.addEventListener('wuefl-energy-config-changed', () => this.#loadCentral());
+      window.addEventListener('we-config-changed', () => this.#loadCentral());
       this.#stopPeriod = onPeriodChange(() => this.#refresh());
     }
     if (!this.#built) this.#build();
@@ -153,11 +153,11 @@ const SCHEMA = [{ name: 'title', selector: sel.text() }];
 const LABELS = { title: 'Überschrift' };
 class WueflEnergyTilesCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
 
-customElements.define('wuefl-energy-tiles-card', WueflEnergyTilesCard);
-customElements.define('wuefl-energy-tiles-card-editor', WueflEnergyTilesCardEditor);
+customElements.define('we-tiles-card', WueflEnergyTilesCard);
+customElements.define('we-tiles-card-editor', WueflEnergyTilesCardEditor);
 
 registerCard({
-  type: 'wuefl-energy-tiles-card',
+  type: 'we-tiles-card',
   name: 'wuefl Kennzahlen',
   description: 'Tageswerte als HA-Kacheln — folgt dem Zeitraum der Energie-Ansicht.',
 });

@@ -1,15 +1,15 @@
 /**
- * wuefl-energy-chart-base.js
+ * we-chart-base.js
  * Gemeinsames Gerüst der drei Diagramm-Karten der Energie-Ansicht.
  *
  * Die Karten zeichnen nichts mehr selbst: sie bauen aus der Zuordnung nur
- * noch eine Konfiguration und reichen sie an <wuefl-energy-chart> weiter.
+ * noch eine Konfiguration und reichen sie an <we-chart> weiter.
  * Start und Ende kommen dabei immer aus dem geteilten Zeitraum
- * (wuefl-energy-shared.js), damit alle Diagramme dem Zeitraum-Picker
+ * (we-shared.js), damit alle Diagramme dem Zeitraum-Picker
  * folgen — auch die, die in einem eigenen Abschnitt daneben stehen.
  */
-import { centralConfig, getPeriod, onPeriodChange } from './wuefl-energy-shared.js';
-import './wuefl-energy-chart.js';
+import { centralConfig, getPeriod, onPeriodChange } from './we-shared.js';
+import './we-chart.js';
 
 export class WueflChartWrapper extends HTMLElement {
   _own = {};
@@ -39,7 +39,7 @@ export class WueflChartWrapper extends HTMLElement {
     if (this._chart) this._chart.hass = hass;
     if (first) {
       this._loadCentral();
-      window.addEventListener('wuefl-energy-config-changed', () => this._loadCentral());
+      window.addEventListener('we-config-changed', () => this._loadCentral());
       this._stopPeriod = onPeriodChange(() => this._refresh());
     }
     if (!this._built) this._build();
@@ -65,7 +65,7 @@ export class WueflChartWrapper extends HTMLElement {
       sheet.replaceSync(':host { display: block; height: 100%; }');
       root.adoptedStyleSheets = [sheet];
     }
-    this._chart = document.createElement('wuefl-energy-chart');
+    this._chart = document.createElement('we-chart');
     root.replaceChildren(this._chart);
     this._built = true;
     this._refresh();

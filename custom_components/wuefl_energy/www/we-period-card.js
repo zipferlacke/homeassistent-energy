@@ -1,9 +1,9 @@
 /**
- * wuefl-energy-period-card.js
+ * we-period-card.js
  * Zeitraumauswahl (Tag, Woche, Monat, Jahr) mit vollständigen Zeitspannen,
  * Vor/Zurück-Navigation ohne Zukunfts-Navigation und integriertem Kalender-Button.
  */
-import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS } from './wuefl-energy-shared.js';
+import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS } from './we-shared.js';
 
 const PERIODS = [
   { id: 'day', label: 'Tag' },
@@ -99,7 +99,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
   #offset = 0;
   #granularity = 'day';
 
-  static getConfigElement() { return document.createElement('wuefl-energy-period-card-editor'); }
+  static getConfigElement() { return document.createElement('we-period-card-editor'); }
   static getStubConfig() { return {}; }
 
   setConfig() {}
@@ -259,11 +259,11 @@ class WueflEnergyPeriodCardEditor extends WueflFormEditor {
   labels = LABELS;
 }
 
-customElements.define('wuefl-energy-period-card', WueflEnergyPeriodCard);
-customElements.define('wuefl-energy-period-card-editor', WueflEnergyPeriodCardEditor);
+customElements.define('we-period-card', WueflEnergyPeriodCard);
+customElements.define('we-period-card-editor', WueflEnergyPeriodCardEditor);
 
 registerCard({
-  type: 'wuefl-energy-period-card',
+  type: 'we-period-card',
   name: 'wuefl Zeitraum',
   description: 'Tag/Woche/Monat/Jahr, Vor/Zurück-Navigation, kalendergenaue Zeitspannen.',
 });

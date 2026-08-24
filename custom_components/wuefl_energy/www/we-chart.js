@@ -1,9 +1,9 @@
 /**
- * wuefl-energy-chart.js
+ * we-chart.js
  * Eigenständiges Diagramm-Element mit automatischer Einheiten-Skalierung,
  * kalendergenauen Zeiträumen, HTML-Legende und Bucket-Zeitspannen im Tooltip.
  */
-import { registerCard, cssColor } from './wuefl-energy-shared.js';
+import { registerCard, cssColor } from './we-shared.js';
 
 class WueflEnergyChart extends HTMLElement {
     #config = {};
@@ -12,6 +12,7 @@ class WueflEnergyChart extends HTMLElement {
     #chartEl = null;
     #els = {};
     #hiddenSeries = new Set();
+    #isActive = false;
 
     #unitFactors = {
         'mW': 0.001, 'W': 1, 'kW': 1000, 'MW': 1000000, 'GW': 1000000000,
@@ -20,7 +21,7 @@ class WueflEnergyChart extends HTMLElement {
 
     setConfig(config) {
         if (!config || !config.series) {
-            throw new Error("wuefl-energy-chart benötigt mindestens eine 'series'.");
+            throw new Error("we-chart benötigt mindestens eine 'series'.");
         }
         this.config = config;
     }
@@ -106,6 +107,23 @@ class WueflEnergyChart extends HTMLElement {
             legendBottom: card.querySelector('.legend-slot-bottom'),
         };
         this.#built = true;
+        // Bei Klick Zoomen aktivieren
+        card.addEventListener('click', () => {
+            if (!this.#isActive) {
+                this.#isActive = true;
+                this.classList.add('is-active');
+                this.#refresh();
+            }
+        });
+
+        // Bei Klick außerhalb Zoomen wieder sperren
+        window.addEventListener('pointerdown', (e) => {
+            if (this.#isActive && !e.composedPath().includes(this)) {
+                this.#isActive = false;
+                this.classList.remove('is-active');
+                this.#refresh();
+            }
+        });
     }
 
     // Wandelt CSS-Variablen explizit in konkrete Farbwerte (HEX/RGB) für den Canvas um
@@ -468,14 +486,10 @@ class WueflEnergyChart extends HTMLElement {
             position: idx === 1 ? 'right' : 'left', nameGap: 8, splitLine: { show: idx === 0 }
         }));
 
-        const selectedObj = {};
-        processedSeries.forEach(s => {
-            const name = s.legend_group || s.name || s.entity;
-            selectedObj[name] = !this.#hiddenSeries.has(name);
-        });
-
         const totalSeries = processedSeries.length;
         const data = processedSeries.map((s, index) => {
+            const name = s.legend_group || s.name || s.entity;
+            const isHidden = this.#hiddenSeries.has(name); // <-- Prüfen ob ausgeblendet
             const chartType = s.type || this.#config.type || 'line';
             let areaStyle = undefined;
             if (chartType === 'line') {
@@ -495,15 +509,15 @@ class WueflEnergyChart extends HTMLElement {
             }
 
             return {
-                name: s.legend_group || s.name || s.entity,
+                name: name,
                 id: s.name || s.entity,
                 type: chartType, 
                 stack: s.stack, 
                 yAxisIndex: s.y_axis || 0,
-                data: s.chartData, 
+                data: isHidden ? [] : s.chartData, // <-- HIER: Bei Ausblendung leeres Array übergeben
                 smooth: chartType === 'line' ? (s.smooth ?? true) : undefined, 
                 symbol: 'none',
-                z: s.stack? totalSeries+1 - index : 2,
+                z: s.stack ? totalSeries + 1 - index : 2,
                 itemStyle: { color: s.resolvedColor }, 
                 areaStyle, 
                 lineStyle: chartType === 'line' ? { width: 1.5 } : undefined
@@ -517,7 +531,14 @@ class WueflEnergyChart extends HTMLElement {
             xAxis: [{ type: 'time', min: start.getTime(), max: end.getTime() }],
             yAxis: yAxisEcharts,
             grid: { top: 15, left: 10, right: 10, bottom: 5, containLabel: true },
-            legend: { show: false, selected: selectedObj },
+            legend: { show: false }, // <-- selected: selectedObj komplett entfernt
+            dataZoom: [
+                {
+                    type: 'inside',
+                    disabled: !this.#isActive,
+                    filterMode: 'none'
+                }
+            ],
             tooltip: {
                 trigger: 'axis',
                 appendToBody: true,
@@ -545,7 +566,7 @@ class WueflEnergyChart extends HTMLElement {
                         const unit = seriesObj?.chartTargetUnit || '';
                         const label = seriesObj?.name || p.seriesName;
                         const val = p.value[1];
-                        const colorStr = seriesObj?.color || p.color; // Native Farbverarbeitung im Tooltip
+                        const colorStr = seriesObj?.color || p.color;
                         const formattedVal = (val !== null && val !== undefined)
                             ? Number(val).toLocaleString('de-DE', { maximumFractionDigits: 2 })
                             : '-';
@@ -568,6 +589,7 @@ class WueflEnergyChart extends HTMLElement {
 
         if (!this.#chartEl) {
             this.#chartEl = document.createElement('ha-chart-base');
+            this.#chartEl.height = '100%';
             this.#els.slot.appendChild(this.#chartEl);
         }
 
@@ -577,10 +599,10 @@ class WueflEnergyChart extends HTMLElement {
     }
 }
 
-customElements.define('wuefl-energy-chart', WueflEnergyChart);
+customElements.define('we-chart', WueflEnergyChart);
 
 registerCard({
-    type: 'wuefl-energy-chart',
-    name: 'wuefl-energy-chart',
+    type: 'we-chart',
+    name: 'we-chart',
     description: 'Erweitertes Energie-Diagramm mit flexibler Zeitraumauswahl.',
 });

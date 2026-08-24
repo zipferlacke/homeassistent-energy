@@ -1,10 +1,10 @@
 /**
- * wuefl-energy-solar-chart-card
+ * we-solar-chart-card
  * "Gesamt" plus eine Linie je Dachfläche, als Mittelwert der Leistung.
  * Reines Diagramm ohne Überschriftenzeile.
  */
-import { asList, registerCard, WueflFormEditor, sel } from './wuefl-energy-shared.js';
-import { WueflChartWrapper } from './wuefl-energy-chart-base.js';
+import { asList, registerCard, WueflFormEditor, sel } from './we-shared.js';
+import { WueflChartWrapper } from './we-chart-base.js';
 
 const STRING_COLORS = [
   'var(--energy-grid-consumption-color, #488fc2)',
@@ -14,10 +14,10 @@ const STRING_COLORS = [
 ];
 
 class WueflEnergySolarChartCard extends WueflChartWrapper {
-  static getConfigElement() { return document.createElement('wuefl-energy-solar-chart-card-editor'); }
-  static getStubConfig() { return {}; }
+  static getConfigElement() { return document.createElement('we-solar-chart-card-editor'); }
+  static getStubConfig() { return {title:'Solarproduktion'}; }
 
-  get defaultTitle() { return ''; }
+  get defaultTitle() { return 'Solarproduktion'; }
 
   // HIER ist die Magie: Überschreibt den Standard der Basisklasse!
   get centralConfigType() { return 'live'; }
@@ -82,11 +82,11 @@ const SCHEMA = [];
 const LABELS = {};
 class WueflEnergySolarChartCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
 
-customElements.define('wuefl-energy-solar-chart-card', WueflEnergySolarChartCard);
-customElements.define('wuefl-energy-solar-chart-card-editor', WueflEnergySolarChartCardEditor);
+customElements.define('we-solar-chart-card', WueflEnergySolarChartCard);
+customElements.define('we-solar-chart-card-editor', WueflEnergySolarChartCardEditor);
 
 registerCard({
-  type: 'wuefl-energy-solar-chart-card',
+  type: 'we-solar-chart-card',
   name: 'wuefl Solarproduktion',
   description: 'Gesamt- und Einzeldach-Leistung als reine Diagrammkarte.',
 });

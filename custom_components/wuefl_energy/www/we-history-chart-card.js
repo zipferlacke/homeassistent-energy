@@ -1,14 +1,14 @@
 /**
- * wuefl-energy-history-card
+ * we-history-card
  * Das Hauptdiagramm ("Verteilung"). Baut nur die Konfiguration aus der
- * Zuordnung, gezeichnet wird von <wuefl-energy-chart>.
+ * Zuordnung, gezeichnet wird von <we-chart>.
  *
  * "legend_group" fasst Reihen in der Legende zusammen: Netzbezug und
  * Einspeisung erscheinen als ein Eintrag "Netz", der beide gemeinsam
  * ein- und ausblendet — ebenso Laden/Entladen als "Batterie".
  */
-import { asList, registerCard, WueflFormEditor, sel } from './wuefl-energy-shared.js';
-import { WueflChartWrapper } from './wuefl-energy-chart-base.js';
+import { asList, registerCard, WueflFormEditor, sel } from './we-shared.js';
+import { WueflChartWrapper } from './we-chart-base.js';
 
 const SERIES = [
   { key: 'pv_energy', name: 'Solar', group: 'Solar', sign: 1, color: 'var(--energy-solar-color, #ff9800)' },
@@ -22,7 +22,7 @@ const SERIES = [
 ];
 
 class WueflEnergyHistoryCard extends WueflChartWrapper {
-  static getConfigElement() { return document.createElement('wuefl-energy-history-card-editor'); }
+  static getConfigElement() { return document.createElement('we-history-card-editor'); }
   static getStubConfig() { return { title: 'Verteilung' }; }
 
   get defaultTitle() { return 'Verteilung'; }
@@ -75,11 +75,11 @@ const SCHEMA = [{ name: 'title', selector: sel.text() }];
 const LABELS = { title: 'Überschrift' };
 class WueflEnergyHistoryCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
 
-customElements.define('wuefl-energy-history-card', WueflEnergyHistoryCard);
-customElements.define('wuefl-energy-history-card-editor', WueflEnergyHistoryCardEditor);
+customElements.define('we-history-chart-card', WueflEnergyHistoryCard);
+customElements.define('we-history-chart-card-editor', WueflEnergyHistoryCardEditor);
 
 registerCard({
-  type: 'wuefl-energy-history-card',
-  name: 'wuefl Energie-Verteilung',
+  type: 'we-chart-history-card',
+  name: 'Energie-Verteilung',
   description: 'Hauptdiagramm mit Legenden-Gruppen — folgt der Zeitraum-Karte.',
 });

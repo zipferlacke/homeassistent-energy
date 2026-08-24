@@ -1,5 +1,5 @@
 /**
- * wuefl-energy-battery-chart-card
+ * we-battery-chart-card
  * Ladestand-Verlauf (SOC in %).
  *
  * Feste Y-Achse 0–100 mit Schritt 25: der Wertebereich ist ja immer
@@ -7,11 +7,11 @@
  * wandern. Die Karte ist bewusst flacher als die übrigen Diagramme — im
  * Raster über weniger Zeilen, im freien Layout über chart_height.
  */
-import { asList, registerCard, WueflFormEditor, sel } from './wuefl-energy-shared.js';
-import { WueflChartWrapper } from './wuefl-energy-chart-base.js';
+import { asList, registerCard, WueflFormEditor, sel } from './we-shared.js';
+import { WueflChartWrapper } from './we-chart-base.js';
 
 class WueflEnergyBatteryChartCard extends WueflChartWrapper {
-  static getConfigElement() { return document.createElement('wuefl-energy-battery-chart-card-editor'); }
+  static getConfigElement() { return document.createElement('we-battery-chart-card-editor'); }
   static getStubConfig() { return { title: 'Batterie' }; }
 
   get defaultTitle() { return 'Batterie'; }
@@ -51,11 +51,11 @@ const SCHEMA = [];
 const LABELS = {};
 class WueflEnergyBatteryChartCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
 
-customElements.define('wuefl-energy-battery-chart-card', WueflEnergyBatteryChartCard);
-customElements.define('wuefl-energy-battery-chart-card-editor', WueflEnergyBatteryChartCardEditor);
+customElements.define('we-battery-chart-card', WueflEnergyBatteryChartCard);
+customElements.define('we-battery-chart-card-editor', WueflEnergyBatteryChartCardEditor);
 
 registerCard({
-  type: 'wuefl-energy-battery-chart-card',
+  type: 'we-battery-chart-card',
   name: 'wuefl Batterie-Verlauf',
   description: 'Ladestand mit fester Skala 0–100 %.',
 });

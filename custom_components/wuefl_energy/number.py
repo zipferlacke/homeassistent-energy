@@ -12,7 +12,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-DOMAIN = "wuefl_energy"
+DOMAIN = "we"
 
 
 async def async_setup_entry(
