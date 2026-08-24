@@ -26,7 +26,7 @@ function ensureCards() {
 // Dashboard Strategy Class
 // =======================================================
 class WueflEnergyDashboardStrategy {
-  static async generate(hass) {
+  static async generate(g, hass) {
     await ensureCards();
     
     // Direktes Laden der neuen Speicher-Struktur

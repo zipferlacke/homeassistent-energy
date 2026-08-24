@@ -1,14 +1,33 @@
 /**
- * we-battery-chart-card
+ * we-battery-chart-card.js
  * Ladestand-Verlauf (SOC in %).
  *
- * Feste Y-Achse 0–100 mit Schritt 25: der Wertebereich ist ja immer
- * derselbe, und ohne feste Vorgabe würden die Striche je nach Tagesverlauf
- * wandern. Die Karte ist bewusst flacher als die übrigen Diagramme — im
- * Raster über weniger Zeilen, im freien Layout über chart_height.
+ * Liest den Akkustand (percent), Name und Farbe aus dem neuen zentralen
+ * `battery`-Array der we-config-card.
  */
-import { asList, registerCard, WueflFormEditor, sel } from './we-shared.js';
+import { registerCard, WueflFormEditor, sel } from './we-shared.js';
 import { WueflChartWrapper } from './we-chart-base.js';
+
+function getBatterySocSeries(cfg) {
+  const batteries = cfg.battery ?? [];
+  const series = [];
+
+  batteries.forEach((b, i) => {
+    const rawEntity = b.percent;
+    const entity = typeof rawEntity === 'string' ? rawEntity : rawEntity?.entity;
+    if (!entity) return;
+
+    series.push({
+      entity,
+      name: b.name || (batteries.length > 1 ? `Batterie ${i + 1}` : 'Ladestand'),
+      color: b.color || 'var(--energy-battery-out-color, #4db0a2)',
+      stat_type: 'mean',
+      fill: 'gradient',
+    });
+  });
+
+  return series;
+}
 
 class WueflEnergyBatteryChartCard extends WueflChartWrapper {
   static getConfigElement() { return document.createElement('we-battery-chart-card-editor'); }
@@ -18,37 +37,27 @@ class WueflEnergyBatteryChartCard extends WueflChartWrapper {
   getCardSize() { return 3; }
 
   buildChartConfig(range) {
-    const socIds = asList(this._config.battery_soc);
-    if (!socIds.length) return null;
-
-    const series = socIds.map((entity, i) => ({
-      entity,
-      name: socIds.length > 1 ? `Batterie ${i + 1}` : 'Ladestand',
-      color: 'var(--energy-battery-out-color, #4db0a2)',
-      stat_type: 'mean',
-      fill: 'gradient',
-    }));
+    const series = getBatterySocSeries(this._config);
+    if (!series.length) return null;
 
     return {
       aggregation: this._aggregation(range),
       y_axes: [{ unit: '%', min: 0, max: 100, interval: 25 }],
-      // Eine einzelne Reihe braucht keine Legende — der Titel sagt schon,
-      // was zu sehen ist.
-      legend: [{ hidden: socIds.length <= 1, position: 'top-right' }],
+      legend: [{ hidden: series.length <= 1, position: 'top-right' }],
       series,
       chip: {
-        entity: socIds[0],
+        entity: series[0].entity,
         unit: '%',
         stat_type: 'mean',
         calc_type: 'last',
-        color: 'var(--energy-battery-out-color, #4db0a2)',
+        color: series[0].color,
       },
     };
   }
 }
 
-const SCHEMA = [];
-const LABELS = {};
+const SCHEMA = [{ name: 'title', selector: sel.text() }];
+const LABELS = { title: 'Überschrift' };
 class WueflEnergyBatteryChartCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
 
 customElements.define('we-battery-chart-card', WueflEnergyBatteryChartCard);

@@ -1,11 +1,9 @@
 /**
- * we-settings-card
+ * we-settings-card.js
  * Die Regeln, die für die ganze Anlage gelten — nicht je Wallbox.
  *
- * Hausakku-Freigabe, Batteriereserve, Priorität bei Überschuss und die
- * Preisgrenze für Netzstrom standen vorher in jeder Wallbox-Karte. Bei
- * zwei Fahrzeugen gab es sie dann doppelt, obwohl es nur einen Hausakku
- * gibt. Hier stehen sie einmal.
+ * Liest zentral konfigurierte Entitäten aus specs.py (Hausakku-Freigabe,
+ * Batteriereserve, Priorität bei Überschuss und Preisgrenze).
  */
 
 import {
@@ -36,7 +34,7 @@ const CSS = `
   & .note { color: var(--w-text-soft); display: block; font-size: var(--w-fs-sm); line-height: 1.45; }
 }
 
-/* Regler und Zahlenfeld nebeneinander: ziehen für ungefähr, tippen für genau. */
+/* Regler und Zahlenfeld nebeneinander */
 .control {
   align-items: center;
   display: flex;
@@ -51,7 +49,7 @@ const CSS = `
     & input {
       background: none; border: 0; color: inherit; font: inherit; font-weight: 600;
       font-variant-numeric: tabular-nums; height: var(--w-input-h); padding: 0;
-      text-align: right; width: 3rem;
+      text-align: right; width: 3.2rem;
       &:focus { outline: none; }
       &::-webkit-outer-spin-button, &::-webkit-inner-spin-button {
         appearance: none; margin: 0;
@@ -73,7 +71,6 @@ const CSS = `
   &[aria-checked="true"] { background: ${COLORS.battery_out}; & span { transform: translateX(1.3rem); } }
 }
 
-/* Auswahl im Stil der Home-Assistant-Bedienelemente. */
 .choice {
   background: var(--w-bg-soft);
   border-radius: var(--w-radius);
@@ -102,6 +99,12 @@ const CSS = `
 .hint { color: var(--w-text-soft); font-size: var(--w-fs-sm); line-height: 1.5; margin: 0; }
 `;
 
+function getEntity(val) {
+  if (!val) return null;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && val.entity) return val.entity;
+  return null;
+}
 
 class WueflEnergySettingsCard extends HTMLElement {
   #own = {};
@@ -136,11 +139,16 @@ class WueflEnergySettingsCard extends HTMLElement {
 
   async #loadCentral() {
     const all = await centralConfig(this.#hass);
-    // Die Regeln stehen im Abschnitt "Anlage", der Preis beim Strompreis.
+    const rules = all.rules ?? {};
+    
     this.#central = {
-      ...(all.rules ?? {}),
+      battery_use_entity: getEntity(rules.battery_use_entity ?? rules.use_battery_for_wallbox ?? all.battery_use_entity),
+      battery_reserve_entity: getEntity(rules.battery_reserve_entity ?? rules.battery_reserve ?? all.battery_reserve_entity),
+      priority_entity: getEntity(rules.priority_entity ?? rules.pv_priority ?? all.priority_entity),
+      price_limit_entity: getEntity(rules.price_limit_entity ?? all.grid?.price_limit ?? all.price_limit_entity),
       wallbox_count: (all.wallboxes ?? []).length,
     };
+
     this.#apply();
     this.#update();
   }
@@ -150,6 +158,7 @@ class WueflEnergySettingsCard extends HTMLElement {
     this.#watch = entityIds(this.#config);
     this.#built = false;
     if (this.shadowRoot) this.shadowRoot.replaceChildren();
+    this.#build();
   }
 
   #build() {
@@ -170,7 +179,7 @@ class WueflEnergySettingsCard extends HTMLElement {
             <button class="switch" role="switch" aria-checked="false" type="button"><span></span></button>
           </div>
           <span class="note">Ohne Freigabe zieht das Auto nur Sonne und Netzstrom,
-            der Batterie bleibt dem Haus vorbehalten.</span>
+            die Batterie bleibt dem Haus vorbehalten.</span>
           <div class="reserve-block" hidden>
             <span class="sublabel">Akku nutzen bis</span>
             <div class="control reserve">
@@ -183,9 +192,9 @@ class WueflEnergySettingsCard extends HTMLElement {
 
         <div class="row limit" hidden>
           <div class="head"><span class="label">Netzstrom nutzen bis</span></div>
-          <div class="control">
-            <input type="range" min="0" max="60" step="1">
-            <label class="num"><input type="number" min="0" max="60" step="0.1"><span>ct</span></label>
+          <div class="control limit">
+            <input type="range" min="0" max="500" step="1">
+            <label class="num"><input type="number" min="0" max="500" step="1"><span>ct</span></label>
           </div>
           <span class="note">Gilt im Lademodus mit günstigem Strom. Liegt der Börsenpreis
             darüber, wartet die Wallbox auf Sonne.</span>
@@ -230,8 +239,8 @@ class WueflEnergySettingsCard extends HTMLElement {
       reserveRange: q('.control.reserve input[type="range"]'),
       reserveNum: q('.control.reserve input[type="number"]'),
       limit: q('.row.limit'),
-      limitRange: q('.row.limit input[type="range"]'),
-      limitNum: q('.row.limit input[type="number"]'),
+      limitRange: q('.control.limit input[type="range"]'),
+      limitNum: q('.control.limit input[type="number"]'),
       prio: q('.row.prio'), choice: q('.choice'),
       empty: q('.hint.empty'),
     };
@@ -241,8 +250,6 @@ class WueflEnergySettingsCard extends HTMLElement {
       this.#toggle(this.#config.battery_use_entity, !on);
     });
 
-    // Regler und Zahlenfeld halten sich gegenseitig aktuell. Gesendet wird
-    // beim Loslassen beziehungsweise beim Verlassen des Feldes.
     for (const [key, cfgKey] of [
       ['reserve', 'battery_reserve_entity'],
       ['limit', 'price_limit_entity'],
@@ -269,17 +276,13 @@ class WueflEnergySettingsCard extends HTMLElement {
     }
 
     q('.open-config').addEventListener('click', () => {
-      // Eigenes Ereignis zuerst: darauf kann jede Umgebung reagieren, auch
-      // eine, in der history.pushState blockiert ist (z. B. eine
-      // sandboxte Vorschau).
       this.dispatchEvent(new CustomEvent('wuefl-open-config', { bubbles: true, composed: true }));
       try {
         const base = window.location.pathname.split('/').slice(0, 2).join('/');
         history.pushState(null, '', `${base}/zuordnung`);
         window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
       } catch {
-        // Sandboxte Umgebungen verweigern die History-API mit einem
-        // SecurityError – das eigene Ereignis oben deckt diesen Fall ab.
+        // Sandbox-Schutz fangen
       }
     });
 
@@ -294,9 +297,7 @@ class WueflEnergySettingsCard extends HTMLElement {
   #setNumber(id, value) {
     const d = this.#domain(id);
     if (!d) return;
-    this.#hass.callService(d === 'number' ? 'number' : 'input_number', 'set_value', {
-      entity_id: id, value,
-    });
+    this.#hass.callService(d, 'set_value', { entity_id: id, value });
   }
 
   #toggle(id, on) {
@@ -308,9 +309,7 @@ class WueflEnergySettingsCard extends HTMLElement {
   #setOption(id, option) {
     const d = this.#domain(id);
     if (!d) return;
-    this.#hass.callService(d === 'select' ? 'select' : 'input_select', 'select_option', {
-      entity_id: id, option,
-    });
+    this.#hass.callService(d, 'select_option', { entity_id: id, option });
   }
 
   /* ------------------------------ Anzeige --------------------------- */
@@ -318,6 +317,32 @@ class WueflEnergySettingsCard extends HTMLElement {
   #has(key) {
     const id = this.#config[key];
     return !!id && !!this.#hass.states[id];
+  }
+
+  #syncControl(key, entityId, fallback) {
+    const st = entityId ? this.#hass.states[entityId] : null;
+    if (!st) return;
+
+    const range = this.#els[`${key}Range`];
+    const numIn = this.#els[`${key}Num`];
+
+    const min = st.attributes.min ?? fallback.min;
+    const max = st.attributes.max ?? fallback.max;
+    const step = st.attributes.step ?? fallback.step;
+
+    range.min = min;
+    range.max = max;
+    range.step = step;
+
+    numIn.min = min;
+    numIn.max = max;
+    numIn.step = step;
+
+    if (this.#drag !== key) {
+      const v = num(this.#hass, entityId) ?? fallback.default;
+      range.value = v;
+      numIn.value = v;
+    }
   }
 
   #update() {
@@ -328,8 +353,6 @@ class WueflEnergySettingsCard extends HTMLElement {
 
     this.#els.title.textContent = c.title ?? 'Einstellungen';
 
-    // Gibt es keine Wallbox, ergeben Laderegeln keinen Sinn — dann bleibt
-    // der ganze Block weg statt tote Regler zu zeigen.
     const hasWallbox = (c.wallbox_count ?? 0) > 0;
     const hasUse = hasWallbox && this.#has('battery_use_entity');
     const hasReserve = hasWallbox && this.#has('battery_reserve_entity');
@@ -343,20 +366,15 @@ class WueflEnergySettingsCard extends HTMLElement {
       this.#els.useSwitch.setAttribute('aria-checked', String(useOn));
     }
 
-    // Die Reserve steuert nur etwas, solange das Auto an den Batterie darf.
     const showReserve = hasReserve && useOn;
     this.#els.reserveBlock.hidden = !showReserve;
-    if (showReserve && this.#drag !== 'reserve') {
-      const v = num(h, c.battery_reserve_entity) ?? 0;
-      this.#els.reserveRange.value = v;
-      this.#els.reserveNum.value = v;
+    if (showReserve) {
+      this.#syncControl('reserve', c.battery_reserve_entity, { min: 0, max: 100, step: 5, default: 20 });
     }
 
     this.#els.limit.hidden = !hasLimit;
-    if (hasLimit && this.#drag !== 'limit') {
-      const v = num(h, c.price_limit_entity) ?? 0;
-      this.#els.limitRange.value = v;
-      this.#els.limitNum.value = v;
+    if (hasLimit) {
+      this.#syncControl('limit', c.price_limit_entity, { min: 0, max: 60, step: 0.5, default: 30 });
     }
 
     this.#els.wallbox.hidden = !hasUse && !hasLimit;
@@ -367,6 +385,7 @@ class WueflEnergySettingsCard extends HTMLElement {
   }
 
   #renderChoice(state) {
+    if (!state) return;
     const options = state.attributes.options ?? [];
     const sig = options.join('|');
     const box = this.#els.choice;

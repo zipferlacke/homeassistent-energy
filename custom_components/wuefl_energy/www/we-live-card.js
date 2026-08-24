@@ -1,27 +1,19 @@
 /**
- * we-live-card
- * Live-Ansicht auf Basis von energieflow.svg.
- *
- * Die Grafik wird geladen und beschriftet: Werte in die .val-Texte,
- * Ladestand über --soc, aktive Geräte pulsieren, Kabel bekommen eine
- * laufende Punktlinie in Flussrichtung. Bereiche ohne Entitäten
- * verschwinden komplett.
+ * we-live-card.js
+ * Energiefluss-Grafik mit Echtzeit-Leistung, Tageswerten, Preisverlauf und Prognose.
+ * Fully migrated to specs.py dynamic schema.
  */
 
 import {
-  adoptSheet, asList, power, energy, num, sum, breakdown,
+  adoptSheet, asList, power, energy, num, breakdown,
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtEuro, esc, icon, registerCard,
   weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
-  entityIds, statesChanged, pvForecast, todayTotals, todaySum,
+  statesChanged, pvForecast, todayTotals, todaySum,
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
 } from './we-shared.js';
 
-// Wird von der Integration selbst ausgeliefert (siehe __init__.py,
-// URL_BASE) — kein "/local/..." mehr, das www/ manuell kopiert werden müsste.
 const SVG_URL = '/we_files/energieflow.svg';
 
-/* Kabel sind im SVG alle vom Gerät zum Anschlusskasten gezeichnet.
-   "inbound" heißt: Strom fließt in dieser Richtung, also normal abspielen. */
 const PARTS = {
   solar:       { label: 'label-solar', cable: '#kabel-solar', device: '#solar' },
   netz:        { label: 'label-netz', cable: '#label-netz .cable', device: '#netz' },
@@ -30,6 +22,28 @@ const PARTS = {
   waermepumpe: { label: 'label-waermepumpe', cable: '#label-waermepumpe .cable', device: '#heatpump' },
   haushalt:    { label: 'label-haushalt', cable: null, device: '#house' },
 };
+
+function getEntity(val) {
+  if (!val) return null;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && val.entity) return val.entity;
+  return null;
+}
+
+function collectEntities(obj, list = []) {
+  if (!obj) return list;
+  if (typeof obj === 'string') {
+    if (obj.includes('.')) list.push(obj);
+  } else if (Array.isArray(obj)) {
+    for (const item of obj) collectEntities(item, list);
+  } else if (typeof obj === 'object') {
+    for (const [key, val] of Object.entries(obj)) {
+      if (key === 'entity' && typeof val === 'string') list.push(val);
+      else collectEntities(val, list);
+    }
+  }
+  return [...new Set(list)];
+}
 
 const CSS = `
 ${TILE_CSS}
@@ -55,15 +69,10 @@ ${TILE_CSS}
 
   & svg { display: block; height: auto; width: 100%; }
 
-  /* Farbe läuft ausschließlich über --c-highlight: die SVG bezieht Icons,
-     Ladestandsbalken und Netz-Symbol alle daraus. Die Karte setzt sie je
-     Gerätegruppe, mehr braucht es nicht. */
   & .device .icon, & .device .fan {
     transition: stroke .25s ease, filter .25s ease;
   }
 
-  /* Blinken UND ein Leuchten (drop-shadow) dazu – reines Ein/Aus der
-     Deckkraft wirkte zu technisch, mit Schein sieht es nach Betrieb aus. */
   & .device.is-active .icon,
   & .device.is-active .fan {
     animation: blink var(--beat, 2.4s) ease-in-out infinite;
@@ -74,17 +83,8 @@ ${TILE_CSS}
     fill: var(--c-highlight);
   }
 
-  /* Solar: die Fläche ist dauerhaft orange (kein Blinken mehr) und schimmert
-     über den in der SVG hinterlegten Verlauf "solar-shimmer" von selbst. */
   & #solar-surface { transition: opacity .3s ease; }
 
-  /* Kabel: laufende Punkte, per pathLength auf ein sauberes Vielfaches der
-     Musterlänge normiert (in JS gesetzt) – damit die Punktreihe exakt
-     aufgeht, unabhängig von der tatsächlichen Pfadlänge, und nirgends ein
-     Rest-Stück ohne Punkt oder ein sichtbarer Sprung beim Schleifen-Ende
-     entsteht. Ein-/Ausblenden läuft über Deckkraft mit Übergang statt
-     display:none, damit nichts abrupt abbricht.
-  */
   & .flow, & .flow-fat {
     animation: dots var(--dur, 1.4s) linear infinite;
     fill: none;
@@ -194,11 +194,6 @@ class WueflEnergyLiveCard extends HTMLElement {
     this.#apply();
   }
 
-  /**
-   * Home Assistant setzt hass bei *jeder* Zustandsänderung im ganzen System.
-   * Ohne Filter würde die Karte mehrmals pro Sekunde komplett neu aufbauen,
-   * deshalb hier der Vergleich gegen die tatsächlich benutzten Entitäten.
-   */
   set hass(hass) {
     const first = !this.#hass;
     this.#prevHass = this.#hass;
@@ -214,28 +209,27 @@ class WueflEnergyLiveCard extends HTMLElement {
   getCardSize() { return 13; }
 
   async #loadCentral() {
-    const all = await centralConfig(this.#hass);
-    this.#central = { ...(all.live ?? {}), wallboxes: all.wallboxes ?? [] };
+    const all = (await centralConfig(this.#hass)) ?? {};
+    this.#central = all;
     this.#apply();
     this.#render();
-    // Erst jetzt steht fest, welche Wetter-Entität gilt.
     this.#loadForecast();
     this.#loadToday();
   }
 
-  /**
-   * Was ist seit Mitternacht zusammengekommen? Kommt aus der Statistik, nicht
-   * aus eigenen Tagessensoren — deshalb muss in der Zuordnung nur der
-   * Gesamtzähler stehen. Stündlich reicht als Takt völlig.
-   */
   async #loadToday() {
     const c = this.#config;
-    this.#today = await todayTotals(this.#hass, [
-      ...asList(c.pv_energy_total), ...asList(c.grid_import_total),
-      ...asList(c.grid_export_total), ...asList(c.battery_in_total),
-      ...asList(c.battery_out_total), ...asList(c.house_energy_total),
-      ...asList(c.heatpump_energy_total), ...asList(c.wallbox_energy_total),
+    const entities = collectEntities([
+      c.grid?.import_total,
+      c.grid?.export_total,
+      c.solar?.map(s => s.total),
+      c.battery?.map(b => [b.in_total, b.out_total]),
+      c.consumers?.total,
+      c.heatpump?.map(h => h.total),
+      c.wallboxes?.map(w => w.total),
     ]);
+
+    this.#today = await todayTotals(this.#hass, entities);
     this.#render();
 
     clearTimeout(this.#todayTimer);
@@ -246,14 +240,40 @@ class WueflEnergyLiveCard extends HTMLElement {
     clearTimeout(this.#todayTimer);
   }
 
+  #getWeatherEntity() {
+    return getEntity(this.#config.systemdata?.weather_entity);
+  }
+
+  #getSystemCost() {
+    const val = this.#config.systemdata?.system_cost?.value;
+    return val !== undefined && val !== null ? Number(val) : NaN;
+  }
+
+  #getForecastEntities() {
+    const c = this.#config;
+    const ents = [];
+    if (Array.isArray(c.solar)) {
+      for (const s of c.solar) {
+        if (Array.isArray(s.forecast)) {
+          for (const f of s.forecast) {
+            const ent = getEntity(f);
+            if (ent) ents.push(ent);
+          }
+        }
+      }
+    }
+    return [...new Set(ents)];
+  }
+
   #apply() {
     const merged = mergeConfig(this.#central, this.#own);
     this.#config = { title: 'Zuhause', show_totals: true, ...merged };
-    this.#watch = entityIds(this.#config);
-    this.#watchPlot = [
-      this.#config.price_entity,
-      ...asList(this.#config.pv_forecast_entities),
-    ].filter(Boolean);
+    this.#watch = collectEntities(this.#config);
+
+    const priceEnt = getEntity(this.#config.grid?.price?.import);
+    const pvForecastEnts = this.#getForecastEntities();
+    this.#watchPlot = [priceEnt, ...pvForecastEnts].filter(Boolean);
+
     this.#plotDirty = true;
     this.#built = false;
     this.#svgReady = false;
@@ -334,9 +354,6 @@ class WueflEnergyLiveCard extends HTMLElement {
     if (!svg) return;
     svg.removeAttribute('width');
     svg.removeAttribute('height');
-
-    // Das SVG arbeitet mit light-dark(). Damit es dem HA-Theme folgt und
-    // nicht der Systemeinstellung, wird das Farbschema hier gesetzt.
     svg.style.colorScheme = this.#hass?.themes?.darkMode ? 'dark' : 'light';
 
     this.#els.svg = svg;
@@ -345,7 +362,6 @@ class WueflEnergyLiveCard extends HTMLElement {
     this.#render();
   }
 
-  /** Legt über jedes Kabel zwei laufende Punktlinien. */
   #prepareFlows() {
     const svg = this.#els.svg;
     this.#els.flows = {};
@@ -361,10 +377,6 @@ class WueflEnergyLiveCard extends HTMLElement {
       fat.removeAttribute('id');
       thin.setAttribute('class', 'flow');
       fat.setAttribute('class', 'flow-fat');
-      // pathLength normiert die Musterlänge auf ein Vielfaches von 14 bzw. 42
-      // Einheiten, unabhängig von der tatsächlichen geometrischen Länge des
-      // Pfads. Ohne das ginge das Punktmuster an einer zufälligen Stelle
-      // nicht auf – sichtbar als Lücke oder ein Ruckler beim Schleifenende.
       thin.setAttribute('pathLength', '140');
       fat.setAttribute('pathLength', '126');
       for (const el of [thin, fat]) {
@@ -377,24 +389,29 @@ class WueflEnergyLiveCard extends HTMLElement {
   /* ------------------------------ Werte ----------------------------- */
 
   #wallboxes() {
-    const c = this.#config;
-    if (c.wallboxes?.length) return c.wallboxes;
-    // Ohne zentrale Zuordnung: Leistungen aus der Liste, Namen aus HA
-    return asList(c.wallbox_power).map((id, i) => ({
-      power_entity: id,
-      today_energy_entity: asList(c.wallbox_energy)[i],
-      name: this.#hass?.states?.[id]?.attributes?.friendly_name ?? `Auto ${i + 1}`,
-    }));
+    const wbs = this.#config.wallboxes;
+    if (Array.isArray(wbs) && wbs.length > 0) {
+      return wbs.map((wb, i) => {
+        const liveEnt = getEntity(wb.live);
+        return {
+          power_entity: liveEnt,
+          today_energy_entity: getEntity(wb.total),
+          car_soc_entity: getEntity(wb.car_percent),
+          name: wb.name || (this.#hass?.states?.[liveEnt]?.attributes?.friendly_name ?? `Auto ${i + 1}`),
+        };
+      });
+    }
+    return [];
   }
 
   #present() {
     const c = this.#config;
     return {
-      solar: !!c.pv_power_total || asList(c.pv_power).length > 0,
-      netz: !!c.grid_power,
-      batterie: asList(c.battery_power).length > 0 || asList(c.battery_soc).length > 0,
+      solar: Array.isArray(c.solar) && c.solar.some(s => getEntity(s.live) || (Array.isArray(s.strings) && s.strings.length > 0)),
+      netz: !!getEntity(c.grid?.live),
+      batterie: Array.isArray(c.battery) && c.battery.some(b => getEntity(b.live) || getEntity(b.percent)),
       wallbox: this.#wallboxes().length > 0,
-      waermepumpe: asList(c.heatpump_power).length > 0,
+      waermepumpe: Array.isArray(c.heatpump) && c.heatpump.some(h => getEntity(h.live)),
       haushalt: true,
     };
   }
@@ -402,15 +419,44 @@ class WueflEnergyLiveCard extends HTMLElement {
   #readPowers() {
     const c = this.#config;
     const h = this.#hass;
-    const pv = power(h, c.pv_power_total) ?? sum(h, c.pv_power) ?? 0;
-    const grid = power(h, c.grid_power, { invert: !!c.invert_grid }) ?? 0;
-    const battery = sum(h, c.battery_power, power, { invert: !!c.invert_battery }) ?? 0;
+
+    let pv = 0;
+    if (Array.isArray(c.solar)) {
+      pv = c.solar.reduce((acc, s) => {
+        let val = power(h, getEntity(s.live));
+        if (val === null && Array.isArray(s.strings)) {
+          val = s.strings.reduce((stAcc, st) => stAcc + (power(h, getEntity(st)) ?? 0), 0);
+        }
+        return acc + (val ?? 0);
+      }, 0);
+    }
+
+    const gridEntity = getEntity(c.grid?.live);
+    const gridInvert = c.grid?.live?.transform === -1;
+    const grid = power(h, gridEntity, { invert: gridInvert }) ?? 0;
+
+    let battery = 0;
+    if (Array.isArray(c.battery)) {
+      battery = c.battery.reduce((acc, b) => {
+        const inv = b.live?.transform === -1;
+        return acc + (power(h, getEntity(b.live), { invert: inv }) ?? 0);
+      }, 0);
+    }
+
     const wallbox = this.#wallboxes().reduce(
-      (a, wb) => a + Math.abs(power(h, wb.power_entity) ?? 0), 0,
+      (acc, wb) => acc + Math.abs(power(h, wb.power_entity) ?? 0), 0
     );
-    const heatpump = Math.abs(sum(h, c.heatpump_power) ?? 0);
-    let house = power(h, c.house_power);
-    if (house === null) house = pv + grid + battery - wallbox - heatpump;
+
+    let heatpump = 0;
+    if (Array.isArray(c.heatpump)) {
+      heatpump = Math.abs(c.heatpump.reduce((acc, hp) => acc + (power(h, getEntity(hp.live)) ?? 0), 0));
+    }
+
+    const houseEntity = getEntity(c.consumers?.live);
+    let house = power(h, houseEntity);
+    if (house === null) {
+      house = pv + grid + battery - wallbox - heatpump;
+    }
     return { pv, grid, battery, wallbox, heatpump, house: Math.max(0, house) };
   }
 
@@ -421,7 +467,6 @@ class WueflEnergyLiveCard extends HTMLElement {
     this.#els.title.textContent = this.#config.title ?? '';
     this.#renderWeather();
     this.#renderMoney();
-    // Preis und Prognose ändern sich stündlich – nicht bei jedem Zustand neu bauen.
     if (this.#plotDirty || statesChanged(this.#prevHass, this.#hass, this.#watchPlot)) {
       this.#renderPlot();
       this.#plotDirty = false;
@@ -435,25 +480,16 @@ class WueflEnergyLiveCard extends HTMLElement {
     const has = this.#present();
     const tot = c.show_totals;
 
-    // Nicht konfigurierte Bereiche ausblenden
     for (const [key, part] of Object.entries(PARTS)) {
       const g = svg.querySelector(`#${part.label}`);
       if (g) g.style.display = has[key] ? '' : 'none';
     }
 
-    /**
-     * Werte stehen direkt als <tspan class="…"> in der Grafik, sequenziell
-     * hintereinander (kein Grid, kein foreignObject) — Zeilenumbruch und
-     * Abstand kommen über "white-space: pre-line" und dy-Versätze, die
-     * bereits im SVG selbst stehen. Diese Funktion setzt nur Werte, keine
-     * Struktur.
-     */
     const T = (groupSel, cls, value, index = 0) => {
       const el = svg.querySelectorAll(`${groupSel} .${cls}`)[index];
       if (el) el.textContent = value ?? '';
     };
 
-    /** Gerät aktiv schalten und seine Farbe setzen. */
     const dev = (selector, active, color) => {
       const el = svg.querySelector(selector);
       if (!el) return;
@@ -461,27 +497,6 @@ class WueflEnergyLiveCard extends HTMLElement {
       el.style.setProperty('--c-highlight', color);
     };
 
-    /**
-     * Klont eine Vorlagen-Gruppe (z. B. eine Wallbox-Zeile) so oft wie
-     * nötig und befüllt jede Kopie über "fill". Die erste vorhandene
-     * Instanz im SVG dient als Vorlage; überzählige Kopien werden entfernt,
-     * fehlende ergänzt — "die Klassen suchen und das Format da einsetzen",
-     * dynamisch statt fest auf zwei Einträge.
-     */
-    /**
-     * Klont eine Vorlagen-Zeile (z. B. eine Wallbox) so oft wie nötig.
-     *
-     * Die Zeilenumbrüche in der Grafik sind ECHTE Zeilenumbrüche im XML,
-     * sichtbar gemacht durch "white-space: pre" — nicht durch dy. Deshalb
-     * muss zwischen den Zeilen jeweils ein Text-Knoten mit "\\n" plus der
-     * Original-Einrückung stehen; ein dy setzt die Funktion bewusst nicht,
-     * den Abstand macht die umgebende .t-box allein.
-     *
-     * Vorlage, Einrückung und Abschluss werden beim ersten Durchlauf am
-     * Container zwischengeBatteriet — sonst wären sie beim nächsten Aufruf
-     * verloren, weil der Container ja komplett geleert wird (besonders,
-     * wenn die Liste einmal leer ist).
-     */
     const repeat = (container, templateSelector, items, fill) => {
       if (!container) return;
 
@@ -495,13 +510,10 @@ class WueflEnergyLiveCard extends HTMLElement {
           indent: before && before.nodeType === 3 ? before.nodeValue : '\n          ',
           tail: last && last.nodeType === 3 ? last.nodeValue : '\n          ',
         };
-        // Abstand macht die .t-box, nicht die einzelne Zeile.
         container.__wueflTpl.node.removeAttribute('dy');
       }
       const tpl = container.__wueflTpl;
 
-      // textContent = '' entfernt Elemente UND die Text-Knoten dazwischen —
-      // sonst blieben die alten Umbrüche als zusätzliche Leerzeilen stehen.
       container.textContent = '';
       items.forEach((item, i) => {
         container.appendChild(document.createTextNode(tpl.indent));
@@ -512,11 +524,6 @@ class WueflEnergyLiveCard extends HTMLElement {
       container.appendChild(document.createTextNode(tpl.tail));
     };
 
-    /**
-     * Wie repeat(), aber für Paare aus zwei tspans (Name + Wert), die in
-     * der Vorlage nebeneinander stehen statt in einer gemeinsamen Hülle —
-     * so sind die Dachflächen aufgebaut.
-     */
     const repeatPair = (container, nameSel, valueSel, items, fill) => {
       if (!container) return;
 
@@ -552,44 +559,56 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     /* --- Solar --- */
     if (has.solar) {
-      // Namen kommen aus der Zuordnung — dort trägt man sie ja gerade
-      // deshalb ein. Nur wenn nichts hinterlegt ist (oder die Karte ohne
-      // zentrale Zuordnung läuft), greift der friendly_name des Sensors.
-      const strings = asList(c.pv_strings).length
-        ? asList(c.pv_strings).map((s2) => ({
-            name: s2.name,
-            value: power(h, s2.entity),
-          })).filter((s2) => s2.value !== null)
-        : breakdown(h, c.pv_power);
-      const pvDay = todaySum(this.#today, c.pv_energy_total);
+      const strings = [];
+      if (Array.isArray(c.solar)) {
+        for (const s of c.solar) {
+          if (Array.isArray(s.strings) && s.strings.length > 0) {
+            for (const st of s.strings) {
+              const ent = getEntity(st);
+              const val = power(h, ent);
+              if (val !== null) {
+                strings.push({ name: st.name || ent, value: val });
+              }
+            }
+          } else if (s.live) {
+            const ent = getEntity(s.live);
+            const val = power(h, ent);
+            if (val !== null) {
+              strings.push({ name: s.name || 'PV', value: val });
+            }
+          }
+        }
+      }
+
+      const pvTotalEntities = Array.isArray(c.solar)
+        ? c.solar.map(s => getEntity(s.total)).filter(Boolean)
+        : [];
+      const pvDay = todaySum(this.#today, pvTotalEntities);
+
       T('#label-solar-text', 't-header', 'Solar');
       T('#label-solar-text', 'v_live', fmtPower(p.pv));
       T('#label-solar-text', 'v_total', tot && pvDay !== null ? fmtEnergy(pvDay) : '');
 
-      // Dachflächen: Name und Wert stehen als Paar nebeneinander, jede
-      // Fläche in einer eigenen Zeile.
-      const hasOwnNames = asList(c.pv_strings).length > 0;
       repeatPair(
         svg.querySelector('#label-solar-text .t-box'),
         '.t-sub', '.v_sub_live', strings,
         (name, value, s2) => {
-          // Selbst vergebene Namen bleiben unangetastet — gekürzt wird nur
-          // ein aus dem Sensor übernommener friendly_name.
-          name.textContent = hasOwnNames ? s2.name : this.#short(s2.name);
+          name.textContent = s2.name;
           value.textContent = fmtPower(s2.value);
         },
       );
 
-      // Solar ist grau, solange nichts erzeugt wird, und bekommt erst bei
-      // Ertrag den orangenen Schimmer-Verlauf ("Glow").
       const surface = svg.querySelector('#solar-surface');
       if (surface) surface.style.fill = p.pv >= 20 ? 'url(#solar-shimmer)' : '';
     }
 
     /* --- Netz --- */
     if (has.netz) {
-      const imp = todaySum(this.#today, c.grid_import_total);
-      const exp = todaySum(this.#today, c.grid_export_total);
+      const impEntity = getEntity(c.grid?.import_total);
+      const expEntity = getEntity(c.grid?.export_total);
+      const imp = todaySum(this.#today, impEntity);
+      const exp = todaySum(this.#today, expEntity);
+
       T('#label-netz-text', 't-header', 'Netz');
       T('#label-netz-text', 'v_live', `${p.grid >= 0 ? '−' : '+'}${fmtPower(Math.abs(p.grid))}`);
       T('#label-netz-text', 'v_total', tot ? fmtEnergy((imp ?? 0) - (exp ?? 0)) : '');
@@ -601,14 +620,28 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     /* --- Batterie --- */
     if (has.batterie) {
-      const socs = breakdown(h, c.battery_soc, num);
-      const soc = socs.length ? socs.reduce((a, s2) => a + s2.value, 0) / socs.length : null;
+      let soc = null;
+      if (Array.isArray(c.battery) && c.battery.length > 0) {
+        const socVals = c.battery.map(b => num(h, getEntity(b.percent))).filter(v => v !== null);
+        if (socVals.length > 0) {
+          soc = socVals.reduce((a, b) => a + b, 0) / socVals.length;
+        }
+      }
+
       T('#label-batterie-text', 't-header', soc === null ? 'Batterie' : `Batterie ${fmtPercent(soc)}`);
       T('#label-batterie-text', 'v_live', `${p.battery > 0 ? '−' : '+'}${fmtPower(Math.abs(p.battery))}`);
-      const outE = todaySum(this.#today, c.battery_out_total);
-      const inE = todaySum(this.#today, c.battery_in_total);
+
+      const batInEntities = Array.isArray(c.battery)
+        ? c.battery.map(b => getEntity(b.in_total)).filter(Boolean)
+        : [];
+      const batOutEntities = Array.isArray(c.battery)
+        ? c.battery.map(b => getEntity(b.out_total)).filter(Boolean)
+        : [];
+
+      const outE = todaySum(this.#today, batOutEntities);
+      const inE = todaySum(this.#today, batInEntities);
+
       T('#label-batterie-text', 'v_total', tot ? fmtEnergy((inE ?? 0) - (outE ?? 0)) : '');
-      // Im SVG des Nutzers steht "Geladen" vor "Entladen" (v_in vor v_out).
       T('#label-batterie-text', 'v_in', tot && inE !== null ? fmtEnergy(inE) : '');
       T('#label-batterie-text', 'v_out', tot && outE !== null ? fmtEnergy(outE) : '');
       if (soc !== null) {
@@ -620,7 +653,7 @@ class WueflEnergyLiveCard extends HTMLElement {
         p.battery > 0 ? COLORS.battery_out : COLORS.battery_in);
     }
 
-    /* --- Wallboxen: eine .wstation-Zeile je Fahrzeug, dynamisch geklont --- */
+    /* --- Wallboxen --- */
     if (has.wallbox) {
       const list = this.#wallboxes();
       T('#label-wallbox-text', 't-header', 'Wallbox');
@@ -628,7 +661,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       repeat(box, '.wstation', list, (node, wb, i) => {
         const pw = Math.abs(power(h, wb.power_entity) ?? 0);
         const soc = num(h, wb.car_soc_entity);
-        const day = todaySum(this.#today, wb.energy_total);
+        const day = todaySum(this.#today, wb.today_energy_entity);
         const name = node.querySelector('.t-sub');
         const cap = node.querySelector('.v_cap');
         const live = node.querySelector('.v_live');
@@ -643,7 +676,10 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     /* --- Wärmepumpe --- */
     if (has.waermepumpe) {
-      const e = todaySum(this.#today, c.heatpump_energy_total);
+      const hpEnergyEntities = Array.isArray(c.heatpump)
+        ? c.heatpump.map(hp => getEntity(hp.total)).filter(Boolean)
+        : [];
+      const e = todaySum(this.#today, hpEnergyEntities);
       T('#label-waermepumpe-text', 't-header', 'Wärmepumpe');
       T('#label-waermepumpe-text', 'v_live', fmtPower(p.heatpump));
       T('#label-waermepumpe-text', 'v_total', tot && e !== null ? fmtEnergy(e) : '');
@@ -651,7 +687,8 @@ class WueflEnergyLiveCard extends HTMLElement {
     }
 
     /* --- Haushalt --- */
-    const he = todaySum(this.#today, c.house_energy_total);
+    const houseEnergyEntity = getEntity(c.consumers?.total);
+    const he = todaySum(this.#today, houseEnergyEntity);
     T('#label-haushalt', 't-header', 'Haushalt');
     T('#label-haushalt', 'v_live', fmtPower(p.house));
     T('#label-haushalt', 'v_total', tot && he !== null ? fmtEnergy(he) : '');
@@ -666,15 +703,9 @@ class WueflEnergyLiveCard extends HTMLElement {
     this.#flow('wallbox', p.wallbox, true, COLORS.wallbox);
     this.#flow('waermepumpe', p.heatpump, true, COLORS.heatpump);
 
-    // "Steuerelement" (#ha-box) ist keinem einzelnen Gerät zugeordnet,
-    // sondern zeigt: passiert irgendwo im System gerade etwas nennenswertes?
     const anyActive = [p.pv, p.grid, p.battery, p.wallbox, p.heatpump]
       .some((w) => Math.abs(w) >= 20);
     dev('#ha-box', anyActive, 'var(--w-accent)');
-  }
-
-  #short(name) {
-    return name.replace(/(PV|Solar|Leistung|Power)/gi, '').replace(/\s+/g, ' ').trim() || name;
   }
 
   #flow(key, watt, reverse, color) {
@@ -682,13 +713,9 @@ class WueflEnergyLiveCard extends HTMLElement {
     if (!pair) return;
     const w = Math.abs(watt);
     const on = w >= 20;
-    // Wenig Leistung: langsam und blass. Viel: schnell und kräftig.
     const dur = Math.max(0.45, Math.min(2.6, 2600 / Math.max(1, w)));
     const strength = 0.35 + Math.min(1, w / 4000) * 0.65;
     for (const el of [pair.thin, pair.fat]) {
-      // "on" steuert nur die Deckkraft (mit CSS-Übergang) – die Animation
-      // selbst läuft immer weiter, dadurch gibt es beim Wiedereinblenden
-      // keinen Sprung zurück an den Bahnanfang.
       el.classList.toggle('on', on);
       el.style.stroke = color;
       el.style.setProperty('--dur', `${dur.toFixed(2)}s`);
@@ -702,14 +729,20 @@ class WueflEnergyLiveCard extends HTMLElement {
   #renderMoney() {
     const c = this.#config;
     const h = this.#hass;
-    const imp = todaySum(this.#today, c.grid_import_total);
-    const exp = todaySum(this.#today, c.grid_export_total);
-    const pv = todaySum(this.#today, c.pv_energy_total);
+    const impEntity = getEntity(c.grid?.import_total);
+    const expEntity = getEntity(c.grid?.export_total);
+    const pvTotalEntities = Array.isArray(c.solar)
+      ? c.solar.map(s => getEntity(s.total)).filter(Boolean)
+      : [];
+
+    const imp = todaySum(this.#today, impEntity);
+    const exp = todaySum(this.#today, expEntity);
+    const pv = todaySum(this.#today, pvTotalEntities);
+
     const pImp = priceInfo(h, c, 'import').now;
     const pExp = priceInfo(h, c, 'export').now;
-    const ref = c.price_reference ?? pImp;
+    const ref = c.grid?.price?.import?.reference ?? pImp;
 
-    // Eigenverbrauch: was erzeugt und nicht eingespeist wurde.
     const own = pv !== null ? Math.max(0, pv - (exp ?? 0)) : null;
     const saved = own !== null && ref !== null ? (own * ref) / 100 : null;
     const earned = exp !== null && pExp !== null ? (exp * pExp) / 100 : null;
@@ -736,8 +769,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       }));
     }
 
-    // Amortisation: was der heutige Tag zu den Anschaffungskosten beiträgt.
-    const cost = Number(c.system_cost);
+    const cost = this.#getSystemCost();
     if (Number.isFinite(cost) && cost > 0 && (saved !== null || earned !== null)) {
       const today = (saved ?? 0) + (earned ?? 0);
       const percent = `${((today / cost) * 100).toFixed(3).replace('.', ',')} % der Anlage`;
@@ -762,7 +794,7 @@ class WueflEnergyLiveCard extends HTMLElement {
   }
 
   #renderExplain() {
-    const cost = Number(this.#config.system_cost);
+    const cost = this.#getSystemCost();
     const texts = {
       saved: `<p><strong>Durch PV gespart</strong> ist der Strom, den die Anlage heute erzeugt
         und den du <em>selbst verbraucht</em> hast — also Erzeugung minus Einspeisung.
@@ -787,14 +819,12 @@ class WueflEnergyLiveCard extends HTMLElement {
     const byHour = new Map();
     let total = 0;
 
-    for (const id of asList(this.#config.pv_forecast_entities)) {
+    for (const id of this.#getForecastEntities()) {
       const st = this.#hass.states[id];
       if (!st) continue;
       const v = energy(this.#hass, id);
       if (v !== null) total += v;
-      // Das Attribut wird erkannt, nicht vorausgesetzt – Forecast.Solar,
-      // Solcast und Konsorten legen es jeweils anders ab.
-      for (const e of pvForecast(st, this.#config.pv_forecast_attribute)) {
+      for (const e of pvForecast(st)) {
         if (e.time.toDateString() !== today) continue;
         const h = e.time.getHours();
         byHour.set(h, (byHour.get(h) ?? 0) + e.kwh);
@@ -868,7 +898,7 @@ class WueflEnergyLiveCard extends HTMLElement {
   /* ------------------------------ Wetter ---------------------------- */
 
   #renderWeather() {
-    const e = this.#config.weather_entity;
+    const e = this.#getWeatherEntity();
     const st = e ? this.#hass.states[e] : null;
     this.#els.weather.hidden = !st;
     if (!st) return;
@@ -878,7 +908,7 @@ class WueflEnergyLiveCard extends HTMLElement {
   }
 
   async #loadForecast() {
-    const e = this.#config.weather_entity;
+    const e = this.#getWeatherEntity();
     if (!e || !this.#hass) return;
     try {
       const res = await this.#hass.callService(
@@ -901,7 +931,7 @@ class WueflEnergyLiveCard extends HTMLElement {
           f.templow !== undefined ? ` / ${Math.round(f.templow)}°` : ''
         }</span></div>`;
     });
-    for (const id of asList(this.#config.pv_forecast_entities)) {
+    for (const id of this.#getForecastEntities()) {
       const st = this.#hass?.states?.[id];
       if (!st) continue;
       rows.push(`<div class="extra"><span>${esc(st.attributes.friendly_name ?? id)}</span>
@@ -911,37 +941,16 @@ class WueflEnergyLiveCard extends HTMLElement {
   }
 }
 
-/* -------------------------------------------------------------------- */
-
 const SCHEMA = [
   { name: 'title', selector: sel.text() },
   { name: 'show_totals', selector: sel.bool() },
-  {
-    type: 'expandable', name: '', title: 'Abweichend von der zentralen Zuordnung',
-    schema: [
-      { name: 'weather_entity', selector: sel.entity('weather') },
-      { name: 'pv_power_total', selector: sel.entity() },
-      { name: 'pv_power', selector: sel.entities() },
-      { name: 'grid_power', selector: sel.entity() },
-      { name: 'battery_power', selector: sel.entities() },
-      { name: 'house_power', selector: sel.entity() },
-      { name: 'heatpump_power', selector: sel.entities() },
-      { name: 'svg_url', selector: sel.text() },
-    ],
-  },
+  { name: 'svg_url', selector: sel.text() },
 ];
 
 const LABELS_EDIT = {
   title: 'Überschrift',
   show_totals: 'Gesamtwerte anzeigen',
-  weather_entity: 'Wetter',
-  pv_power_total: 'PV-Leistung gesamt',
-  pv_power: 'PV-Leistung je Strang',
-  grid_power: 'Netzleistung',
-  battery_power: 'Leistung je Batterie',
-  house_power: 'Hausverbrauch',
-  heatpump_power: 'Leistung je Wärmepumpe',
-  svg_url: 'Pfad zur Grafik',
+  svg_url: 'Pfad zur SVG-Grafik',
 };
 
 class WueflEnergyLiveCardEditor extends WueflFormEditor {

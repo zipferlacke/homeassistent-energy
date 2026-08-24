@@ -1,13 +1,8 @@
 /**
- * we-history-card
- * Das Hauptdiagramm ("Verteilung"). Baut nur die Konfiguration aus der
- * Zuordnung, gezeichnet wird von <we-chart>.
- *
- * "legend_group" fasst Reihen in der Legende zusammen: Netzbezug und
- * Einspeisung erscheinen als ein Eintrag "Netz", der beide gemeinsam
- * ein- und ausblendet — ebenso Laden/Entladen als "Batterie".
+ * we-history-chart-card.js
+ * Hauptdiagramm ("Verteilung") auf Basis der präzisen Objekt-/Array-Struktur aus we-config-card.js.
  */
-import { asList, registerCard, WueflFormEditor, sel } from './we-shared.js';
+import { registerCard, WueflFormEditor, sel } from './we-shared.js';
 import { WueflChartWrapper } from './we-chart-base.js';
 
 const SERIES = [
@@ -21,20 +16,66 @@ const SERIES = [
   { key: 'heatpump_energy', name: 'Wärmepumpe', group: 'Wärmepumpe', sign: -1, color: 'var(--wuefl-heatpump-color, #d85a30)' },
 ];
 
+function getEntitiesForSeries(cfg, key) {
+  const list = [];
+
+  const push = (val) => {
+    if (!val) return;
+    if (Array.isArray(val)) {
+      val.forEach(push);
+    } else if (typeof val === 'string') {
+      list.push(val);
+    } else if (typeof val === 'object' && val.entity) {
+      list.push(val.entity);
+    }
+  };
+
+  switch (key) {
+    // Arrays (kind: 'list')
+    case 'pv_energy':
+      cfg.solar?.forEach((s) => push(s.total));
+      break;
+    case 'battery_out':
+      cfg.battery?.forEach((b) => push(b.out_total));
+      break;
+    case 'battery_in':
+      cfg.battery?.forEach((b) => push(b.in_total));
+      break;
+    case 'wallbox_energy':
+      cfg.wallboxes?.forEach((w) => push(w.total));
+      break;
+    case 'heatpump_energy':
+      cfg.heatpump?.forEach((hp) => push(hp.total));
+      break;
+
+    // Einzelne Objekte (kind: 'single') – Felder können Strings oder Arrays sein (multiple: true)
+    case 'grid_import':
+      push(cfg.grid?.import_total);
+      break;
+    case 'grid_export':
+      push(cfg.grid?.export_total);
+      break;
+    case 'house_energy':
+      push(cfg.consumers?.total);
+      break;
+  }
+
+  return [...new Set(list)];
+}
+
 class WueflEnergyHistoryCard extends WueflChartWrapper {
-  static getConfigElement() { return document.createElement('we-history-card-editor'); }
+  static getConfigElement() { return document.createElement('we-history-chart-card-editor'); }
   static getStubConfig() { return { title: 'Verteilung' }; }
 
   get defaultTitle() { return 'Verteilung'; }
   getCardSize() { return 6; }
 
   buildChartConfig(range) {
-  const oneMonthLater = new Date(range.start);
-  oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
-
     const series = [];
+
     for (const s of SERIES) {
-      for (const entity of asList(this._config[s.key])) {
+      const entities = getEntitiesForSeries(this._config, s.key);
+      for (const entity of entities) {
         series.push({
           entity,
           name: s.name,
@@ -44,10 +85,11 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
           sign: s.sign,
           fill: 'gradient',
           stack: s.sign > 0 ? 'up' : 'down',
-          type: range.overMonth ? "bar":"line"
+          type: range.overMonth ? 'bar' : 'line',
         });
       }
     }
+
     if (!series.length) return null;
 
     return {
@@ -55,31 +97,23 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
       y_axes: [{ unit: 'kWh' }],
       legend: [{ hidden: false, position: 'bottom-center' }],
       series,
-      // Chip: die Erzeugung im Zeitraum, unabhängig von der Aggregation.
-      // ...(asList(this._config.pv_energy).length
-      //   ? {
-      //       chip: {
-      //         entity: asList(this._config.pv_energy)[0],
-      //         unit: 'kWh',
-      //         stat_type: 'change',
-      //         calc_type: 'sum',
-      //         color: 'var(--energy-solar-color, #ff9800)',
-      //       },
-      //     }
-      //   : {}),
     };
   }
 }
 
 const SCHEMA = [{ name: 'title', selector: sel.text() }];
 const LABELS = { title: 'Überschrift' };
-class WueflEnergyHistoryCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
+
+class WueflEnergyHistoryCardEditor extends WueflFormEditor {
+  schema = SCHEMA;
+  labels = LABELS;
+}
 
 customElements.define('we-history-chart-card', WueflEnergyHistoryCard);
 customElements.define('we-history-chart-card-editor', WueflEnergyHistoryCardEditor);
 
 registerCard({
-  type: 'we-chart-history-card',
-  name: 'Energie-Verteilung',
+  type: 'we-history-chart-card',
+  name: 'wuefl Energie-Verteilung',
   description: 'Hauptdiagramm mit Legenden-Gruppen — folgt der Zeitraum-Karte.',
 });
