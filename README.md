@@ -42,7 +42,7 @@ dem Repository vorausgefuellt. Oder von Hand: HACS → drei Punkte oben rechts
 
 **2. Installieren**
 
-"wuefl Energie" in HACS suchen, installieren, Home Assistant neu starten.
+"W-Energie Dashboard" in HACS suchen, installieren, Home Assistant neu starten.
 Da alles — Integration und Karten — in `custom_components/we/`
 liegt, reicht die Kategorie *Integration* fuer beides; es ist kein separater
 HACS-Eintrag fuer die Karten noetig.
@@ -53,7 +53,7 @@ HACS installiert nur die Dateien — aktiv wird die Integration erst, wenn du
 sie einrichtest:
 
 Einstellungen → Geraete & Dienste → **+ Integration hinzufuegen** (unten
-rechts) → nach **"wuefl Energie"** suchen → auswaehlen → Dialog bestaetigen.
+rechts) → nach **"W-Energie Dashboard"** suchen → auswaehlen → Dialog bestaetigen.
 
 Es gibt dabei nichts einzustellen, der Dialog zeigt nur einen
 Bestaetigungsschritt. Das legt den Eintrag an, der die Helfer-Entitaeten
@@ -63,7 +63,7 @@ Integration installiert, aber inaktiv.
 
 **4. Dashboard anlegen**
 
-Einstellungen → Dashboards → Dashboard hinzufuegen → **wuefl Energie**
+Einstellungen → Dashboards → Dashboard hinzufuegen → **W-Energie Dashboard**
 auswaehlen. Erscheint es nicht in der Liste, die Seite einmal neu laden.
 
 Alternativ von Hand, im Raw-Konfigurationseditor eines leeren Dashboards:

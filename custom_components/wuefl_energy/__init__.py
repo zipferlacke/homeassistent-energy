@@ -1,4 +1,4 @@
-"""wuefl Energie – zentrale Zuordnung der Entitäten."""
+"""W-Energie Dashboard – zentrale Zuordnung der Entitäten."""
 from __future__ import annotations
 
 import json

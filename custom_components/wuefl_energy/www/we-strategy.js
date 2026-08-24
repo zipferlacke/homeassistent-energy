@@ -290,7 +290,7 @@ class WueflEnergyDashboardStrategy {
       }]
     });
 
-    return { title: 'wuefl Energie', views };
+    return { title: 'W-Energie Dashboard', views };
   }
 }
 
@@ -301,7 +301,7 @@ if (!window.customStrategies.some((s) => s.type === 'we')) {
   window.customStrategies.push({
     type: 'we',
     strategyType: 'dashboard',
-    name: 'wuefl Energie',
+    name: 'W-Energie Dashboard',
     description: 'Live-Energiefluss, Bilanz, Wallboxen — dynamisch strukturiert per Custom Grid Container.',
   });
 }

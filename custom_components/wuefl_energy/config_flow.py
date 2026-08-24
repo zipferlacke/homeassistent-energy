@@ -23,11 +23,11 @@ class WueflEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
         self._async_abort_entries_match()
         if user_input is not None:
-            return self.async_create_entry(title="wuefl Energie", data={})
+            return self.async_create_entry(title="W-Energie Dashboard", data={})
         return self.async_show_form(step_id="user")
 
     async def async_step_import(self, import_config: dict | None) -> FlowResult:
         """Wird automatisch ausgelöst, wenn "we:" in der
         configuration.yaml steht — kein Klicken in der Oberfläche nötig."""
         self._async_abort_entries_match()
-        return self.async_create_entry(title="wuefl Energie", data={})
+        return self.async_create_entry(title="W-Energie Dashboard", data={})

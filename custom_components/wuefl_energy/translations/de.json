@@ -2,12 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "wuefl Energie einrichten",
+        "title": "W-Energie Dashboard einrichten",
         "description": "Hier gibt es nichts einzustellen. Dieser Schritt legt nur den Eintrag an, den die Integration braucht, um ihre Helfer-Entitäten (Laderegler, Lademodus je Wallbox) zuverlässig zu laden. Die eigentliche Zuordnung deiner Sensoren pflegst du danach in der Ansicht \"Zuordnung\" im Dashboard."
       }
     },
     "abort": {
-      "already_configured": "wuefl Energie ist bereits eingerichtet."
+      "already_configured": "W-Energie Dashboard ist bereits eingerichtet."
     }
   }
 }

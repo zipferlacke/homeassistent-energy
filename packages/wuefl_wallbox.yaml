@@ -10,7 +10,7 @@
 #
 # Lademodus, Ladestrom, Ladeziel und die vier anlagenweiten Laderegler
 # (Hausakku-Freigabe, Batteriereserve, Prioritaet, Preisgrenze) stehen NICHT
-# mehr hier drin — die legt die Integration "wuefl Energie" selbst an, sobald
+# mehr hier drin — die legt die Integration "W-Energie Dashboard" selbst an, sobald
 # in der Zuordnung eine Wallbox existiert. Zu finden unter Einstellungen →
 # Geraete & Dienste → Entitaeten, Suche "wuefl", oder direkt in der Ansicht
 # Einstellungen des wuefl-Energie-Dashboards.
