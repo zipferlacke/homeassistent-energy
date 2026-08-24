@@ -1,11 +1,7 @@
 /**
  * wuefl-energy-solar-chart-card
  * "Gesamt" plus eine Linie je Dachfläche, als Mittelwert der Leistung.
- *
- * Der Chip zeigt bewusst NICHT einen Wert aus dem Diagramm: das zeigt
- * Leistung (W), und deren Mittelwert ist keine Energiemenge. Er hängt
- * stattdessen am kWh-Gesamtzähler — nur so steht dort die tatsächliche
- * Gesamterzeugung.
+ * Reines Diagramm ohne Überschriftenzeile.
  */
 import { asList, registerCard, WueflFormEditor, sel } from './wuefl-energy-shared.js';
 import { WueflChartWrapper } from './wuefl-energy-chart-base.js';
@@ -19,13 +15,19 @@ const STRING_COLORS = [
 
 class WueflEnergySolarChartCard extends WueflChartWrapper {
   static getConfigElement() { return document.createElement('wuefl-energy-solar-chart-card-editor'); }
-  static getStubConfig() { return { title: 'Solarproduktion' }; }
+  static getStubConfig() { return {}; }
 
-  get defaultTitle() { return 'Solarproduktion'; }
+  get defaultTitle() { return ''; }
 
+  // HIER ist die Magie: Überschreibt den Standard der Basisklasse!
+  get centralConfigType() { return 'live'; }
+
+  // Bleibt wieder komplett synchron und sauber
   buildChartConfig(range) {
-    const mainPower = this._central?.raw?.solar?.power;
-    const strings = (this._central?.raw?.strings ?? []).filter((s) => s.power);
+    const sensors = this._config;
+
+    const mainPower = sensors?.pv_power_total;
+    const strings = sensors?.pv_strings || [];
     const series = [];
 
     if (mainPower) {
@@ -35,32 +37,39 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
         color: 'var(--energy-solar-color, #ff9800)',
         stat_type: 'mean',
         fill: 'gradient',
+        type: range.overMonth ? "bar":"line"
       });
     }
+    
     strings.forEach((str, i) => {
       series.push({
-        entity: str.power,
+        entity: str.entity,
         name: str.name || `Fläche ${i + 1}`,
         color: STRING_COLORS[i % STRING_COLORS.length],
         stat_type: 'mean',
         fill: 'gradient',
+        type: range.overMonth ? "bar":"line",
+        ...(range.overMonth ? {stack: "bar"}:{})
       });
     });
-    if (!series.length) return null;
 
-    const energyIds = asList(this._config.pv_energy);
+    if (series.length === 0) return null;
+
+    const energyEntity = (sensors?.pv_energy_total && sensors.pv_energy_total.length > 0) 
+      ? sensors.pv_energy_total[0] 
+      : mainPower;
+
     return {
       aggregation: this._aggregation(range),
       y_axes: [{ unit: 'kW' }],
       legend: [{ hidden: false, position: 'top-right' }],
       series,
-      ...(energyIds.length
+      ...(energyEntity
         ? {
             chip: {
-              entity: energyIds[0],
+              entity: energyEntity,
               unit: 'kWh',
-              stat_type: 'change',
-              calc_type: 'sum',
+              stat_type: energyEntity !== mainPower ? 'sum' : 'mean',
               color: 'var(--energy-solar-color, #ff9800)',
             },
           }
@@ -69,8 +78,8 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
   }
 }
 
-const SCHEMA = [{ name: 'title', selector: sel.text() }];
-const LABELS = { title: 'Überschrift' };
+const SCHEMA = [];
+const LABELS = {};
 class WueflEnergySolarChartCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
 
 customElements.define('wuefl-energy-solar-chart-card', WueflEnergySolarChartCard);
@@ -79,5 +88,5 @@ customElements.define('wuefl-energy-solar-chart-card-editor', WueflEnergySolarCh
 registerCard({
   type: 'wuefl-energy-solar-chart-card',
   name: 'wuefl Solarproduktion',
-  description: 'Gesamt- und Einzeldach-Leistung, Chip zeigt den Ertrag in kWh.',
+  description: 'Gesamt- und Einzeldach-Leistung als reine Diagrammkarte.',
 });

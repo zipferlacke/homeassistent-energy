@@ -4,11 +4,11 @@
  *
  * Aufbau wie die Energie-Konfiguration von Home Assistant: ein Block je
  * Thema, darin die vorhandenen Einträge, darunter ein Knopf zum Hinzufügen.
- * Alles, wovon es mehrere geben kann — Solaranlagen, Speicher, Wallboxen,
+ * Alles, wovon es mehrere geben kann — Solaranlagen, Batterie, Wallboxen,
  * Autos, Wärmepumpen — ist eine Liste und kommt mit null Einträgen zurecht.
  *
- * Gespeichert wird beim Schließen des Dialogs, nicht über einen globalen
- * Speichern-Knopf. Ein halb ausgefülltes Formular gibt es damit nicht.
+ * GeBatteriet wird beim Schließen des Dialogs, nicht über einen globalen
+ * Batterien-Knopf. Ein halb ausgefülltes Formular gibt es damit nicht.
  */
 
 import {
@@ -107,12 +107,12 @@ const BLOCKS = [
   {
     key: 'battery',
     kind: 'list',
-    title: 'Hausspeicher',
+    title: 'HausBatterie',
     icon: 'mdi:home-battery',
     intro: 'Aktuelle Leistung, Ladestand und die beiden Gesamtzähler. Stimmt die '
       + 'Richtung im Bild nicht, hilft der Schalter für das Vorzeichen.',
-    add: 'Speicher hinzufügen',
-    label: (e, i) => e.name || `Speicher ${i + 1}`,
+    add: 'Batterie hinzufügen',
+    label: (e, i) => e.name || `Batterie ${i + 1}`,
     summary: (e) => e.power,
     schema: [
       { name: 'name', selector: () => text() },
@@ -129,7 +129,7 @@ const BLOCKS = [
     title: 'Haushalt',
     icon: 'mdi:home',
     intro: 'Kann leer bleiben. Ohne Eintrag rechnet die Live-Ansicht den '
-      + 'Hausverbrauch aus dem Rest: PV + Netz + Speicher minus Wallbox und Wärmepumpe.',
+      + 'Hausverbrauch aus dem Rest: PV + Netz + Batterie minus Wallbox und Wärmepumpe.',
     empty: 'Haushalt einrichten',
     summary: (e) => e.house_power,
     schema: [
@@ -274,7 +274,7 @@ const BLOCKS = [
 
 /**
  * Beschriftung und Hilfetext je Feld — je Block, damit "Leistung" bei der
- * Wallbox etwas anderes sagt als "Leistung" beim Speicher. Der Hilfetext
+ * Wallbox etwas anderes sagt als "Leistung" beim Batterie. Der Hilfetext
  * nennt immer die Einheit und ob es der Live-Wert oder ein Gesamt-Zähler ist,
  * das war vorher der fehlende Teil.
  */
@@ -298,7 +298,7 @@ const LABELS = {
   },
   battery: {
     name: 'Bezeichnung',
-    power: 'Speicherleistung',
+    power: 'Batterieleistung',
     invert: 'Richtung ist vertauscht',
     soc: 'Ladestand',
     in_total: 'Geladen gesamt',
@@ -385,7 +385,7 @@ const HELPERS = {
     out_total: 'Gesamt-Zähler in kWh, wie viel insgesamt entladen wurde.',
   },
   consumers: {
-    house_power: 'Live-Wert in Watt (W). Leer lassen: wird aus PV, Netz und Speicher berechnet.',
+    house_power: 'Live-Wert in Watt (W). Leer lassen: wird aus PV, Netz und Batterie berechnet.',
     energy_total: 'Gesamt-Zähler in kWh.',
   },
   heatpump: {
@@ -470,7 +470,7 @@ const PRESETS = {
       energy_total: ['total_pv_generation'],
     },
     battery: [{
-      name: 'Hausspeicher',
+      name: 'HausBatterie',
       power: ['signed_battery_power', 'battery_power'],
       soc: ['battery_level'],
       in_total: ['total_battery_charge', 'total_charge_energy'],
@@ -478,8 +478,8 @@ const PRESETS = {
     }],
     consumers: { house_power: ['load_power'] },
     info: { temperatures: ['inverter_temperature', 'battery_temperature'] },
-    hint: 'Beim Speicher zeigen manche Firmware-Stände das Vorzeichen andersherum. '
-      + 'Stimmt Laden und Entladen nicht, den Schalter im Speicher-Block setzen.',
+    hint: 'Beim Batterie zeigen manche Firmware-Stände das Vorzeichen andersherum. '
+      + 'Stimmt Laden und Entladen nicht, den Schalter im Batterie-Block setzen.',
   },
 };
 
@@ -838,10 +838,10 @@ class WueflEnergyConfigCard extends HTMLElement {
   }
 
   /**
-   * Speichert und zeigt das Ergebnis sichtbar an — vorher lief ein
+   * Batteriet und zeigt das Ergebnis sichtbar an — vorher lief ein
    * Fehlschlag hier stillschweigend in die Browser-Konsole, während die
    * Oberfläche schon optimistisch aktualisiert war. Das sah aus wie
-   * "gespeichert", war es aber nicht.
+   * "geBatteriet", war es aber nicht.
    */
   async #persist(next) {
     const el = this.#els.saveStatus;
@@ -850,16 +850,16 @@ class WueflEnergyConfigCard extends HTMLElement {
       await saveConfig(this.#hass, next);
       if (el) {
         el.hidden = false;
-        el.textContent = 'Gespeichert.';
+        el.textContent = 'GeBatteriet.';
         el.className = 'save-status ok';
         setTimeout(() => { el.hidden = true; }, 3000);
       }
     } catch (err) {
-      console.error('[wuefl-energy] Speichern fehlgeschlagen', err);
+      console.error('[wuefl-energy] Batterien fehlgeschlagen', err);
       if (el) {
         el.hidden = false;
         el.className = 'save-status error';
-        el.textContent = `Speichern fehlgeschlagen: ${err?.message ?? err}`;
+        el.textContent = `Batterien fehlgeschlagen: ${err?.message ?? err}`;
       }
     }
   }
@@ -987,5 +987,5 @@ customElements.define('wuefl-energy-config-card-editor', WueflEnergyConfigCardEd
 registerCard({
   type: 'wuefl-energy-config-card',
   name: 'wuefl Zuordnung',
-  description: 'Welche Entität wofür steht — Netz, Solar, Speicher, Wallboxen, Fahrzeuge.',
+  description: 'Welche Entität wofür steht — Netz, Solar, Batterie, Wallboxen, Fahrzeuge.',
 });

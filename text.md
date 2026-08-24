@@ -1,4 +1,4 @@
-Hier ist die saubere, kompakte Zusammenfassung deines gesamten Vorhabens – genau abgestimmt auf deine eigene Python-Integration, dein interaktives SVG und deine autarken Statistiken.Schritt 1: Das Python-Backend (Die Datenbasis)Damit du Verläufe für Tag, Woche und Monat plotten kannst, müssen deine Sensoren im Python-Code als Langzeitstatistik (LTS) definiert sein. Nur so speichert Home Assistant die Daten dauerhaft und berechnet automatisch stündliche oder tägliche Summen.Deine kumulativen (fortlaufend steigenden) Zähler-Sensoren benötigen diese Attribute:pythonfrom homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
+Hier ist die saubere, kompakte Zusammenfassung deines gesamten Vorhabens – genau abgestimmt auf deine eigene Python-Integration, dein interaktives SVG und deine autarken Statistiken.Schritt 1: Das Python-Backend (Die Datenbasis)Damit du Verläufe für Tag, Woche und Monat plotten kannst, müssen deine Sensoren im Python-Code als Langzeitstatistik (LTS) definiert sein. Nur so Batteriet Home Assistant die Daten dauerhaft und berechnet automatisch stündliche oder tägliche Summen.Deine kumulativen (fortlaufend steigenden) Zähler-Sensoren benötigen diese Attribute:pythonfrom homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfEnergy
 
 class MyTotalEnergySensor(SensorEntity):
@@ -144,11 +144,11 @@ mwc-button {
   max-width: 300px;
 }
 `
-Use code with caution.Teil 2: Die Text-Daten-Karten im originalen HA-StyleDie grauen Boxen aus deinem Bild mit den farbigen Seitenbalken (Indikatoren) basieren auf der Standard <ha-card>. Du musst sie nicht selbst via CSS nachbauen. Du nutzt die CSS-Variablen von Home Assistant, damit die Farben für Erzeugung (Gelb/Orange), Speicher (Grün/Teal) und Netz (Lila) exakt dem System entsprechen.Hier ist das HTML- und CSS-Gerüst für eine solche Info-Box:javascript// Beispiel für die "Speicher"-Box aus deinem Bild
+Use code with caution.Teil 2: Die Text-Daten-Karten im originalen HA-StyleDie grauen Boxen aus deinem Bild mit den farbigen Seitenbalken (Indikatoren) basieren auf der Standard <ha-card>. Du musst sie nicht selbst via CSS nachbauen. Du nutzt die CSS-Variablen von Home Assistant, damit die Farben für Erzeugung (Gelb/Orange), Batterie (Grün/Teal) und Netz (Lila) exakt dem System entsprechen.Hier ist das HTML- und CSS-Gerüst für eine solche Info-Box:javascript// Beispiel für die "Batterie"-Box aus deinem Bild
 `
 <ha-card class="energy-value-card battery-border">
   <div class="card-content">
-    <div class="card-title">Speicher</div>
+    <div class="card-title">Batterie</div>
     <div class="main-value">5,10 kWh</div>
     
     <div class="sub-values">

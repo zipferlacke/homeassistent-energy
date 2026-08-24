@@ -478,7 +478,7 @@ class WueflEnergyLiveCard extends HTMLElement {
      * den Abstand macht die umgebende .t-box allein.
      *
      * Vorlage, Einrückung und Abschluss werden beim ersten Durchlauf am
-     * Container zwischengespeichert — sonst wären sie beim nächsten Aufruf
+     * Container zwischengeBatteriet — sonst wären sie beim nächsten Aufruf
      * verloren, weil der Container ja komplett geleert wird (besonders,
      * wenn die Liste einmal leer ist).
      */
@@ -938,7 +938,7 @@ const LABELS_EDIT = {
   pv_power_total: 'PV-Leistung gesamt',
   pv_power: 'PV-Leistung je Strang',
   grid_power: 'Netzleistung',
-  battery_power: 'Leistung je Speicher',
+  battery_power: 'Leistung je Batterie',
   house_power: 'Hausverbrauch',
   heatpump_power: 'Leistung je Wärmepumpe',
   svg_url: 'Pfad zur Grafik',

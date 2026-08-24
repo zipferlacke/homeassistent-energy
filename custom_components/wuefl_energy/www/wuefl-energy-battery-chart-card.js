@@ -12,9 +12,9 @@ import { WueflChartWrapper } from './wuefl-energy-chart-base.js';
 
 class WueflEnergyBatteryChartCard extends WueflChartWrapper {
   static getConfigElement() { return document.createElement('wuefl-energy-battery-chart-card-editor'); }
-  static getStubConfig() { return { title: 'Speicher' }; }
+  static getStubConfig() { return { title: 'Batterie' }; }
 
-  get defaultTitle() { return 'Speicher'; }
+  get defaultTitle() { return 'Batterie'; }
   getCardSize() { return 3; }
 
   buildChartConfig(range) {
@@ -23,7 +23,7 @@ class WueflEnergyBatteryChartCard extends WueflChartWrapper {
 
     const series = socIds.map((entity, i) => ({
       entity,
-      name: socIds.length > 1 ? `Speicher ${i + 1}` : 'Ladestand',
+      name: socIds.length > 1 ? `Batterie ${i + 1}` : 'Ladestand',
       color: 'var(--energy-battery-out-color, #4db0a2)',
       stat_type: 'mean',
       fill: 'gradient',
@@ -47,8 +47,8 @@ class WueflEnergyBatteryChartCard extends WueflChartWrapper {
   }
 }
 
-const SCHEMA = [{ name: 'title', selector: sel.text() }];
-const LABELS = { title: 'Überschrift' };
+const SCHEMA = [];
+const LABELS = {};
 class WueflEnergyBatteryChartCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
 
 customElements.define('wuefl-energy-battery-chart-card', WueflEnergyBatteryChartCard);
@@ -56,6 +56,6 @@ customElements.define('wuefl-energy-battery-chart-card-editor', WueflEnergyBatte
 
 registerCard({
   type: 'wuefl-energy-battery-chart-card',
-  name: 'wuefl Speicher-Verlauf',
+  name: 'wuefl Batterie-Verlauf',
   description: 'Ladestand mit fester Skala 0–100 %.',
 });

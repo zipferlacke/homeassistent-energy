@@ -823,7 +823,7 @@ export function deriveConfig(raw, internal = {}) {
     battery_soc: pluck(c.battery, 'soc'),
     battery_in_total: pluck(c.battery, 'in_total'),
     battery_out_total: pluck(c.battery, 'out_total'),
-    // Ein Schalter für alle Speicher: gemischte Vorzeichen wären ohnehin
+    // Ein Schalter für alle Batterie: gemischte Vorzeichen wären ohnehin
     // ein Fehler in der Zuordnung.
     invert_battery: c.battery.some((b) => b.invert),
 
@@ -931,17 +931,17 @@ export async function centralConfig(hass, section) {
   return (section ? all[section] : all) ?? {};
 }
 
-/** Rohe Zuordnung, wie sie gespeichert ist — für die Einstellungsansicht. */
+/** Rohe Zuordnung, wie sie geBatteriet ist — für die Einstellungsansicht. */
 export async function rawConfig(hass) {
   const data = await hass.callWS({ type: 'wuefl_energy/get' }).catch(() => ({}));
   // "internal" ist ein vom Backend berechnetes Zusatzfeld, kein Teil der
   // vom Nutzer gepflegten Zuordnung — beim Bearbeiten und erneuten
-  // Speichern soll es nicht versehentlich mit persistiert werden.
+  // Batterien soll es nicht versehentlich mit persistiert werden.
   const { internal, ...rest } = data ?? {};
   return normalizeConfig(rest);
 }
 
-/** Zuordnung speichern und alle offenen Karten benachrichtigen. */
+/** Zuordnung Batterien und alle offenen Karten benachrichtigen. */
 export async function saveConfig(hass, config) {
   await hass.callWS({ type: 'wuefl_energy/save', config });
   centralPromise = null;
@@ -1091,7 +1091,7 @@ export function tileHtml({ icon, color, title, value, subtitle, entity, click })
  * ------------------------------------------------------------------ *
  * Die Energie-Ansicht besteht aus mehreren eigenständigen Karten in
  * getrennten nativen Abschnitten (Zeitraum-Auswahl, Diagramm, Kennzahlen,
- * Speicher, Solarproduktion) — sie sind unterschiedliche Custom Elements,
+ * Batterie, Solarproduktion) — sie sind unterschiedliche Custom Elements,
  * keine gemeinsame Klasse mehr. Damit trotzdem alle denselben Zeitraum
  * zeigen, ohne dass sich die Karten gegenseitig referenzieren, liegt der
  * aktuelle Zeitraum hier als einziger Ort der Wahrheit: ein ES-Modul wird
@@ -1101,11 +1101,65 @@ export function tileHtml({ icon, color, title, value, subtitle, entity, click })
 const PERIOD_EVENT = 'wuefl-energy-period-changed';
 let currentPeriod = null;
 
+/** Hilfsfunktion: Berechnet Kalender- und Zeitspannen-Flags für den Zeitraum */
+function enrichPeriod(range) {
+  if (!range?.start || !range?.end) return range;
+
+  const start = new Date(range.start);
+  const end = new Date(range.end);
+
+  // --- 1. TAG ---
+  const plus1Day = new Date(start);
+  plus1Day.setDate(plus1Day.getDate() + 1);
+  const overDay = end >= plus1Day;
+
+  // --- 2. WOCHE (>= 7 Tage ODER exakt Montag bis Sonntag) ---
+  const plus1Week = new Date(start);
+  plus1Week.setDate(plus1Week.getDate() + 7);
+
+  const isMondayStart = start.getDay() === 1; // JS: 1 = Montag
+  const isSundayEnd = end.getDay() === 0;     // JS: 0 = Sonntag
+  const isFullCalWeek = isMondayStart && (isSundayEnd || end >= plus1Week);
+
+  const overWeek = end >= plus1Week || isFullCalWeek;
+
+  // --- 3. MONAT (>= 1 Monat ODER exakt 1. bis letzter Tag des Monats) ---
+  const plus1Month = new Date(start);
+  plus1Month.setMonth(plus1Month.getMonth() + 1);
+
+  const isFirstDay = start.getDate() === 1;
+  const lastDayOfMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+  const isLastDay = end.getDate() === lastDayOfMonth;
+  const isFullCalMonth = isFirstDay && (isLastDay || end >= plus1Month);
+
+  const overMonth = end >= plus1Month || isFullCalMonth;
+
+  // --- 4. JAHR (>= 1 Jahr ODER exakt 1. Jan bis 31. Dez) ---
+  const plus1Year = new Date(start);
+  plus1Year.setFullYear(plus1Year.getFullYear() + 1);
+
+  const isJan1 = start.getMonth() === 0 && start.getDate() === 1;
+  const isDec31 = end.getMonth() === 11 && end.getDate() === 31;
+  const isFullCalYear = isJan1 && (isDec31 || end >= plus1Year);
+
+  const overYear = end >= plus1Year || isFullCalYear;
+
+  return {
+    ...range,
+    overDay,
+    overWeek,
+    overMonth,
+    overYear,
+  };
+}
+
 function defaultPeriodRange() {
   const now = new Date();
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
-  return { period: 'day', start, end: now };
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  return enrichPeriod({ period: 'day', start, end: end });
 }
 
 /** Aktuellen Zeitraum lesen — beim allerersten Aufruf "heute". */
@@ -1116,8 +1170,8 @@ export function getPeriod() {
 
 /** Zeitraum ändern und alle anderen Energie-Karten benachrichtigen. */
 export function setPeriod(range) {
-  currentPeriod = range;
-  window.dispatchEvent(new CustomEvent(PERIOD_EVENT, { detail: range }));
+  currentPeriod = enrichPeriod(range);
+  window.dispatchEvent(new CustomEvent(PERIOD_EVENT, { detail: currentPeriod }));
 }
 
 /** In #connectedCallback() aufrufen; gibt die Aufräum-Funktion zurück. */
@@ -1156,7 +1210,7 @@ export async function fetchStats(hass, ids, range, types = ['change']) {
 /* ------------------------------------------------------------------ *
  * Diagramm-Karte einbetten ("energy-custom-graph-card" von Thyraz)
  * ------------------------------------------------------------------ *
- * Alle Energie-Diagramme (Hauptverteilung, Speicher, Solarproduktion)
+ * Alle Energie-Diagramme (Hauptverteilung, Batterie, Solarproduktion)
  * betten dieselbe fremde Karte auf dieselbe Art ein — deshalb hier einmal
  * zentral statt in jeder Karte einzeln kopiert.
  */

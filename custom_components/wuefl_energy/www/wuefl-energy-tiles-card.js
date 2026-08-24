@@ -1,6 +1,6 @@
 /**
  * wuefl-energy-tiles-card
- * Nur die HA-Tile-Kacheln (Erzeugung/Speicher/Netz/Haushalt/Wallbox) —
+ * Nur die HA-Tile-Kacheln (Erzeugung/Batterie/Netz/Haushalt/Wallbox) —
  * eigener Abschnitt neben dem Hauptdiagramm, hört auf Zeitraum-Änderungen
  * von wuefl-energy-period-card, ohne diese Karte selbst zu kennen.
  */
@@ -11,14 +11,14 @@ import {
 
 const SERIES = [
   { key: 'pv_energy', label: 'Solar', color: '--energy-solar-color', fallback: '#ff9800', icon: 'mdi:solar-power' },
-  { key: 'battery_out', label: 'Speicher', color: '--energy-battery-out-color', fallback: '#4db0a2', icon: 'mdi:battery-high', pair: 'battery', short: 'entladen' },
-  { key: 'battery_in', label: 'Speicher', color: '--energy-battery-in-color', fallback: '#f6c34c', icon: 'mdi:battery-high', pair: 'battery', short: 'geladen' },
+  { key: 'battery_out', label: 'Batterie', color: '--energy-battery-out-color', fallback: '#4db0a2', icon: 'mdi:battery-high', pair: 'battery', short: 'entladen' },
+  { key: 'battery_in', label: 'Batterie', color: '--energy-battery-in-color', fallback: '#f6c34c', icon: 'mdi:battery-high', pair: 'battery', short: 'geladen' },
   { key: 'grid_import', label: 'Netz', color: '--energy-grid-consumption-color', fallback: '#488fc2', icon: 'mdi:transmission-tower', pair: 'grid', short: 'Bezug' },
   { key: 'grid_export', label: 'Netz', color: '--energy-grid-return-color', fallback: '#8353d1', icon: 'mdi:transmission-tower', pair: 'grid', short: 'Einspeisung' },
   { key: 'house_energy', label: 'Haushalt', color: '--wuefl-house-color', fallback: '#e57373', icon: 'mdi:home' },
   { key: 'wallbox_energy', label: 'Wallbox', color: '--wuefl-wallbox-color', fallback: '#ba68c8', icon: 'mdi:ev-station' },
 ];
-const PAIR_NAMES = { grid: 'Netz', battery: 'Speicher' };
+const PAIR_NAMES = { grid: 'Netz', battery: 'Batterie' };
 
 const CSS = `
 :host { display: block; }

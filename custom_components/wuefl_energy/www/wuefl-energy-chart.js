@@ -1,7 +1,7 @@
 /**
  * wuefl-energy-chart.js
  * Eigenständiges Diagramm-Element mit automatischer Einheiten-Skalierung,
- * kalendergenauen Zeiträumen, isoliertem Chip-Handling und sauberer Tooltip-Formatierung.
+ * kalendergenauen Zeiträumen, HTML-Legende und Bucket-Zeitspannen im Tooltip.
  */
 import { registerCard, cssColor } from './wuefl-energy-shared.js';
 
@@ -11,6 +11,7 @@ class WueflEnergyChart extends HTMLElement {
     #built = false;
     #chartEl = null;
     #els = {};
+    #hiddenSeries = new Set();
 
     #unitFactors = {
         'mW': 0.001, 'W': 1, 'kW': 1000, 'MW': 1000000, 'GW': 1000000000,
@@ -24,7 +25,9 @@ class WueflEnergyChart extends HTMLElement {
         this.config = config;
     }
 
-    getCardSize() { return this.#config.card_size || 4; }
+    getCardSize() { 
+        return this.#config.card_size || 4; 
+    }
 
     set config(config) {
         this.#config = config;
@@ -42,22 +45,55 @@ class WueflEnergyChart extends HTMLElement {
         const card = document.createElement('ha-card');
         card.innerHTML = `
       <style>
-        :host { display: flex; flex-direction: column; height: 100%; }
-        ha-card { display: flex; flex-direction: column; flex: 1; height: 100%; box-sizing: border-box; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; padding: 16px 16px 0 16px; }
+        :host { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
+        ha-card { display: flex; flex-direction: column; flex: 1; height: 100%; box-sizing: border-box; overflow: hidden; }
+        
+        .header { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 16px 0 16px; flex-shrink: 0; }
         .title { font-size: var(--ha-card-header-font-size, 20px); font-weight: 500; color: var(--ha-card-header-color, var(--primary-text-color)); }
         .chip {
           --_chip-color: var(--chip-color);
           border-radius: 12px; border: 1px solid var(--_chip-color, lightgray);
-          background: hsl(from var(--_chip-color) h s 95%); color: var(--_chip-color, var(--primary-text-color));
+          --l: light-dark(95%, 5%)
+          background: hsl(from var(--_chip-color) h s var(--l)); color: var(--_chip-color, var(--primary-text-color));
           font-size: 14px; font-weight: 600; padding: 4px 12px; display: none; align-items: center;  
         }
-        .chart-slot { flex: 1; min-height: 160px; position: relative; padding: 4px 12px 8px 12px; }
-        ha-chart-base { width: 100%; height: 100%; display: block; }
+
+        .legend-container {
+          display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 6px 16px;
+          align-items: center; flex-shrink: 0; user-select: none;
+        }
+        .legend-container[data-pos*="center"] { justify-content: center; }
+        .legend-container[data-pos*="right"] { justify-content: flex-end; }
+        .legend-container[data-pos*="left"] { justify-content: flex-start; }
+
+        .legend-container.inner {
+          position: absolute; z-index: 2; pointer-events: auto;
+          background: rgba(var(--rgb-card-background-color, 255, 255, 255), 0.85);
+          backdrop-filter: blur(4px); padding: 6px 12px; border-radius: 8px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+        }
+        .legend-container.inner[data-pos*="top"] { top: 8px; }
+        .legend-container.inner[data-pos*="bottom"] { bottom: 8px; }
+        .legend-container.inner[data-pos*="left"] { left: 12px; }
+        .legend-container.inner[data-pos*="right"] { right: 12px; }
+
+        .legend-item {
+          display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+          color: var(--primary-text-color); cursor: pointer; opacity: 1; transition: opacity 0.2s;
+        }
+        .legend-item.disabled { opacity: 0.35; text-decoration: line-through; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+        .chart-slot { flex: 1; min-height: 0; position: relative; padding: 0px 8px 4px 8px; display: flex; flex-direction: column; }
+        ha-chart-base { width: 100%; height: 100%; flex: 1; display: block; }
         .error { color: var(--error-color, red); padding: 16px; }
       </style>
       <div class="header"><div class="title"></div><div class="chip"></div></div>
-      <div class="chart-slot"></div>
+      <div class="legend-slot-top"></div>
+      <div class="chart-slot">
+        <div class="legend-slot-inner"></div>
+      </div>
+      <div class="legend-slot-bottom"></div>
     `;
         root.replaceChildren(card);
 
@@ -65,33 +101,45 @@ class WueflEnergyChart extends HTMLElement {
             title: card.querySelector('.title'),
             chip: card.querySelector('.chip'),
             slot: card.querySelector('.chart-slot'),
+            legendTop: card.querySelector('.legend-slot-top'),
+            legendInner: card.querySelector('.legend-slot-inner'),
+            legendBottom: card.querySelector('.legend-slot-bottom'),
         };
         this.#built = true;
     }
 
-    #toRgba(colorStr, alpha) {
-        if (!colorStr) return `rgba(0, 0, 0, ${alpha})`;
-        let resolvedColor = colorStr;
-        if (colorStr.startsWith('var(')) {
-            const varName = colorStr.match(/var\(([^)]+)\)/)?.[1];
-            if (varName) {
-                resolvedColor = getComputedStyle(this).getPropertyValue(varName).trim() || colorStr;
+    // Wandelt CSS-Variablen explizit in konkrete Farbwerte (HEX/RGB) für den Canvas um
+    #resolveColor(colorStr) {
+        if (!colorStr) return '#999999';
+        let resolved = cssColor(this, colorStr, colorStr);
+        if (typeof resolved === 'string' && resolved.includes('var(')) {
+            const match = resolved.match(/var\((--[^,\s)]+)(?:,\s*(.+))?\)/);
+            if (match) {
+                const varName = match[1];
+                const fallback = match[2] ? match[2].trim() : '#999999';
+                const computed = getComputedStyle(this).getPropertyValue(varName).trim();
+                resolved = computed || fallback;
             }
         }
+        return resolved;
+    }
+
+    #toRgba(resolvedColor, alpha) {
+        if (!resolvedColor) return `rgba(0, 0, 0, ${alpha})`;
         try {
             const ctx = document.createElement('canvas').getContext('2d');
             ctx.fillStyle = resolvedColor;
-            const resolved = ctx.fillStyle;
-            if (resolved.startsWith('#')) {
-                let hex = resolved.slice(1);
+            const res = ctx.fillStyle;
+            if (res.startsWith('#')) {
+                let hex = res.slice(1);
                 if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
                 const r = parseInt(hex.slice(0, 2), 16);
                 const g = parseInt(hex.slice(2, 4), 16);
                 const b = parseInt(hex.slice(4, 6), 16);
                 return `rgba(${r}, ${g}, ${b}, ${alpha})`;
             }
-            if (resolved.startsWith('rgb')) {
-                return resolved.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+            if (res.startsWith('rgb')) {
+                return res.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
             }
         } catch (e) {}
         return resolvedColor;
@@ -176,43 +224,6 @@ class WueflEnergyChart extends HTMLElement {
             if (unit === 'y') return val * 31536000000;
         }
         return parseInt(bucketStr, 10) || 3600000;
-    }
-
-    #getLegendOptions(legendConfig) {
-        const cfg = Array.isArray(legendConfig) ? (legendConfig[0] || {}) : (legendConfig || {});
-        if (cfg.hidden) return { show: false };
-
-        const pos = cfg.position || 'bottom-center';
-        const isInner = pos.startsWith('inner-');
-
-        const opts = {
-            show: true,
-            type: 'scroll',
-            padding: [2, 10, 2, 10],
-            icon: 'circle',
-            itemWidth: 10,
-            itemHeight: 10,
-            textStyle: {
-                color: this.#toRgba('var(--primary-text-color)', 1),
-                fontSize: 12,
-                fontFamily: 'Roboto, sans-serif'
-            }
-        };
-
-        if (isInner) {
-            opts.backgroundColor = this.#toRgba('var(--card-background-color, #ffffff)', 0.85);
-            opts.borderRadius = 8;
-            opts.borderColor = this.#toRgba('var(--divider-color, #e0e0e0)', 0.5);
-            opts.borderWidth = 1;
-        }
-
-        if (pos.includes('top')) opts.top = isInner ? 10 : 0;
-        if (pos.includes('bottom')) opts.bottom = isInner ? 15 : 0;
-        if (pos.includes('left')) opts.left = isInner ? 10 : 0;
-        if (pos.includes('right')) opts.right = isInner ? 10 : 0;
-        if (pos.includes('center')) opts.left = 'center';
-
-        return opts;
     }
 
     #bucketize(rows, bucketMs, statType = 'change') {
@@ -304,6 +315,60 @@ class WueflEnergyChart extends HTMLElement {
         }
     }
 
+    #renderHtmlLegend(processedSeries) {
+        this.#els.legendTop.replaceChildren();
+        this.#els.legendInner.replaceChildren();
+        this.#els.legendBottom.replaceChildren();
+
+        const legendCfg = Array.isArray(this.#config.legend) ? (this.#config.legend[0] || {}) : (this.#config.legend || {});
+        if (legendCfg.hidden) return;
+
+        const pos = legendCfg.position || 'bottom-center';
+        const isInner = pos.startsWith('inner-');
+
+        const container = document.createElement('div');
+        container.className = `legend-container ${isInner ? 'inner' : ''}`;
+        container.dataset.pos = pos;
+
+        const seenNames = [];
+
+        for (const s of processedSeries) {
+            const name = s.legend_group || s.name || s.entity;
+            
+            if (seenNames.includes(name)) continue;
+            seenNames.push(name);
+
+            const isHidden = this.#hiddenSeries.has(name);
+
+            const item = document.createElement('div');
+            item.className = `legend-item ${isHidden ? 'disabled' : ''}`;
+            // Native Farbverarbeitung im HTML DOM per s.color
+            item.innerHTML = `
+                <span class="legend-dot" style="background-color: ${s.color || '#999'};"></span>
+                <span>${name}</span>
+            `;
+
+            item.addEventListener('click', () => {
+                if (this.#hiddenSeries.has(name)) {
+                    this.#hiddenSeries.delete(name);
+                } else {
+                    this.#hiddenSeries.add(name);
+                }
+                this.#refresh();
+            });
+
+            container.appendChild(item);
+        }
+
+        if (isInner) {
+            this.#els.legendInner.appendChild(container);
+        } else if (pos.includes('top')) {
+            this.#els.legendTop.appendChild(container);
+        } else {
+            this.#els.legendBottom.appendChild(container);
+        }
+    }
+
     async #refresh() {
         if (!this.#built || !this.#hass || !this.#config?.series?.length) return;
         this.#els.title.textContent = this.#config.title || '';
@@ -326,6 +391,7 @@ class WueflEnergyChart extends HTMLElement {
                 statistic_ids: Array.from(idsToFetch), period, types: ['change', 'mean', 'max', 'min'],
             });
 
+            // Aufbereitung der Konfiguration direkt am Anfang
             const processedSeries = this.#config.series.map(s => {
                 const raw = dbStats[s.entity] || [];
                 const bucketed = this.#bucketize(raw, bucketMs, s.stat_type || 'change');
@@ -339,18 +405,19 @@ class WueflEnergyChart extends HTMLElement {
 
                 return {
                     ...s,
+                    color: s.color || '#999999',
+                    resolvedColor: this.#resolveColor(s.color),
                     stat_type: s.stat_type || 'change',
                     chartTargetUnit,
-                    chartData: bucketed.map(([t, v]) => [t, v * manualMulti * autoChartScale * sign])
+                    // 0-Werte auf null setzen, damit keine übereinanderliegenden Null-Linien entstehen
+                     chartData: bucketed.map(([t, v]) => {
+                         const val = v * manualMulti * autoChartScale * sign;
+                         return [t, Math.abs(val) < 0.000001 ? 0 : val];
+                     })
                 };
             });
 
             if (this.#config.chip) {
-                // Der Chip darf NICHT von der gewählten Aggregation abhängen —
-                // sonst ändert sich die angezeigte Summe, nur weil man das
-                // Diagramm gröber stellt. Deshalb eine eigene Abfrage mit einer
-                // Auflösung, die allein am Zeitraum hängt: innerhalb eines Tages
-                // die feinste (5 Minuten), über mehrere Tage die tägliche.
                 const spanDays = (end - start) / 86400000;
                 const chipPeriod = spanDays <= 1.05 ? '5minute' : 'day';
                 let chipStats = dbStats;
@@ -380,14 +447,15 @@ class WueflEnergyChart extends HTMLElement {
                 this.#els.chip.style.display = 'none';
             }
 
-            this.#renderChart(processedSeries, yAxesConfig, start, end);
+            this.#renderHtmlLegend(processedSeries);
+            this.#renderChart(processedSeries, yAxesConfig, start, end, bucketMs);
 
         } catch (err) {
             this.#els.slot.innerHTML = `<div class="error">Fehler: ${err.message}</div>`;
         }
     }
 
-    #renderChart(processedSeries, yAxesConfig, start, end) {
+    #renderChart(processedSeries, yAxesConfig, start, end, bucketMs) {
         if (!customElements.get('ha-chart-base')) {
             this.#els.slot.innerHTML = '<div class="error">ha-chart-base fehlt!</div>';
             return;
@@ -395,59 +463,73 @@ class WueflEnergyChart extends HTMLElement {
 
         const yAxisEcharts = yAxesConfig.map((ax, idx) => ({
             type: 'value', name: ax.unit || '', min: ax.min, max: ax.max,
-            // Feste Schrittweite, wenn die Karte sie vorgibt: beim Ladestand
-            // etwa 0/25/50/75/100 statt automatisch gewaehlter Werte — sonst
-            // wandern die Striche je nach Tagesverlauf, obwohl der
-            // Wertebereich immer derselbe ist.
             ...(ax.interval !== undefined ? { interval: ax.interval } : {}),
             ...(ax.split_number !== undefined ? { splitNumber: ax.split_number } : {}),
             position: idx === 1 ? 'right' : 'left', nameGap: 8, splitLine: { show: idx === 0 }
         }));
 
-        const data = processedSeries.map(s => {
+        const selectedObj = {};
+        processedSeries.forEach(s => {
+            const name = s.legend_group || s.name || s.entity;
+            selectedObj[name] = !this.#hiddenSeries.has(name);
+        });
+
+        const totalSeries = processedSeries.length;
+        const data = processedSeries.map((s, index) => {
+            const chartType = s.type || this.#config.type || 'line';
             let areaStyle = undefined;
-            if (s.fill === 'gradient') {
-                areaStyle = {
-                    color: {
-                        type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                        colorStops: [
-                            { offset: 0, color: this.#toRgba(s.color || '#000', 0.5) },
-                            { offset: 1, color: this.#toRgba(s.color || '#000', 0.05) }
-                        ]
-                    }
-                };
-            } else if (s.fill !== false && s.fill !== undefined) {
-                areaStyle = { opacity: 0.25 };
+            if (chartType === 'line') {
+                if (s.fill === 'gradient') {
+                    areaStyle = {
+                        color: {
+                            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                                { offset: 0, color: this.#toRgba(s.resolvedColor, 0.5) },
+                                { offset: 1, color: this.#toRgba(s.resolvedColor, 0.05) }
+                            ]
+                        }
+                    };
+                } else if (s.fill !== false && s.fill !== undefined) {
+                    areaStyle = { opacity: 0.25 };
+                }
             }
 
             return {
                 name: s.legend_group || s.name || s.entity,
                 id: s.name || s.entity,
-                type: s.type || 'line', stack: s.stack, yAxisIndex: s.y_axis || 0,
-                data: s.chartData, smooth: s.smooth ?? true, symbol: 'none',
-                itemStyle: { color: s.color }, areaStyle, lineStyle: { width: 2 }
+                type: chartType, 
+                stack: s.stack, 
+                yAxisIndex: s.y_axis || 0,
+                data: s.chartData, 
+                smooth: chartType === 'line' ? (s.smooth ?? true) : undefined, 
+                symbol: 'none',
+                z: s.stack? totalSeries+1 - index : 2,
+                itemStyle: { color: s.resolvedColor }, 
+                areaStyle, 
+                lineStyle: chartType === 'line' ? { width: 1.5 } : undefined
             };
         });
 
-        const isSameDay = start.toDateString() === end.toDateString();
+        const spanDays = bucketMs < 86400000;
         const spansYears = start.getFullYear() !== end.getFullYear();
 
         const options = {
             xAxis: [{ type: 'time', min: start.getTime(), max: end.getTime() }],
             yAxis: yAxisEcharts,
-            grid: { top: 25, left: 10, right: 10, bottom: 20, containLabel: true },
-            legend: this.#getLegendOptions(this.#config.legend),
+            grid: { top: 15, left: 10, right: 10, bottom: 5, containLabel: true },
+            legend: { show: false, selected: selectedObj },
             tooltip: {
                 trigger: 'axis',
-                renderMode: 'html',
-                appendToBody: true, // Verhindert SVG-String-Escaping im Shadow DOM
+                appendToBody: true,
                 formatter: (params) => {
                     if (!params || !params.length) return '';
                     const date = new Date(params[0].value[0]);
-                    const timeStr = date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                    const dateEnd = new Date(params[0].value[0] + bucketMs);
+                    let timeStr = date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                    timeStr += " - "+ dateEnd.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
                     let headerHtml = '';
-                    if (isSameDay) {
+                    if (!spanDays) {
                         headerHtml = `<div>${timeStr}</div>`;
                     } else if (spansYears) {
                         const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -458,38 +540,35 @@ class WueflEnergyChart extends HTMLElement {
                     }
 
                     const itemsHtml = params.map(p => {
-                        // Ueber den Index statt ueber den Namen suchen: bei
-                        // Legenden-Gruppen tragen mehrere Reihen denselben
-                        // Namen ("Netz"), ein Namensvergleich fände dann immer
-                        // dieselbe Reihe und zeigte falsche Einheiten. Der
-                        // Index ist eindeutig.
                         const seriesObj = processedSeries[p.seriesIndex]
                             ?? processedSeries.find(s => s.name === p.seriesName || s.entity === p.seriesName);
                         const unit = seriesObj?.chartTargetUnit || '';
                         const label = seriesObj?.name || p.seriesName;
                         const val = p.value[1];
+                        const colorStr = seriesObj?.color || p.color; // Native Farbverarbeitung im Tooltip
                         const formattedVal = (val !== null && val !== undefined)
                             ? Number(val).toLocaleString('de-DE', { maximumFractionDigits: 2 })
                             : '-';
+                        
+                        const markerHtml = `<span style="display:inline-block;margin-right:4px;border-radius:10px;width:10px;height:10px;background-color:${colorStr};"></span>`;
+
                         return `<div style="display: flex; justify-content: space-between; align-items: center; gap: 16px;">
-                          <span>${p.marker} ${label}</span>
+                          <span>${markerHtml} ${label}</span>
                           <span style="font-weight: 600;">${formattedVal} ${unit}</span>
                         </div>`;
                     }).join('');
 
-                    return `<div style="font-weight: 500; margin-bottom: 4px;">${headerHtml}</div>${itemsHtml}`;
+                    const tooltipNode = document.createElement('div');
+                    tooltipNode.style.padding = '4px 8px';
+                    tooltipNode.innerHTML = `<div style="font-weight: 500; margin-bottom: 4px;">${headerHtml}</div>${itemsHtml}`;
+                    return tooltipNode;
                 }
             }
         };
 
         if (!this.#chartEl) {
             this.#chartEl = document.createElement('ha-chart-base');
-            // Bewusst KEIN renderer="svg": beim SVG-Renderer kann ECharts
-            // keinen HTML-Tooltip aufbauen und fällt auf reinen Text zurück
-            // — dann steht das Markup als sichtbarer Text im Tooltip.
-            // Ohne die Vorgabe bleibt es beim Canvas-Renderer, dort
-            // funktioniert der HTML-Tooltip wie gedacht.
-            this.#els.slot.replaceChildren(this.#chartEl);
+            this.#els.slot.appendChild(this.#chartEl);
         }
 
         this.#chartEl.hass = this.#hass;

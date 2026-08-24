@@ -95,7 +95,7 @@ bei jedem Oeffnen aus der Zuordnung:
 
 | Ansicht | Erscheint, wenn |
 |---|---|
-| Live | Netzleistung, eine Solaranlage oder ein Speicher zugeordnet ist |
+| Live | Netzleistung, eine Solaranlage oder ein Batterie zugeordnet ist |
 | Energie | mindestens ein **Gesamtzaehler** zugeordnet ist, oder HA's Energie-Dashboard eingerichtet ist |
 | Wallbox | mindestens eine Wallbox angelegt ist — je Wallbox eine Karte |
 | Infos | Temperaturen oder weitere Werte zugeordnet sind |
@@ -112,7 +112,7 @@ Balken, Erzeugung oberhalb der Nulllinie, Verbrauch unterhalb, dieselben
 Farbvariablen, die auch Home Assistants eigene Energie-Ansicht benutzt
 (`--energy-solar-color` usw.). Braucht nur deine Zuordnung, sonst nichts:
 kein separates Energie-Dashboard, keine zweite Konfiguration. Tag, Woche,
-Monat, Jahr umschaltbar, Legende gruppiert Netz und Speicher zu je einem
+Monat, Jahr umschaltbar, Legende gruppiert Netz und Batterie zu je einem
 Knopf mit zwei Punkten.
 
 ### Bessere Optik verfügbar, wenn du sie installierst
@@ -143,7 +143,7 @@ noch Home Assistants eigene `energy-usage-graph`-Karte — reiner Lesezugriff
 
 ## Null, eins oder viele
 
-Solaranlagen, Speicher, Waermepumpen, Wallboxen und Fahrzeuge sind Listen.
+Solaranlagen, Batterie, Waermepumpen, Wallboxen und Fahrzeuge sind Listen.
 Keine Anlage ist genauso in Ordnung wie fuenf. Zwei Dachausrichtungen legst du
 als zwei Solaranlagen an — dann zeigt die Live-Ansicht Ost und Sued getrennt.
 
@@ -184,7 +184,7 @@ kWh. Fehlt ein Sensor, setzt seine Integration keine Einheit — dann oben
 | Stromnetz | Leistung am Hausanschluss, Zaehler fuer Bezug und Einspeisung |
 | Photovoltaik | Gesamtleistung und Gesamtzaehler der Anlage, Ertragsprognose |
 | Einzelne Dachflaechen | Aufklappbar unter Photovoltaik, nur bei Ost/Sued oder zwei MPPT-Eingaengen |
-| Hausspeicher | Liste, je Speicher Leistung, Ladestand, zwei Zaehler |
+| HausBatterie | Liste, je Batterie Leistung, Ladestand, zwei Zaehler |
 | Haushalt | Optional, wird sonst ausgerechnet |
 | Waermepumpen | Liste, elektrische Aufnahme |
 | Fahrzeuge | Liste, Ladestand und Ladeziel des Autos |
@@ -202,7 +202,7 @@ wieder, wenn keine mehr da ist:
 | Entität | Bedeutung |
 |---|---|
 | `switch.wuefl_hausakku_freigabe` | Freigabe: aus dem Hausakku laden |
-| `number.wuefl_speicherreserve` | Speicher nutzen bis … % |
+| `number.wuefl_Batteriereserve` | Batterie nutzen bis … % |
 | `select.wuefl_prioritaet` | Hausakku zuerst oder Auto zuerst |
 | `number.wuefl_preisgrenze_laden` | Preisgrenze für Netzstrom |
 | `select.wuefl_wallbox_<name>_modus` | Lademodus dieser Wallbox |
@@ -292,7 +292,7 @@ eigene Vorlage gibt es dafuer nicht, weil ich die Entitaetsnamen dieser
 Einbindung nicht gegen eine echte Installation pruefen konnte.
 
 Die Sungrow-Vorlage in der Zuordnung fuellt entsprechend nur Netz, PV,
-Speicher und Haushalt.
+Batterie und Haushalt.
 
 ## Strompreis ohne dynamischen Tarif
 
@@ -323,7 +323,7 @@ wiederholen, waere irrefuehrend.
 Zuordnen musst du dafuer nichts: die zugrunde liegenden Entitaeten legt die
 Integration selbst an (siehe *Lademodus, Ladestrom, Ladeziel, Laderegler*
 weiter oben). Gibt es keine Wallbox, verschwinden die Laderegeln in den
-Einstellungen ganz, und die Speicherreserve erscheint erst, wenn die
+Einstellungen ganz, und die Batteriereserve erscheint erst, wenn die
 Hausakku-Freigabe aktiv ist — sonst waere es ein Regler ohne Wirkung.
 
 In der Wallbox-Karte bleibt nur, was wirklich je Ladepunkt gilt: Lademodus,
@@ -335,7 +335,7 @@ Seitenleiste mehr.
 
 ## Steuert die Karte den Energiefluss?
 
-Nein, und das kann sie auch nicht. Die Reihenfolge PV → Haus → Speicher →
+Nein, und das kann sie auch nicht. Die Reihenfolge PV → Haus → Batterie →
 Netz steckt in der Firmware des Wechselrichters und laeuft im
 Millisekundentakt. Home Assistant sieht die Werte im Sekundentakt und waere
 viel zu langsam.
@@ -344,7 +344,7 @@ Steuerbar ist die **Wallbox**, und dafuer gibt es die Wallbox-Karte:
 
 * *Lademodus* — nur Sonne, auch guenstiger Netzstrom, oder volle Leistung
 * *Prioritaet* — bei Ueberschuss zuerst der Hausakku oder zuerst das Auto
-* *Speicher nutzen bis … %* — darunter bleibt der Akku fuers Haus
+* *Batterie nutzen bis … %* — darunter bleibt der Akku fuers Haus
 
 Die Automation in `packages/wuefl_wallbox.yaml` regelt daraus den Ladestrom
 nach. Manche Wechselrichter erlauben per Modbus zusaetzlich, den Hausakku
@@ -401,11 +401,11 @@ Maße und Schriftgrößen hängen an `--w-radius`, `--w-pad`, `--w-input-h` und
 | `custom_components/wuefl_energy/www/wuefl-energy-config-card.js` | Die Zuordnung — Bloecke mit Hinzufuegen-Dialogen |
 | `custom_components/wuefl_energy/www/wuefl-energy-strategy.js` | Baut die Ansichten, wird automatisch angemeldet |
 | `custom_components/wuefl_energy/www/energieflow.svg` | Die Grafik der Live-Karte |
-| `custom_components/wuefl_energy/__init__.py` | Speichert die Zuordnung, liefert die Karten aus, zwei WebSocket-Befehle |
+| `custom_components/wuefl_energy/__init__.py` | Batteriet die Zuordnung, liefert die Karten aus, zwei WebSocket-Befehle |
 | `custom_components/wuefl_energy/specs.py` | Soll-Liste der selbst verwalteten Helfer |
 | `custom_components/wuefl_energy/config_flow.py` | Legt automatisch den Config Entry an |
 | `custom_components/wuefl_energy/switch.py` | Hausakku-Freigabe als eigene Plattform |
-| `custom_components/wuefl_energy/number.py` | Speicherreserve, Preisgrenze, Ladestrom, Ladeziel |
+| `custom_components/wuefl_energy/number.py` | Batteriereserve, Preisgrenze, Ladestrom, Ladeziel |
 | `custom_components/wuefl_energy/select.py` | Prioritaet, Lademodus je Wallbox |
 | `packages/wuefl_wallbox.yaml` | Preissensor-Beispiel und Ladeautomatik |
 | `hacs.json` | Macht das Repository als HACS-Quelle nutzbar |

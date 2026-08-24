@@ -23,6 +23,8 @@ export class WueflChartWrapper extends HTMLElement {
   /** Karten überschreiben das: liefert die Chart-Konfiguration oder null. */
   buildChartConfig() { return null; }
 
+  get centralConfigType() { return 'history'; }
+
   /** Titel für den Fall, dass die Karte selbst keinen mitbringt. */
   get defaultTitle() { return ''; }
 
@@ -47,7 +49,8 @@ export class WueflChartWrapper extends HTMLElement {
   getCardSize() { return 4; }
 
   async _loadCentral() {
-    this._central = await centralConfig(this._hass, 'history');
+    // Hier nutzen wir jetzt den flexiblen Getter statt hart 'history'
+    this._central = await centralConfig(this._hass, this.centralConfigType);
     this._config = { ...this._central, ...this._own };
     this._refresh();
   }
@@ -71,6 +74,13 @@ export class WueflChartWrapper extends HTMLElement {
   _refresh() {
     if (!this._built || !this._hass) return;
     const range = getPeriod();
+    let later = new Date(range.start);
+    later.setMonth(later.getMonth() + 1);
+    range.spanMonth = later <= range.end;
+    later = new Date(range.start);
+    later.setDate(later.getDate() + 7);
+    range.spanWeek = later <= range.end;
+
     const config = this.buildChartConfig(range);
     if (!config) { this.hidden = true; return; }
     this.hidden = false;
@@ -88,11 +98,12 @@ export class WueflChartWrapper extends HTMLElement {
 
   /** Aggregation passend zum Zeitraum, überschreibbar per Karten-Option. */
   _aggregation(range) {
+    console.log(range)
     if (this._own.aggregation) return this._own.aggregation;
-    const days = (range.end - range.start) / 86_400_000;
-    if (days <= 1.05) return '15min';
-    if (days <= 8) return '1h';
-    if (days <= 40) return '1d';
-    return '1w';
+    if(range.overYear) return '1m';
+    if(range.overMonth) return '1d';
+    if(range.overWeek) return '2h';
+    if(range.overDay) return '10min';
+    return '5min';
   }
 }

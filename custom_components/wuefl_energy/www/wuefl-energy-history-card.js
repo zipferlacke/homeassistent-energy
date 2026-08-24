@@ -5,15 +5,15 @@
  *
  * "legend_group" fasst Reihen in der Legende zusammen: Netzbezug und
  * Einspeisung erscheinen als ein Eintrag "Netz", der beide gemeinsam
- * ein- und ausblendet — ebenso Laden/Entladen als "Speicher".
+ * ein- und ausblendet — ebenso Laden/Entladen als "Batterie".
  */
 import { asList, registerCard, WueflFormEditor, sel } from './wuefl-energy-shared.js';
 import { WueflChartWrapper } from './wuefl-energy-chart-base.js';
 
 const SERIES = [
   { key: 'pv_energy', name: 'Solar', group: 'Solar', sign: 1, color: 'var(--energy-solar-color, #ff9800)' },
-  { key: 'battery_out', name: 'Speicher entladen', group: 'Speicher', sign: 1, color: 'var(--energy-battery-out-color, #4db0a2)' },
-  { key: 'battery_in', name: 'Speicher geladen', group: 'Speicher', sign: -1, color: 'var(--energy-battery-in-color, #f6c34c)' },
+  { key: 'battery_out', name: 'Batterie entladen', group: 'Batterie', sign: 1, color: 'var(--energy-battery-out-color, #4db0a2)' },
+  { key: 'battery_in', name: 'Batterie geladen', group: 'Batterie', sign: -1, color: 'var(--energy-battery-in-color, #f6c34c)' },
   { key: 'grid_import', name: 'Netz Bezug', group: 'Netz', sign: 1, color: 'var(--energy-grid-consumption-color, #488fc2)' },
   { key: 'grid_export', name: 'Netz Einspeisung', group: 'Netz', sign: -1, color: 'var(--energy-grid-return-color, #8353d1)' },
   { key: 'house_energy', name: 'Haushalt', group: 'Haushalt', sign: -1, color: 'var(--wuefl-house-color, #e57373)' },
@@ -29,6 +29,9 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
   getCardSize() { return 6; }
 
   buildChartConfig(range) {
+  const oneMonthLater = new Date(range.start);
+  oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
+
     const series = [];
     for (const s of SERIES) {
       for (const entity of asList(this._config[s.key])) {
@@ -41,6 +44,7 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
           sign: s.sign,
           fill: 'gradient',
           stack: s.sign > 0 ? 'up' : 'down',
+          type: range.overMonth ? "bar":"line"
         });
       }
     }
@@ -52,17 +56,17 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
       legend: [{ hidden: false, position: 'bottom-center' }],
       series,
       // Chip: die Erzeugung im Zeitraum, unabhängig von der Aggregation.
-      ...(asList(this._config.pv_energy).length
-        ? {
-            chip: {
-              entity: asList(this._config.pv_energy)[0],
-              unit: 'kWh',
-              stat_type: 'change',
-              calc_type: 'sum',
-              color: 'var(--energy-solar-color, #ff9800)',
-            },
-          }
-        : {}),
+      // ...(asList(this._config.pv_energy).length
+      //   ? {
+      //       chip: {
+      //         entity: asList(this._config.pv_energy)[0],
+      //         unit: 'kWh',
+      //         stat_type: 'change',
+      //         calc_type: 'sum',
+      //         color: 'var(--energy-solar-color, #ff9800)',
+      //       },
+      //     }
+      //   : {}),
     };
   }
 }

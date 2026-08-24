@@ -1,6 +1,6 @@
 """number.py – von der Integration selbst verwaltete Zahlen-Helfer.
 
-Speicherreserve und Preisgrenze anlagenweit, Ladestrom und Ladeziel je
+Batteriereserve und Preisgrenze anlagenweit, Ladestrom und Ladeziel je
 Wallbox. Angelegt und entfernt über async_sync_entities in __init__.py.
 """
 from __future__ import annotations

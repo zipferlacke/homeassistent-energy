@@ -2,7 +2,7 @@
  * wuefl-energy-settings-card
  * Die Regeln, die für die ganze Anlage gelten — nicht je Wallbox.
  *
- * Hausakku-Freigabe, Speicherreserve, Priorität bei Überschuss und die
+ * Hausakku-Freigabe, Batteriereserve, Priorität bei Überschuss und die
  * Preisgrenze für Netzstrom standen vorher in jeder Wallbox-Karte. Bei
  * zwei Fahrzeugen gab es sie dann doppelt, obwohl es nur einen Hausakku
  * gibt. Hier stehen sie einmal.
@@ -170,7 +170,7 @@ class WueflEnergySettingsCard extends HTMLElement {
             <button class="switch" role="switch" aria-checked="false" type="button"><span></span></button>
           </div>
           <span class="note">Ohne Freigabe zieht das Auto nur Sonne und Netzstrom,
-            der Speicher bleibt dem Haus vorbehalten.</span>
+            der Batterie bleibt dem Haus vorbehalten.</span>
           <div class="reserve-block" hidden>
             <span class="sublabel">Akku nutzen bis</span>
             <div class="control reserve">
@@ -197,7 +197,7 @@ class WueflEnergySettingsCard extends HTMLElement {
         <div class="row prio">
           <div class="head"><span class="label">Hausakku zuerst oder Auto zuerst</span></div>
           <div class="choice"></div>
-          <span class="note">Wohin der Sonnenüberschuss zuerst geht, wenn Speicher und
+          <span class="note">Wohin der Sonnenüberschuss zuerst geht, wenn Batterie und
             Auto beide Bedarf haben.</span>
         </div>
       </div>
@@ -211,7 +211,7 @@ class WueflEnergySettingsCard extends HTMLElement {
           </span>
         </button>
         <p class="hint" style="margin-top:.6rem">Welche Entität wofür steht — Netz,
-          Solaranlage, Speicher, Wallboxen und Fahrzeuge.</p>
+          Solaranlage, Batterie, Wallboxen und Fahrzeuge.</p>
       </div>
 
       <p class="hint empty" hidden>Sobald du in der Zuordnung eine Wallbox anlegst,
@@ -343,7 +343,7 @@ class WueflEnergySettingsCard extends HTMLElement {
       this.#els.useSwitch.setAttribute('aria-checked', String(useOn));
     }
 
-    // Die Reserve steuert nur etwas, solange das Auto an den Speicher darf.
+    // Die Reserve steuert nur etwas, solange das Auto an den Batterie darf.
     const showReserve = hasReserve && useOn;
     this.#els.reserveBlock.hidden = !showReserve;
     if (showReserve && this.#drag !== 'reserve') {
@@ -408,7 +408,7 @@ const SCHEMA = [
 const LABELS = {
   title: 'Überschrift',
   battery_use_entity: 'Freigabe: aus Hausakku laden',
-  battery_reserve_entity: 'Speicher nutzen bis … %',
+  battery_reserve_entity: 'Batterie nutzen bis … %',
   priority_entity: 'Priorität bei Überschuss',
   price_limit_entity: 'Preisgrenze fürs Laden',
 };

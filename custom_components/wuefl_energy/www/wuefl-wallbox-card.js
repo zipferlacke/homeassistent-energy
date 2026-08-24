@@ -268,7 +268,7 @@ class WueflWallboxCard extends HTMLElement {
             <input type="range">
             <span class="note">Gilt nur für diese Wallbox. Begrenzt den Strom pro Phase: 16 A sind rund 11 kW, 6 A rund 4 kW. Nur nötig, wenn Hausanschluss oder Leitung das verlangen — im Solarbetrieb regelt die Automatik den Wert selbst.</span>
           </div>
-          <p class="ref">Hausakku-Freigabe, Speicherreserve und die Preisgrenze für Netzstrom
+          <p class="ref">Hausakku-Freigabe, Batteriereserve und die Preisgrenze für Netzstrom
             gelten für alle Wallboxen zusammen und stehen in der Ansicht
             <strong>Einstellungen</strong>.</p>
         </div>

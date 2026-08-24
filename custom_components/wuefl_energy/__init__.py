@@ -120,7 +120,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Speicher laden, Grundgerüst anlegen, alle drei Helfer-Plattformen
+    """Batterie laden, Grundgerüst anlegen, alle drei Helfer-Plattformen
     laden und erst danach abgleichen — async_forward_entry_setups kehrt
     garantiert erst zurück, wenn switch/number/select fertig sind.
     """
@@ -164,7 +164,7 @@ def _build_entity(platform: str, spec: dict):
 async def async_sync_entities(hass: HomeAssistant) -> None:
     """Legt fehlende Helfer an und entfernt nicht mehr benötigte.
 
-    Läuft einmal beim Start und danach nach jedem Speichern der Zuordnung:
+    Läuft einmal beim Start und danach nach jedem Batterien der Zuordnung:
     eine neue Wallbox bekommt ihre drei Regler sofort, eine gelöschte
     verliert sie genauso sofort — inklusive Eintrag in der Entitäts-
     Registry, damit nichts als "nicht verfügbar" liegen bleibt.

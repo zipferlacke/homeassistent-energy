@@ -3,7 +3,7 @@
 Diese Helfer erfindet ausschließlich diese Integration: Lademodus, Ladestrom
 und Ladeziel je Wallbox gibt es bei keiner Wallbox-Hardware als echten
 Sensor, und die vier anlagenweiten Laderegler (Hausakku-Freigabe,
-Speicherreserve, Priorität, Preisgrenze) sind ebenso unsere Erfindung.
+Batteriereserve, Priorität, Preisgrenze) sind ebenso unsere Erfindung.
 
 Weil es dafür keine echte Quelle gibt, die der Nutzer zuordnen könnte, legt
 die Integration sie selbst an — und entfernt sie auch wieder, sobald sie
@@ -30,8 +30,8 @@ GLOBAL_SWITCH = {
 GLOBAL_NUMBERS = [
     {
         "unique_id": "wuefl_energy_battery_reserve",
-        "entity_id": "number.wuefl_speicherreserve",
-        "name": "wuefl Speicherreserve",
+        "entity_id": "number.wuefl_Batteriereserve",
+        "name": "wuefl Batteriereserve",
         "icon": "mdi:battery-lock",
         "min": 0, "max": 100, "step": 5, "unit": "%", "default": 20,
         "rules_field": "battery_reserve_entity",

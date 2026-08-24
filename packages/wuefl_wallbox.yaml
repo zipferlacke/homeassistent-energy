@@ -9,7 +9,7 @@
 # einen Ladestrom macht.
 #
 # Lademodus, Ladestrom, Ladeziel und die vier anlagenweiten Laderegler
-# (Hausakku-Freigabe, Speicherreserve, Prioritaet, Preisgrenze) stehen NICHT
+# (Hausakku-Freigabe, Batteriereserve, Prioritaet, Preisgrenze) stehen NICHT
 # mehr hier drin — die legt die Integration "wuefl Energie" selbst an, sobald
 # in der Zuordnung eine Wallbox existiert. Zu finden unter Einstellungen →
 # Geraete & Dienste → Entitaeten, Suche "wuefl", oder direkt in der Ansicht
@@ -46,7 +46,7 @@ automation:
       # ---- anpassen ----------------------------------------------------
       grid_power: sensor.netz_leistung # positiv = Bezug, negativ = Einspeisung
       battery_soc: sensor.hausakku_ladestand
-      battery_max_discharge: 3000 # W, die die Speicher maximal fürs Auto liefern
+      battery_max_discharge: 3000 # W, die die Batterie maximal fürs Auto liefern
       car_soc: sensor.auto_ladestand
       wallbox_power: sensor.wallbox_leistung
       wallbox_switch: switch.wallbox_laden
@@ -62,7 +62,7 @@ automation:
       mode_entity: select.wuefl_wallbox_wallbox_1_modus
       target_entity: number.wuefl_wallbox_wallbox_1_ladeziel
       priority_entity: select.wuefl_prioritaet
-      reserve_entity: number.wuefl_speicherreserve
+      reserve_entity: number.wuefl_Batteriereserve
       use_entity: switch.wuefl_hausakku_freigabe
       limit_entity: number.wuefl_preisgrenze_laden
       # ------------------------------------------------------------------
@@ -106,7 +106,7 @@ automation:
           - select.wuefl_wallbox_wallbox_1_modus
           - select.wuefl_prioritaet
           - switch.wuefl_hausakku_freigabe
-          - number.wuefl_speicherreserve
+          - number.wuefl_Batteriereserve
           - number.wuefl_preisgrenze_laden
           - number.wuefl_wallbox_wallbox_1_ladeziel
 
