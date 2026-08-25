@@ -15,12 +15,12 @@ import {
 const SVG_URL = '/we_files/energieflow.svg';
 
 const PARTS = {
-  solar:       { label: 'label-solar', cable: '#kabel-solar', device: '#solar' },
-  netz:        { label: 'label-netz', cable: '#label-netz .cable', device: '#netz' },
-  batterie:    { label: 'label-batterie', cable: '#label-batterie .cable', device: '#battery' },
-  wallbox:     { label: 'label-wallbox', cable: '#kabel-wallbox', device: '#wallbox' },
+  solar: { label: 'label-solar', cable: '#kabel-solar', device: '#solar' },
+  netz: { label: 'label-netz', cable: '#label-netz .cable', device: '#netz' },
+  batterie: { label: 'label-batterie', cable: '#label-batterie .cable', device: '#battery' },
+  wallbox: { label: 'label-wallbox', cable: '#kabel-wallbox', device: '#wallbox' },
   waermepumpe: { label: 'label-waermepumpe', cable: '#label-waermepumpe .cable', device: '#heatpump' },
-  haushalt:    { label: 'label-haushalt', cable: null, device: '#house' },
+  haushalt: { label: 'label-haushalt', cable: null, device: '#house' },
 };
 
 function getEntity(val) {
@@ -67,7 +67,7 @@ ${TILE_CSS}
 .scene {
   margin-top: .35rem;
 
-  & svg { display: block; height: auto; width: 100%; }
+  & svg { display: block;height: auto; background-color: transparent;  max-height: 525px; margin: 0px auto;overflow:visible;}
 
   & .device .icon, & .device .fan {
     transition: stroke .25s ease, filter .25s ease;
@@ -187,7 +187,7 @@ class WueflEnergyLiveCard extends HTMLElement {
   #todayTimer = null;
 
   static getConfigElement() { return document.createElement('we-live-card-editor'); }
-  static getStubConfig() { return { title: 'Zuhause', show_totals: true }; }
+  static getStubConfig() { return { show_totals: true }; }
 
   setConfig(config) {
     this.#own = config ?? {};
@@ -267,7 +267,7 @@ class WueflEnergyLiveCard extends HTMLElement {
 
   #apply() {
     const merged = mergeConfig(this.#central, this.#own);
-    this.#config = { title: 'Zuhause', show_totals: true, ...merged };
+    this.#config = { show_totals: true, ...merged };
     this.#watch = collectEntities(this.#config);
 
     const priceEnt = getEntity(this.#config.grid?.price?.import);
@@ -559,22 +559,31 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     /* --- Solar --- */
     if (has.solar) {
-      const strings = [];
+      let t_live = 0;
+      const t_strings = [];
+
       if (Array.isArray(c.solar)) {
         for (const s of c.solar) {
-          if (Array.isArray(s.strings) && s.strings.length > 0) {
-            for (const st of s.strings) {
-              const ent = getEntity(st);
-              const val = power(h, ent);
-              if (val !== null) {
-                strings.push({ name: st.name || ent, value: val });
-              }
-            }
-          } else if (s.live) {
+          if (s.live) {
             const ent = getEntity(s.live);
             const val = power(h, ent);
             if (val !== null) {
-              strings.push({ name: s.name || 'PV', value: val });
+              t_live += val;
+            }
+          }
+
+          // Einzelne Strings in t_strings erfassen, ohne sie in t_live aufzusummieren
+          console.log("KENN", s.strings, s.strings.length);
+          if (Array.isArray(s.strings) && s.strings.length > 0) {
+            for (const st of s.strings) {
+              const ent = getEntity(st.live);
+              const val = power(h, ent);
+              if (val !== null) {
+                t_strings.push({
+                  name: st.name || h.states?.[ent]?.attributes?.friendly_name || ent,
+                  value: val,
+                });
+              }
             }
           }
         }
@@ -583,18 +592,20 @@ class WueflEnergyLiveCard extends HTMLElement {
       const pvTotalEntities = Array.isArray(c.solar)
         ? c.solar.map(s => getEntity(s.total)).filter(Boolean)
         : [];
-      const pvDay = todaySum(this.#today, pvTotalEntities);
+      const t_total = todaySum(this.#today, pvTotalEntities);
 
+      // Werte im SVG setzen
       T('#label-solar-text', 't-header', 'Solar');
-      T('#label-solar-text', 'v_live', fmtPower(p.pv));
-      T('#label-solar-text', 'v_total', tot && pvDay !== null ? fmtEnergy(pvDay) : '');
+      T('#label-solar-text', 'v_live', fmtPower(t_live));
+      T('#label-solar-text', 'v_total', tot && t_total !== null ? fmtEnergy(t_total) : '');
 
+      // t_strings zeilenweise untereinander einfügen
       repeatPair(
         svg.querySelector('#label-solar-text .t-box'),
-        '.t-sub', '.v_sub_live', strings,
-        (name, value, s2) => {
-          name.textContent = s2.name;
-          value.textContent = fmtPower(s2.value);
+        '.t-sub', '.v_sub_live', t_strings,
+        (name, value, st) => {
+          name.textContent = st.name;
+          value.textContent = fmtPower(st.value);
         },
       );
 
@@ -610,7 +621,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       const exp = todaySum(this.#today, expEntity);
 
       T('#label-netz-text', 't-header', 'Netz');
-      T('#label-netz-text', 'v_live', `${p.grid >= 0 ? '−' : '+'}${fmtPower(Math.abs(p.grid))}`);
+      T('#label-netz-text', 'v_live', `${p.grid >= 0 ? 'importiert ' : 'exportiert '}${fmtPower(Math.abs(p.grid))}`);
       T('#label-netz-text', 'v_total', tot ? fmtEnergy((imp ?? 0) - (exp ?? 0)) : '');
       T('#label-netz-text', 'v_in', tot && imp !== null ? fmtEnergy(imp) : '');
       T('#label-netz-text', 'v_out', tot && exp !== null ? fmtEnergy(exp) : '');
@@ -629,7 +640,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       }
 
       T('#label-batterie-text', 't-header', soc === null ? 'Batterie' : `Batterie ${fmtPercent(soc)}`);
-      T('#label-batterie-text', 'v_live', `${p.battery > 0 ? '−' : '+'}${fmtPower(Math.abs(p.battery))}`);
+      T('#label-batterie-text', 'v_live', `${p.battery > 0 ? 'entlädt ' : 'lädt '}${fmtPower(Math.abs(p.battery))}`);
 
       const batInEntities = Array.isArray(c.battery)
         ? c.battery.map(b => getEntity(b.in_total)).filter(Boolean)
@@ -714,7 +725,7 @@ class WueflEnergyLiveCard extends HTMLElement {
     const w = Math.abs(watt);
     const on = w >= 20;
     const dur = Math.max(0.45, Math.min(2.6, 2600 / Math.max(1, w)));
-    const strength = 0.35 + Math.min(1, w / 4000) * 0.65;
+    const strength = 0.75 + Math.min(1, w / 4000) * 0.65;
     for (const el of [pair.thin, pair.fat]) {
       el.classList.toggle('on', on);
       el.style.stroke = color;
@@ -927,8 +938,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       const d = new Date(f.datetime);
       return `<div class="row"><span class="day">${WEEKDAYS[d.getDay()]}</span>
         ${icon(weatherIcon(f.condition))}<span></span>
-        <span class="temps"><b>${Math.round(f.temperature)}°</b>${
-          f.templow !== undefined ? ` / ${Math.round(f.templow)}°` : ''
+        <span class="temps"><b>${Math.round(f.temperature)}°</b>${f.templow !== undefined ? ` / ${Math.round(f.templow)}°` : ''
         }</span></div>`;
     });
     for (const id of this.#getForecastEntities()) {

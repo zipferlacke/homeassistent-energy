@@ -10,13 +10,20 @@ import {
 } from './we-shared.js';
 
 const SERIES = [
-  { key: 'pv_energy', label: 'Solar', color: '--energy-solar-color', fallback: '#ff9800', icon: 'mdi:solar-power' },
-  { key: 'battery_out', label: 'Batterie', color: '--energy-battery-out-color', fallback: '#4db0a2', icon: 'mdi:battery-high', pair: 'battery', short: 'entladen' },
-  { key: 'battery_in', label: 'Batterie', color: '--energy-battery-in-color', fallback: '#f6c34c', icon: 'mdi:battery-high', pair: 'battery', short: 'geladen' },
-  { key: 'grid_import', label: 'Netz', color: '--energy-grid-consumption-color', fallback: '#488fc2', icon: 'mdi:transmission-tower', pair: 'grid', short: 'Bezug' },
-  { key: 'grid_export', label: 'Netz', color: '--energy-grid-return-color', fallback: '#8353d1', icon: 'mdi:transmission-tower', pair: 'grid', short: 'Einspeisung' },
-  { key: 'house_energy', label: 'Haushalt', color: '--wuefl-house-color', fallback: '#e57373', icon: 'mdi:home' },
-  { key: 'wallbox_energy', label: 'Wallbox', color: '--wuefl-wallbox-color', fallback: '#ba68c8', icon: 'mdi:ev-station' },
+  { key: 'pv_energy', label: 'Solar', color: '--energy-solar-color', fallback: '#ff9800', icon: 'mdi:solar-power',
+    getIds: (c) => asList(c.solar).map(s => s.total).filter(Boolean) },
+  { key: 'battery_out', label: 'Batterie', color: '--energy-battery-out-color', fallback: '#4db0a2', icon: 'mdi:battery-high', pair: 'battery', short: 'entladen',
+    getIds: (c) => asList(c.battery).map(b => b.out_total).filter(Boolean) },
+  { key: 'battery_in', label: 'Batterie', color: '--energy-battery-in-color', fallback: '#f6c34c', icon: 'mdi:battery-high', pair: 'battery', short: 'geladen',
+    getIds: (c) => asList(c.battery).map(b => b.in_total).filter(Boolean) },
+  { key: 'grid_import', label: 'Netz', color: '--energy-grid-consumption-color', fallback: '#488fc2', icon: 'mdi:transmission-tower', pair: 'grid', short: 'Bezug',
+    getIds: (c) => asList(c.grid?.import_total).filter(Boolean) },
+  { key: 'grid_export', label: 'Netz', color: '--energy-grid-return-color', fallback: '#8353d1', icon: 'mdi:transmission-tower', pair: 'grid', short: 'Einspeisung',
+    getIds: (c) => asList(c.grid?.export_total).filter(Boolean) },
+  { key: 'house_energy', label: 'Haushalt', color: '--wuefl-house-color', fallback: '#e57373', icon: 'mdi:home',
+    getIds: (c) => asList(c.consumers?.total).filter(Boolean) },
+  { key: 'wallbox_energy', label: 'Wallbox', color: '--wuefl-wallbox-color', fallback: '#ba68c8', icon: 'mdi:ev-station',
+    getIds: (c) => asList(c.wallboxes).map(w => w.total).filter(Boolean) },
 ];
 const PAIR_NAMES = { grid: 'Netz', battery: 'Batterie' };
 
@@ -85,7 +92,7 @@ class WueflEnergyTilesCard extends HTMLElement {
   }
 
   #used() {
-    return SERIES.filter((s) => asList(this.#config[s.key]).length);
+    return SERIES.filter((s) => s.getIds(this.#config).length > 0);
   }
 
   async #refresh() {
@@ -95,7 +102,7 @@ class WueflEnergyTilesCard extends HTMLElement {
       this.#els.grid.innerHTML = '<div class="state">Noch keine Gesamtzähler zugeordnet.</div>';
       return;
     }
-    const ids = used.flatMap((s) => asList(this.#config[s.key]));
+    const ids = used.flatMap((s) => s.getIds(this.#config));
     this.#stats = await fetchStats(this.#hass, ids, getPeriod(), ['change']);
     this.#render(used);
   }
@@ -103,7 +110,7 @@ class WueflEnergyTilesCard extends HTMLElement {
   #stats = {};
 
   #total(s) {
-    return asList(this.#config[s.key]).reduce(
+    return s.getIds(this.#config).reduce(
       (a, id) => a + (this.#stats[id] ?? []).reduce((b, r) => b + (Number(r.change) || 0), 0), 0,
     );
   }

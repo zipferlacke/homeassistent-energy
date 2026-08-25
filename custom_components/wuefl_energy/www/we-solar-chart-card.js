@@ -77,14 +77,14 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
     return {
       aggregation: this._aggregation(range),
       y_axes: [{ unit: 'kW' }],
-      legend: [{ hidden: false, position: 'top-right' }],
+      legend: [{ hidden: false, position: 'bottom-right' }],
       series,
       ...(chipEntity
         ? {
             chip: {
               entity: chipEntity,
               unit: 'kWh',
-              stat_type: 'change',
+              stat_type: 'sum',
               color: 'var(--energy-solar-color, #ff9800)',
             },
           }

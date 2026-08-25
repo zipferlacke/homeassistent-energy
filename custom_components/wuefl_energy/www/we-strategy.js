@@ -39,9 +39,9 @@ class WueflEnergyDashboardStrategy {
     const temps = config.systemdata?.temperatures ?? [];
     const extra = config.systemdata?.extra_entities ?? [];
 
-    const hasGridLive = !!config.grid?.live?.entity;
-    const hasSolarLive = Array.isArray(config.solar) && config.solar.some((s) => !!s.live?.entity);
-    const hasBatteryLive = Array.isArray(config.battery) && config.battery.some((b) => !!b.live?.entity);
+    const hasGridLive = !!config.grid?.live;
+    const hasSolarLive = Array.isArray(config.solar) && config.solar.some((s) => !!s.live);
+    const hasBatteryLive = Array.isArray(config.battery) && config.battery.some((b) => !!b.live);
     const hasLive = hasGridLive || hasSolarLive || hasBatteryLive;
 
     if (hasLive) {
@@ -83,13 +83,18 @@ class WueflEnergyDashboardStrategy {
             views: [
               {
                 max: '799px',
+                columns: '1fr',
                 areas: liveAreasMobile
               },
               ...(hasSideCards ? [{
                 min: '800px',
                 columns: '2fr 1fr',
                 areas: desktopAreas
-              }] : [])
+              }] : [{
+                min: '800px',
+                columns: '1fr',
+                areas: `"live"`
+              }])
             ],
             cards: liveCards
           }]
@@ -100,16 +105,16 @@ class WueflEnergyDashboardStrategy {
     // ---------------------------------------------------
     // 2. Energiehistorie - Seite
     // ---------------------------------------------------
-    const solarTotals = Array.isArray(config.solar) ? config.solar.map((s) => s.total?.entity).filter(Boolean) : [];
-    const batteryInTotals = Array.isArray(config.battery) ? config.battery.map((b) => b.in_total?.entity).filter(Boolean) : [];
-    const batteryOutTotals = Array.isArray(config.battery) ? config.battery.map((b) => b.out_total?.entity).filter(Boolean) : [];
-    const wallboxTotals = Array.isArray(config.wallboxes) ? config.wallboxes.map((w) => w.total?.entity).filter(Boolean) : [];
-    const heatpumpTotals = Array.isArray(config.heatpump) ? config.heatpump.map((h) => h.total?.entity).filter(Boolean) : [];
+    const solarTotals = Array.isArray(config.solar) ? config.solar.map((s) => s.total).filter(Boolean) : [];
+    const batteryInTotals = Array.isArray(config.battery) ? config.battery.map((b) => b.in_total).filter(Boolean) : [];
+    const batteryOutTotals = Array.isArray(config.battery) ? config.battery.map((b) => b.out_total).filter(Boolean) : [];
+    const wallboxTotals = Array.isArray(config.wallboxes) ? config.wallboxes.map((w) => w.total).filter(Boolean) : [];
+    const heatpumpTotals = Array.isArray(config.heatpump) ? config.heatpump.map((h) => h.total).filter(Boolean) : [];
 
     const hasEnergyEntities = [
-      config.grid?.import_total?.entity,
-      config.grid?.export_total?.entity,
-      config.consumers?.total?.entity,
+      config.grid?.import_total,
+      config.grid?.export_total,
+      config.consumers?.total,
       ...solarTotals,
       ...batteryInTotals,
       ...batteryOutTotals,
@@ -284,7 +289,7 @@ class WueflEnergyDashboardStrategy {
             }
           ],
           cards: [
-            { type: 'custom:we-config-card', slot: 'main' },
+            { type: 'custom:we-config-card', slot: 'main', ...config },
           ]
         }]
       }]

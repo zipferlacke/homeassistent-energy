@@ -5,13 +5,24 @@ import copy
 import re
 import unicodedata
 
-GLOBAL_SWITCH = {
-    "unique_id": "we_battery_ussage_charging",
-    "entity_id": "switch.we_battery_ussage_charging",
-    "name": "Hausakku-Freigabe Laden",
-    "icon": "mdi:home-battery",
-    "default": False,
-}
+GLOBAL_SWITCH = [
+    {
+        "unique_id": "we_battery_ussage_charging",
+        "entity_id": "switch.we_battery_ussage_charging",
+        "name": "Hausakku-Freigabe Laden",
+        "icon": "mdi:home-battery",
+        "default": False,
+        "rules_field": "battery_use_entity"
+    },
+    {
+        "unique_id": "we_charge_battery_with_grid_bad_weather",
+        "entity_id": "switch.we_charge_battery_with_grid_bad_weather",
+        "name": "Hausakku Netzladung (Schlechtwetter & Billigstrom)",
+        "icon": "mdi:battery-charging",
+        "default": False,
+        "rules_field": "charge_battery_bad_weather_entity"
+    }
+]
 
 GLOBAL_NUMBERS = [
     {
@@ -30,16 +41,35 @@ GLOBAL_NUMBERS = [
         "min": 0, "max": 500, "step": 1, "unit": "ct", "default": 20,
         "rules_field": "price_limit_entity",
     },
+    {
+        "unique_id": "we_price_import_energy",
+        "entity_id": "number.we_price_import_energy",
+        "name": "Fix Strompreis",
+        "icon": "mdi:cash-clock",
+        "min": 0, "max": 300, "step": 1, "unit": "ct", "default": 33,
+        "rules_field": "price_import_energy",
+    },
+    {
+        "unique_id": "we_price_export_energy",
+        "entity_id": "number.we_price_export_energy",
+        "name": "Fix Einspeisevergütung",
+        "icon": "mdi:cash-clock",
+        "min": 0, "max": 300, "step": 1, "unit": "ct", "default": 8,
+        "rules_field": "price_export_energy",
+    },
 ]
 
-GLOBAL_SELECT = {
-    "unique_id": "we_priority_charging",
-    "entity_id": "select.we_priority_charging",
-    "name": "Priorität bei Überschuss",
-    "icon": "mdi:priority-high",
-    "options": ["Hausakku zuerst", "Auto zuerst"],
-    "default": "Hausakku zuerst",
-}
+GLOBAL_SELECT = [
+    {
+        "unique_id": "we_priority_charging",
+        "entity_id": "select.we_priority_charging",
+        "name": "Priorität bei Überschuss",
+        "icon": "mdi:priority-high",
+        "options": ["Hausakku zuerst", "Auto zuerst"],
+        "default": "Hausakku zuerst",
+        "rules_field": "priority_entity"
+    }
+]
 
 WALLBOX_MODE_OPTIONS = ["Aus", "Solar", "Solar + günstig", "Schnell"]
 
@@ -59,9 +89,9 @@ def required_specs(config: dict) -> dict[str, list[dict]]:
     wallboxes = list(config.get("wallboxes") or [])
     
     # Globale Regler immer anlegen (unabhängig von der Anzahl der Wallboxen)
-    switches: list[dict] = [{**GLOBAL_SWITCH, "rules_field": "battery_use_entity"}]
+    switches: list[dict] = list(GLOBAL_SWITCH)
     numbers: list[dict] = list(GLOBAL_NUMBERS)
-    selects: list[dict] = [{**GLOBAL_SELECT, "rules_field": "priority_entity"}]
+    selects: list[dict] = list(GLOBAL_SELECT)
 
     used_slugs: set[str] = set()
     for i, wallbox in enumerate(wallboxes):
@@ -158,6 +188,7 @@ def enrich_config(config: dict) -> dict:
     # 2. wallboxes_config IMMER auf Root-Ebene garantieren
     enriched["wallboxes_config"] = {
         "battery_ussage_charging": "switch.we_battery_ussage_charging",
+        "charge_battery_bad_weather": "switch.we_charge_battery_with_grid_bad_weather",
         "battery_ussage_limit_charging": "number.we_battery_ussage_limit_charging",
         "price_limit_charging": "number.we_price_limit_charging",
     }

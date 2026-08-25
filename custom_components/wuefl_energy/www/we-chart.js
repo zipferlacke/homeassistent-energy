@@ -107,7 +107,7 @@ class WueflEnergyChart extends HTMLElement {
             legendBottom: card.querySelector('.legend-slot-bottom'),
         };
         this.#built = true;
-        // Bei Klick Zoomen aktivieren
+
         card.addEventListener('click', () => {
             if (!this.#isActive) {
                 this.#isActive = true;
@@ -116,7 +116,6 @@ class WueflEnergyChart extends HTMLElement {
             }
         });
 
-        // Bei Klick außerhalb Zoomen wieder sperren
         window.addEventListener('pointerdown', (e) => {
             if (this.#isActive && !e.composedPath().includes(this)) {
                 this.#isActive = false;
@@ -126,7 +125,6 @@ class WueflEnergyChart extends HTMLElement {
         });
     }
 
-    // Wandelt CSS-Variablen explizit in konkrete Farbwerte (HEX/RGB) für den Canvas um
     #resolveColor(colorStr) {
         if (!colorStr) return '#999999';
         let resolved = cssColor(this, colorStr, colorStr);
@@ -221,7 +219,7 @@ class WueflEnergyChart extends HTMLElement {
     }
 
     #parseBucketSize(bucketStr, rangeStr) {
-        if (typeof bucketStr === 'number') return bucketStr;
+        if (typeof bucketStr === 'number') return { ms: bucketStr, unit: 'ms', val: bucketStr };
 
         if (!bucketStr) {
             if (rangeStr === '1d') bucketStr = '10min';
@@ -234,30 +232,67 @@ class WueflEnergyChart extends HTMLElement {
         if (match) {
             const val = parseInt(match[1] || '1', 10);
             const unit = match[2].toLowerCase();
-            if (unit === 'min') return val * 60000;
-            if (unit === 'h') return val * 3600000;
-            if (unit === 'd') return val * 86400000;
-            if (unit === 'w') return val * 604800000;
-            if (unit === 'm') return val * 2592000000;
-            if (unit === 'y') return val * 31536000000;
+            if (unit === 'min') return { ms: val * 60000, unit: 'min', val };
+            if (unit === 'h') return { ms: val * 3600000, unit: 'h', val };
+            if (unit === 'd') return { ms: val * 86400000, unit: 'd', val };
+            if (unit === 'w') return { ms: val * 604800000, unit: 'w', val };
+            if (unit === 'm') return { ms: val * 2592000000, unit: 'm', val };
+            if (unit === 'y') return { ms: val * 31536000000, unit: 'y', val };
         }
-        return parseInt(bucketStr, 10) || 3600000;
+        return { ms: parseInt(bucketStr, 10) || 3600000, unit: 'h', val: 1 };
     }
 
-    #bucketize(rows, bucketMs, statType = 'change') {
-        if (!rows?.length) return [];
+    #bucketize(rows, bucketInfo, statType = 'change', start = null, end = null) {
         const buckets = new Map();
-        for (const row of rows) {
-            const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
-            if (Number.isNaN(t)) continue;
-            const key = Math.floor(t / bucketMs) * bucketMs;
-            const value = Number(statType === 'mean' ? (row.mean ?? row.state) : row.change);
-            if (!Number.isFinite(value)) continue;
-            const b = buckets.get(key) ?? { sum: 0, count: 0 };
-            b.sum += value; b.count += 1;
-            buckets.set(key, b);
+        const isMonthly = bucketInfo?.unit === 'm';
+
+        // Lückenloses Auffüllen (Pre-filling) aller Bucket-Zeiträume
+        if (start && end) {
+            if (isMonthly) {
+                let cur = new Date(start.getFullYear(), start.getMonth(), 1, 0, 0, 0, 0);
+                const endMs = end.getTime();
+                while (cur.getTime() <= endMs) {
+                    buckets.set(cur.getTime(), { sum: 0, count: 0 });
+                    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1, 0, 0, 0, 0);
+                }
+            } else {
+                const bucketMs = bucketInfo?.ms || bucketInfo;
+                if (bucketMs > 0) {
+                    const startKey = Math.floor(start.getTime() / bucketMs) * bucketMs;
+                    const endKey = Math.floor(end.getTime() / bucketMs) * bucketMs;
+                    for (let k = startKey; k <= endKey; k += bucketMs) {
+                        buckets.set(k, { sum: 0, count: 0 });
+                    }
+                }
+            }
         }
-        return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([t, b]) => [t, statType === 'mean' ? b.sum / b.count : b.sum]);
+
+        if (rows?.length) {
+            for (const row of rows) {
+                const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
+                if (Number.isNaN(t)) continue;
+
+                let key;
+                if (isMonthly) {
+                    const d = new Date(t);
+                    key = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0).getTime();
+                } else {
+                    const bucketMs = bucketInfo?.ms || bucketInfo;
+                    key = Math.floor(t / bucketMs) * bucketMs;
+                }
+
+                const value = Number(statType === 'mean' ? (row.mean ?? row.state) : row.change);
+                if (!Number.isFinite(value)) continue;
+
+                const b = buckets.get(key) ?? { sum: 0, count: 0 };
+                b.sum += value; b.count += 1;
+                buckets.set(key, b);
+            }
+        }
+
+        return [...buckets.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([t, b]) => [t, statType === 'mean' ? (b.count > 0 ? b.sum / b.count : 0) : b.sum]);
     }
 
     #calculateNativeChipValue(dbStats, seriesList) {
@@ -360,7 +395,6 @@ class WueflEnergyChart extends HTMLElement {
 
             const item = document.createElement('div');
             item.className = `legend-item ${isHidden ? 'disabled' : ''}`;
-            // Native Farbverarbeitung im HTML DOM per s.color
             item.innerHTML = `
                 <span class="legend-dot" style="background-color: ${s.color || '#999'};"></span>
                 <span>${name}</span>
@@ -392,7 +426,8 @@ class WueflEnergyChart extends HTMLElement {
         this.#els.title.textContent = this.#config.title || '';
 
         const { start, end } = this.#calculateTimeBounds(this.#config.range, this.#config.start, this.#config.end);
-        const bucketMs = this.#parseBucketSize(this.#config.aggregation, this.#config.range);
+        const bucketInfo = this.#parseBucketSize(this.#config.aggregation, this.#config.range);
+        const bucketMs = bucketInfo.ms;
         const period = bucketMs >= 86400000 ? 'day' : bucketMs >= 3600000 ? 'hour' : '5minute';
 
         const idsToFetch = new Set(this.#config.series.map(s => s.entity));
@@ -409,10 +444,9 @@ class WueflEnergyChart extends HTMLElement {
                 statistic_ids: Array.from(idsToFetch), period, types: ['change', 'mean', 'max', 'min'],
             });
 
-            // Aufbereitung der Konfiguration direkt am Anfang
             const processedSeries = this.#config.series.map(s => {
                 const raw = dbStats[s.entity] || [];
-                const bucketed = this.#bucketize(raw, bucketMs, s.stat_type || 'change');
+                const bucketed = this.#bucketize(raw, bucketInfo, s.stat_type || 'change', start, end);
 
                 const nativeUnit = this.#hass.states[s.entity]?.attributes?.unit_of_measurement || '';
                 const axisIdx = s.y_axis || 0;
@@ -427,11 +461,10 @@ class WueflEnergyChart extends HTMLElement {
                     resolvedColor: this.#resolveColor(s.color),
                     stat_type: s.stat_type || 'change',
                     chartTargetUnit,
-                    // 0-Werte auf null setzen, damit keine übereinanderliegenden Null-Linien entstehen
-                     chartData: bucketed.map(([t, v]) => {
-                         const val = v * manualMulti * autoChartScale * sign;
-                         return [t, Math.abs(val) < 0.000001 ? 0 : val];
-                     })
+                    chartData: bucketed.map(([t, v]) => {
+                        const val = v * manualMulti * autoChartScale * sign;
+                        return [t, Math.abs(val) < 0.000001 ? 0 : val];
+                    })
                 };
             });
 
@@ -466,18 +499,21 @@ class WueflEnergyChart extends HTMLElement {
             }
 
             this.#renderHtmlLegend(processedSeries);
-            this.#renderChart(processedSeries, yAxesConfig, start, end, bucketMs);
+            this.#renderChart(processedSeries, yAxesConfig, start, end, bucketInfo);
 
         } catch (err) {
             this.#els.slot.innerHTML = `<div class="error">Fehler: ${err.message}</div>`;
         }
     }
 
-    #renderChart(processedSeries, yAxesConfig, start, end, bucketMs) {
+    #renderChart(processedSeries, yAxesConfig, start, end, bucketInfo) {
         if (!customElements.get('ha-chart-base')) {
             this.#els.slot.innerHTML = '<div class="error">ha-chart-base fehlt!</div>';
             return;
         }
+
+        const bucketMs = bucketInfo.ms;
+        const isMonthly = bucketInfo.unit === 'm';
 
         const yAxisEcharts = yAxesConfig.map((ax, idx) => ({
             type: 'value', name: ax.unit || '', min: ax.min, max: ax.max,
@@ -489,7 +525,7 @@ class WueflEnergyChart extends HTMLElement {
         const totalSeries = processedSeries.length;
         const data = processedSeries.map((s, index) => {
             const name = s.legend_group || s.name || s.entity;
-            const isHidden = this.#hiddenSeries.has(name); // <-- Prüfen ob ausgeblendet
+            const isHidden = this.#hiddenSeries.has(name);
             const chartType = s.type || this.#config.type || 'line';
             let areaStyle = undefined;
             if (chartType === 'line') {
@@ -514,7 +550,7 @@ class WueflEnergyChart extends HTMLElement {
                 type: chartType, 
                 stack: s.stack, 
                 yAxisIndex: s.y_axis || 0,
-                data: isHidden ? [] : s.chartData, // <-- HIER: Bei Ausblendung leeres Array übergeben
+                data: isHidden ? [] : s.chartData,
                 smooth: chartType === 'line' ? (s.smooth ?? true) : undefined, 
                 symbol: 'none',
                 z: s.stack ? totalSeries + 1 - index : 2,
@@ -524,14 +560,13 @@ class WueflEnergyChart extends HTMLElement {
             };
         });
 
-        const spanDays = bucketMs < 86400000;
         const spansYears = start.getFullYear() !== end.getFullYear();
 
         const options = {
             xAxis: [{ type: 'time', min: start.getTime(), max: end.getTime() }],
             yAxis: yAxisEcharts,
             grid: { top: 15, left: 10, right: 10, bottom: 5, containLabel: true },
-            legend: { show: false }, // <-- selected: selectedObj komplett entfernt
+            legend: { show: false },
             dataZoom: [
                 {
                     type: 'inside',
@@ -545,19 +580,43 @@ class WueflEnergyChart extends HTMLElement {
                 formatter: (params) => {
                     if (!params || !params.length) return '';
                     const date = new Date(params[0].value[0]);
-                    const dateEnd = new Date(params[0].value[0] + bucketMs);
-                    let timeStr = date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                    timeStr += " - "+ dateEnd.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                    
+                    let headerText = '';
 
-                    let headerHtml = '';
-                    if (!spanDays) {
-                        headerHtml = `<div>${timeStr}</div>`;
-                    } else if (spansYears) {
-                        const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                        headerHtml = `<div><span style="font-size: 0.85em; opacity: 0.75; margin-right: 6px;">${dateStr}</span>${timeStr}</div>`;
+                    if (isMonthly) {
+                        // Monats-Ansicht: Nur ausgeschriebener Monatsname (z.B. August)
+                        headerText = date.toLocaleDateString('de-DE', spansYears 
+                            ? { month: 'long', year: 'numeric' } 
+                            : { month: 'long' });
+                    } else if (bucketMs === 86400000 || (bucketInfo?.unit === 'd' && bucketInfo?.val === 1)) {
+                        // Exakt 1 Tag Aggregation: Z.B. 23. August
+                        headerText = date.toLocaleDateString('de-DE', spansYears 
+                            ? { day: '2-digit', month: 'long', year: 'numeric' } 
+                            : { day: '2-digit', month: 'long' });
+                    } else if (bucketMs > 86400000) {
+                        // Mehrere Tage Aggregation: Z.B. 23. – 29. Aug.
+                        const dateEnd = new Date(date.getTime() + bucketMs - 86400000);
+                        const d1 = date.getDate();
+                        const m1 = date.toLocaleDateString('de-DE', { month: 'short' });
+                        const d2 = dateEnd.getDate();
+                        const m2 = dateEnd.toLocaleDateString('de-DE', { month: 'short' });
+                        
+                        if (spansYears) {
+                            headerText = `${date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' })} – ${dateEnd.toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                        } else if (m1 === m2) {
+                            headerText = `${d1}. – ${d2}. ${m1}`;
+                        } else {
+                            headerText = `${d1}. ${m1} – ${d2}. ${m2}`;
+                        }
                     } else {
-                        const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short' });
-                        headerHtml = `<div><span style="font-size: 0.85em; opacity: 0.75; margin-right: 6px;">${dateStr}</span>${timeStr}</div>`;
+                        // Stündlich / Minuten-Raster: Datums-Header mit Uhrzeitbereich
+                        const dateEnd = new Date(date.getTime() + bucketMs);
+                        const timeStart = date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                        const timeEnd = dateEnd.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                        const dateStr = date.toLocaleDateString('de-DE', spansYears 
+                            ? { day: '2-digit', month: 'short', year: 'numeric' } 
+                            : { day: '2-digit', month: 'short' });
+                        headerText = `<span style="font-size: 0.85em; opacity: 0.75; margin-right: 6px;">${dateStr}</span>${timeStart} – ${timeEnd}`;
                     }
 
                     const itemsHtml = params.map(p => {
@@ -581,7 +640,7 @@ class WueflEnergyChart extends HTMLElement {
 
                     const tooltipNode = document.createElement('div');
                     tooltipNode.style.padding = '4px 8px';
-                    tooltipNode.innerHTML = `<div style="font-weight: 500; margin-bottom: 4px;">${headerHtml}</div>${itemsHtml}`;
+                    tooltipNode.innerHTML = `<div style="font-weight: 500; margin-bottom: 4px;">${headerText}</div>${itemsHtml}`;
                     return tooltipNode;
                 }
             }

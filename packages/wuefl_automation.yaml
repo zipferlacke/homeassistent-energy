@@ -1,0 +1,289 @@
+# =======================================================================
+# wuefl_automation.yaml
+# Dynamic Wallbox & Energy Management Automation
+# =======================================================================
+
+automation:
+  - id: wuefl_wallbox_und_speicher_regelung
+    alias: "wuefl – Wallbox & Energiemanagement"
+    mode: single
+    max_exceeded: silent
+
+    trigger:
+      - trigger: time_pattern
+        seconds: "/30"
+      - trigger: template
+        value_template: >
+          {% set cfg = state_attr('sensor.we_config', 'config') | default({}, true) %}
+          {% set wb = cfg.wallboxes[0] | default({}, true) if (cfg.wallboxes is defined and cfg.wallboxes | length > 0) else {} %}
+          {% set glob = cfg.wallboxes_config | default({}, true) %}
+          {% set entities = [
+            wb.charge_type,
+            wb.charge_percent_limit,
+            glob.priority_charging,
+            glob.battery_ussage_charging,
+            glob.battery_ussage_limit_charging,
+            glob.price_limit_charging
+          ] | select('string') | list %}
+          {{ expand(entities) | map(attribute='last_updated') | max > (now() - timedelta(seconds=2)) }}
+
+    variables:
+      # --- Zentrale Konfiguration aus we-config-card ---
+      cfg: "{{ state_attr('sensor.we_config', 'config') | default({}, true) }}"
+      
+      # Automatische Zuordnung: Erste PV-Anlage und Erste Hausbatterie
+      pv_live_entity: "{{ cfg.solar[0].live if (cfg.solar is defined and cfg.solar | length > 0) else 'sensor.pv_power' }}"
+      batt_live_entity: "{{ cfg.battery[0].live if (cfg.battery is defined and cfg.battery | length > 0) else 'sensor.battery_power' }}"
+      batt_soc_entity: "{{ cfg.battery[0].percent if (cfg.battery is defined and cfg.battery | length > 0) else 'sensor.battery_state_of_charge' }}"
+      
+      # Batterie-Steuerungs-Szenen / Schalter
+      batt_stop_discharging: "{{ cfg.battery[0].control.mode_stop_discharging if (cfg.battery is defined and cfg.battery | length > 0 and cfg.battery[0].control is defined) else none }}"
+      batt_force_charge: "{{ cfg.battery[0].control.mode_start_charging if (cfg.battery is defined and cfg.battery | length > 0 and cfg.battery[0].control is defined) else none }}"
+      batt_normal_mode: "{{ cfg.battery[0].control.normal_mode if (cfg.battery is defined and cfg.battery | length > 0 and cfg.battery[0].control is defined) else none }}"
+
+      # Prüfen ob Normal-Mode Rücksetzung garantiert ist
+      can_control_battery: "{{ batt_normal_mode is not none and states(batt_normal_mode) not in ['unknown', 'unavailable'] }}"
+
+      # Wallbox Entitäten direkt aus specs.py (für Wallbox 1)
+      # Wallbox-Entitäten direkt aus der Config beziehen (mit Fallbacks)
+      mode_entity: "{{ cfg.wallboxes[0].charge_type | default('select.we_charge_type_wallbox_1', true) }}"
+      wallbox_power_set_entity: "{{ cfg.wallboxes[0].send_power | default('number.we_send_power_wallbox_1', true) }}"
+      wallbox_activate_entity: "{{ cfg.wallboxes[0].activate_station | default('number.we_activate_station_wallbox_1', true) }}"
+      target_entity: "{{ cfg.wallboxes[0].charge_percent_limit | default('number.we_charge_percent_limit_wallbox_1', true) }}"
+      
+      # Globale Einstellungen & Parameter aus specs.py
+      cfg_wb_global: "{{ cfg.wallboxes_config | default({}, true) }}"
+      priority_entity: "{{ cfg_wb_global.priority_charging | default('select.we_priority_charging', true) }}"
+      reserve_entity: "{{ cfg_wb_global.battery_ussage_limit_charging | default('number.we_battery_ussage_limit_charging', true) }}"
+      use_entity: "{{ cfg_wb_global.battery_ussage_charging | default('switch.we_battery_ussage_charging', true) }}"
+      limit_entity: "{{ cfg_wb_global.price_limit_charging | default('number.we_price_limit_charging', true) }}"
+
+      # Sensoren dynamisch aus der config-card.js
+      car_soc_entity: "{{ cfg.wallboxes[0].car_percent if (cfg.wallboxes is defined and cfg.wallboxes | length > 0) else 'sensor.auto_ladestand' }}"
+      price_entity: "{{ cfg.grid.price_import | default('number.we_price_import_energy', true) }}"
+      grid_power_entity: "{{ cfg.grid.live | default('sensor.grid_power', true) }}"
+      wallbox_power_sensor: "{{ cfg.wallboxes[0].live if (cfg.wallboxes is defined and cfg.wallboxes | length > 0) else 'sensor.wallbox_leistung' }}"
+      weather_forecast_entity: "{{ cfg.solar[0].forecast if (cfg.solar is defined and cfg.solar | length > 0) else 'sensor.pv_ertrag_prognose_heute' }}"
+
+      # Statuswerte
+      modus: "{{ states(mode_entity) }}"
+      freigabe: "{{ is_state(use_entity, 'on') }}"
+      reserve: "{{ states(reserve_entity) | float(20) }}"
+      # Ziel SoC aus specs.py ist 0.0 - 1.0, Auto meldet 0 - 100
+      ziel_soc_faktor: "{{ states(target_entity) | float(1.0) }}"
+      ziel_soc: "{{ ziel_soc_faktor * 100 }}"
+      car_soc: "{{ states(car_soc_entity) | float(0) }}"
+      grenze: "{{ states(limit_entity) | float(99) }}"
+      prio: "{{ states(priority_entity) }}"
+      preis: "{{ states(price_entity) | float(99) }}"
+      
+      # Messwerte
+      has_battery: "{{ cfg.battery is defined and cfg.battery | length > 0 }}"
+      batt_soc: "{{ states(batt_soc_entity) | float(0) if has_battery else 0 }}"
+      pv_power: "{{ states(pv_live_entity) | float(0) }}"
+      netz_power: "{{ states(grid_power_entity) | float(0) }}"
+      wb_power: "{{ states(wallbox_power_sensor) | float(0) }}"
+      
+      # Leistungsberechnung (Volt / Phasen)
+      voltage: 230
+      phases: "{{ cfg.wallboxes[0].more.phases_value | default(3) if (cfg.wallboxes is defined and cfg.wallboxes | length > 0 and cfg.wallboxes[0].more is defined) else 3 }}"
+      max_power_cfg: "{{ cfg.wallboxes[0].more.max_power_value | default(11000) if (cfg.wallboxes is defined and cfg.wallboxes | length > 0 and cfg.wallboxes[0].more is defined) else 11000 }}"
+      min_charge_w: "{{ 6 * voltage * phases }}"
+      battery_max_discharge_w: 3000
+
+      # Akku-Beitrag zur Wallbox (bis 3% vor Limit/Reserve)
+      akku_abgabe_moeglich: "{{ has_battery and freigabe and (batt_soc > (reserve + 3)) }}"
+      akku_watt_beitrag: "{{ battery_max_discharge_w if akku_abgabe_moeglich else 0 }}"
+      
+      # Überschussstrom (Ergebnis in Watt, wie in specs.py gefordert)
+      erzeugung_w: "{{ [pv_power - netz_power + wb_power, 0] | max }}"
+      solar_watt: "{{ [[ (erzeugung_w + akku_watt_beitrag) | round(0, 'floor'), max_power_cfg | int ] | min, 0 ] | max }}"
+
+    actions:
+      # -----------------------------------------------------------------
+      # 1. WALLBOXLADEN & AKKUSTEUERUNG
+      # -----------------------------------------------------------------
+      - choose:
+          # Mode: AUS oder Ladeziel erreicht
+          - conditions:
+              - condition: template
+                value_template: "{{ modus == 'Aus' or car_soc >= ziel_soc }}"
+            sequence:
+              - action: number.set_value
+                target: { entity_id: "{{ wallbox_activate_entity }}" }
+                data: { value: 0 }
+              - action: number.set_value
+                target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                data: { value: 0 }
+              - if:
+                  - condition: template
+                    value_template: "{{ can_control_battery }}"
+                then:
+                  - action: homeassistant.turn_on
+                    target: { entity_id: "{{ batt_normal_mode }}" }
+
+          # Mode: SOLAR
+          - conditions:
+              - condition: template
+                value_template: "{{ modus == 'Solar' }}"
+            sequence:
+              - choose:
+                  # Ohne Akku
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ not has_battery }}"
+                    sequence:
+                      - if:
+                          - condition: template
+                            value_template: "{{ solar_watt >= min_charge_w }}"
+                        then:
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                            data: { value: "{{ solar_watt | int }}" }
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_activate_entity }}" }
+                            data: { value: 1 }
+                        else:
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_activate_entity }}" }
+                            data: { value: 0 }
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                            data: { value: 0 }
+
+                  # Mit Akku: Akku Priorität
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ has_battery and prio == 'Hausakku zuerst' }}"
+                    sequence:
+                      - choose:
+                          # Freigabe aktiv & unter Limit
+                          - conditions:
+                              - condition: template
+                                value_template: "{{ freigabe and batt_soc < reserve }}"
+                            sequence:
+                              - action: number.set_value
+                                target: { entity_id: "{{ wallbox_activate_entity }}" }
+                                data: { value: 0 }
+                              - action: number.set_value
+                                target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                                data: { value: 0 }
+
+                          # Freigabe aktiv & über Limit
+                          - conditions:
+                              - condition: template
+                                value_template: "{{ freigabe and batt_soc >= reserve and solar_watt >= min_charge_w }}"
+                            sequence:
+                              - action: number.set_value
+                                target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                                data: { value: "{{ solar_watt | int }}" }
+                              - action: number.set_value
+                                target: { entity_id: "{{ wallbox_activate_entity }}" }
+                                data: { value: 1 }
+
+                          # Freigabe deaktiviert & Akku >= 90%
+                          - conditions:
+                              - condition: template
+                                value_template: "{{ not freigabe and batt_soc >= 90 and solar_watt >= min_charge_w }}"
+                            sequence:
+                              - action: number.set_value
+                                target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                                data: { value: "{{ solar_watt | int }}" }
+                              - action: number.set_value
+                                target: { entity_id: "{{ wallbox_activate_entity }}" }
+                                data: { value: 1 }
+                        default:
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_activate_entity }}" }
+                            data: { value: 0 }
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                            data: { value: 0 }
+
+                  # Mit Akku: Wallbox Priorität
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ has_battery and prio != 'Hausakku zuerst' }}"
+                    sequence:
+                      - if:
+                          - condition: template
+                            value_template: "{{ solar_watt >= min_charge_w }}"
+                        then:
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                            data: { value: "{{ solar_watt | int }}" }
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_activate_entity }}" }
+                            data: { value: 1 }
+                        else:
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_activate_entity }}" }
+                            data: { value: 0 }
+                          - action: number.set_value
+                            target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                            data: { value: 0 }
+
+          # Mode: SOLAR + GÜNSTIG (Preis >= Limit ist identisch zu Solar)
+          - conditions:
+              - condition: template
+                value_template: "{{ modus == 'Solar + günstig' and preis >= grenze }}"
+            sequence:
+              - action: automation.trigger
+                target: { entity_id: automation.wuefl_wallbox_und_speicher_regelung }
+
+          # Mode: SCHNELL ODER SOLAR + GÜNSTIG (mit Preis < Limit)
+          - conditions:
+              - condition: template
+                value_template: "{{ modus == 'Schnell' or (modus == 'Solar + günstig' and preis < grenze) }}"
+            sequence:
+              - action: number.set_value
+                target: { entity_id: "{{ wallbox_power_set_entity }}" }
+                data: { value: "{{ max_power_cfg | int }}" }
+              - action: number.set_value
+                target: { entity_id: "{{ wallbox_activate_entity }}" }
+                data: { value: 1 }
+
+              # Akkusteuerung bei Schnell / Günstig
+              - if:
+                  - condition: template
+                    value_template: "{{ has_battery and can_control_battery }}"
+                then:
+                  - choose:
+                      # Akku Priorität & Freigabe aktiv & unter Limit -> Force Charge
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ prio == 'Hausakku zuerst' and freigabe and batt_soc < reserve and batt_force_charge is not none }}"
+                        sequence:
+                          - action: homeassistant.turn_on
+                            target: { entity_id: "{{ batt_force_charge }}" }
+
+                      # Sonst Entladung stoppen (Freeze)
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ batt_stop_discharging is not none }}"
+                        sequence:
+                          - action: homeassistant.turn_on
+                            target: { entity_id: "{{ batt_stop_discharging }}" }
+
+      # -----------------------------------------------------------------
+      # 2. AKKULADEN BEI SCHLECHTER PROGNOSE & GÜNSTIGEM STROM
+      # -----------------------------------------------------------------
+      - variables:
+          durchschnitt_verbrauch: "{{ (states('sensor.hausverbrauch_letzte_woche_gesamt') | float(0)) / 7.0 }}"
+          wetter_prognose: "{{ states(weather_forecast_entity) | float(0) }}"
+          kondition_akku_laden: "{{ preis < grenze and wetter_prognose < durchschnitt_verbrauch and batt_soc < 80 }}"
+
+      - if:
+          - condition: template
+            value_template: "{{ has_battery and can_control_battery and kondition_akku_laden and batt_force_charge is not none }}"
+        then:
+          - action: homeassistant.turn_on
+            target: { entity_id: "{{ batt_force_charge }}" }
+        else:
+          # Automatisches Zurücksetzen auf Normal Mode wenn kein Force Charge mehr greift
+          - if:
+              - condition: template
+                value_template: "{{ has_battery and can_control_battery and modus not in ['Schnell', 'Solar + günstig'] }}"
+            then:
+              - action: homeassistant.turn_on
+                target: { entity_id: "{{ batt_normal_mode }}" }

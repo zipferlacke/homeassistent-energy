@@ -10,13 +10,14 @@ modbus:
     host: !secret mennekes_modbus_host_ip
     port: !secret mennekes_modbus_port
     delay: 15
-    timeout: 30
+    timeout: 50
+    retries: 3
     message_wait_milliseconds: !secret mennekes_modbus_wait_milliseconds
 
     sensors:
       # --- ENERGIE (in Wh vom Modbus, skaliert auf kWh) ---
-      - name: "Mennekes Gesamtzählerstand"
-        unique_id: mennekes_gesamtzaehlerstand
+      - name: "Mennekes Gesamtenergie"
+        unique_id: mennekes_total_energy
         address: 218
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
@@ -26,11 +27,11 @@ modbus:
         unit_of_measurement: "kWh"
         device_class: energy
         state_class: total_increasing
-        scan_interval: 30
+        scan_interval: &scan_fast 15
 
       # --- LEISTUNG (in W vom Modbus) ---
-      - name: "Mennekes Gesamtleistung"
-        unique_id: mennekes_gesamtleistung
+      - name: "Mennekes aktuelle Ladeleistung"
+        unique_id: mennekes_current_power
         address: 220
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
@@ -38,7 +39,7 @@ modbus:
         unit_of_measurement: "W"
         device_class: power
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_fast
 
       - name: "Mennekes Leistung L1"
         unique_id: mennekes_leistung_l1
@@ -49,7 +50,7 @@ modbus:
         unit_of_measurement: "W"
         device_class: power
         state_class: measurement
-        scan_interval: 15
+        scan_interval: &scan_medium 40
 
       - name: "Mennekes Leistung L2"
         unique_id: mennekes_leistung_l2
@@ -60,7 +61,7 @@ modbus:
         unit_of_measurement: "W"
         device_class: power
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_medium
 
       - name: "Mennekes Leistung L3"
         unique_id: mennekes_leistung_l3
@@ -71,7 +72,7 @@ modbus:
         unit_of_measurement: "W"
         device_class: power
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_medium
 
       # --- STROM (in mA vom Modbus, skaliert auf A) ---
       - name: "Mennekes Strom L1"
@@ -85,7 +86,7 @@ modbus:
         unit_of_measurement: "A"
         device_class: current
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_medium
         
       - name: "Mennekes Strom L2"
         unique_id: mennekes_strom_l2
@@ -98,7 +99,7 @@ modbus:
         unit_of_measurement: "A"
         device_class: current
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_medium
 
       - name: "Mennekes Strom L3"
         unique_id: mennekes_strom_l3
@@ -111,7 +112,7 @@ modbus:
         unit_of_measurement: "A"
         device_class: current
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_medium
 
       # --- SPANNUNG (in V vom Modbus) ---
       - name: "Mennekes Spannung L1"
@@ -123,7 +124,7 @@ modbus:
         unit_of_measurement: "V"
         device_class: voltage
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_medium
 
       - name: "Mennekes Spannung L2"
         unique_id: mennekes_spannung_l2
@@ -134,7 +135,7 @@ modbus:
         unit_of_measurement: "V"
         device_class: voltage
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_medium
 
       - name: "Mennekes Spannung L3"
         unique_id: mennekes_spannung_l3
@@ -145,7 +146,7 @@ modbus:
         unit_of_measurement: "V"
         device_class: voltage
         state_class: measurement
-        scan_interval: 15
+        scan_interval: *scan_medium
 
       # --- STATUS-REGISTER (Rohwerte) ---
       - name: "Mennekes OCPP Status Raw"
@@ -154,7 +155,7 @@ modbus:
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
         data_type: uint16
-        scan_interval: 15
+        scan_interval: *scan_fast
 
       - name: "Mennekes Fahrzeugstatus Raw"
         unique_id: mennekes_fahrzeugstatus_raw
@@ -162,7 +163,7 @@ modbus:
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
         data_type: uint16
-        scan_interval: 15
+        scan_interval: *scan_fast
 
       - name: "Mennekes CP Verfügbarkeit Raw"
         unique_id: mennekes_cp_verfuegbarkeit_raw
@@ -170,7 +171,7 @@ modbus:
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
         data_type: uint16
-        scan_interval: 30
+        scan_interval: *scan_medium
 
       - name: "Mennekes Steckerverriegelung Raw"
         unique_id: mennekes_steckerverriegelung_raw
@@ -178,7 +179,7 @@ modbus:
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
         data_type: uint16
-        scan_interval: 15
+        scan_interval: *scan_fast
         
       - name: "Mennekes Energie Aktueller Ladevorgang"
         unique_id: mennekes_energie_aktueller_ladevorgang
@@ -191,7 +192,7 @@ modbus:
         unit_of_measurement: "kWh"
         device_class: energy
         state_class: total
-        scan_interval: 30
+        scan_interval: *scan_medium
 
     # --- STEUERUNG ---
     numbers:
@@ -209,62 +210,119 @@ modbus:
 
 template:
   - sensor:
-      # Übersetzung für Register 104
-      - name: "Mennekes Status"
-        unique_id: mennekes_status_text
-        icon: mdi:ev-station
-        state: >
-          {% set mapper = {
-            0: 'Verfügbar (Frei)',
-            1: 'Belegt durch Auto',
-            2: 'Reserviert (komisch)',
-            3: 'Nicht verfügbar (komisch)',
-            4: 'Fehler',
-            5: 'Vorbereitung',
-            6: 'Laden aktiv',
-            7: 'Pausiert (Wallbox)',
-            8: 'Pausiert (Auto)',
-            9: 'Beendet'
-          } %}
-          {{ mapper.get(states('sensor.mennekes_ocpp_status_raw')|int(-1), 'Unbekannt') }}
+    # Übersetzung für Register 104
+    - name: "Mennekes OCCP Status"
+      unique_id: mennekes_status_text
+      icon: mdi:information-outline
+      state: >
+        {% set mapper = {
+          0: 'Verfügbar (Frei)',
+          1: 'Belegt durch Auto',
+          2: 'Reserviert (komisch)',
+          3: 'Nicht verfügbar (komisch)',
+          4: 'Fehler',
+          5: 'Vorbereitung',
+          6: 'Laden aktiv',
+          7: 'Pausiert (Wallbox)',
+          8: 'Pausiert (Auto)',
+          9: 'Beendet'
+        } %}
+        {{ mapper.get(states('sensor.mennekes_ocpp_status_raw')|int(-1), 'Unbekannt') }}
 
-      # Übersetzung für Register 122
-      - name: "Mennekes Kabel & Fahrzeug"
-        unique_id: mennekes_kabel_fahrzeug_text
-        icon: mdi:ev-plug-type2
-        state: >
-          {% set mapper = {
-            1: 'Kein Auto angesteckt (State A)',
-            2: 'Auto angesteckt, lädt nicht (State B)',
-            3: 'Auto lädt (State C)',
-            4: 'Lädt mit Lüftung (State D)',
-            5: 'Fehler (State E)'
-          } %}
-          {{ mapper.get(states('sensor.mennekes_fahrzeugstatus_raw')|int(-1), 'Unbekannt') }}
+    # Übersetzung für Register 122
+    - name: "Mennekes Kabel & Fahrzeug"
+      unique_id: mennekes_kabel_fahrzeug_text
+      icon: mdi:ev-plug-type2
+      state: >
+        {% set mapper = {
+          1: 'Kein Auto angesteckt (State A)',
+          2: 'Auto angesteckt, lädt nicht (State B)',
+          3: 'Auto lädt (State C)',
+          4: 'Lädt mit Lüftung (State D)',
+          5: 'Fehler (State E)'
+        } %}
+        {{ mapper.get(states('sensor.mennekes_fahrzeugstatus_raw')|int(-1), 'Unbekannt') }}
 
-      # Übersetzung für Register 152
-      - name: "Mennekes Steckerverriegelung"
-        unique_id: mennekes_stecker_text
-        icon: >
-          {% if states('sensor.mennekes_steckerverriegelung_raw')|int(-1) == 1 %}
-            mdi:lock
-          {% else %}
-            mdi:lock-open-variant
-          {% endif %}
-        state: >
-          {% set mapper = {
-            0: 'Entriegelt',
-            1: 'Verriegelt'
-          } %}
-          {{ mapper.get(states('sensor.mennekes_steckerverriegelung_raw')|int(-1), 'Unbekannt') }}
+    # Übersetzung für Register 152
+    - name: "Mennekes Steckerverriegelung"
+      unique_id: mennekes_stecker_text
+      icon: >
+        {% if states('sensor.mennekes_steckerverriegelung_raw')|int(-1) == 1 %}
+          mdi:lock
+        {% else %}
+          mdi:lock-open-variant
+        {% endif %}
+      state: >
+        {% set mapper = {
+          0: 'Entriegelt',
+          1: 'Verriegelt'
+        } %}
+        {{ mapper.get(states('sensor.mennekes_steckerverriegelung_raw')|int(-1), 'Unbekannt') }}
 
-      # Übersetzung für Register 124
-      - name: "Mennekes Betriebsbereitschaft"
-        unique_id: mennekes_betriebsbereitschaft_text
-        icon: mdi:power-plug
-        state: >
-          {% set mapper = {
-            0: 'Gesperrt / Fehler',
-            1: 'Betriebsbereit'
-          } %}
-          {{ mapper.get(states('sensor.mennekes_cp_verfuegbarkeit_raw')|int(-1), 'Unbekannt') }}
+    # Übersetzung für Register 124
+    - name: "Mennekes Betriebsbereitschaft"
+      unique_id: mennekes_betriebsbereitschaft_text
+      icon: mdi:power-plug
+      state: >
+        {% set mapper = {
+          0: 'Gesperrt / Fehler',
+          1: 'Betriebsbereit'
+        } %}
+        {{ mapper.get(states('sensor.mennekes_cp_verfuegbarkeit_raw')|int(-1), 'Unbekannt') }}
+    
+    # Zusammengestzer System Status puffert alten Wertzwischen
+    - name: "Mennekes Status"
+      unique_id: mennekes_status
+      icon: mdi:ev-station
+      state: >
+        {% set car_raw = states('sensor.mennekes_fahrzeugstatus_raw') | int(-1) %}
+        {% set ocpp_raw = states('sensor.mennekes_ocpp_status_raw') | int(-1) %}
+        
+        {# Hilfsvariable für den alten Zustand holen #}
+        {% set old = this.state if this.state is defined and this.state not in ['unknown', 'unavailable', 'None'] else 'Status unklar (Initialisierung)' %}
+        {# Verhindert "Alt: Alt:" indem es ein bestehendes "Alt: " erkennt #}
+        {% set old_clean = old if not old.startswith('Alt: ') else old[5:] %}
+        {% set alt_text = 'Alt: ' ~ old_clean %}
+
+        {# 1. Die bekannten, klaren Zustände abfragen #}
+        {% if car_raw == 1 %}
+          Kein Auto angesteckt
+        {% elif car_raw in [2, 3, 4] and ocpp_raw == 9 %}
+          Auto angesteckt, laden beendet
+        {% elif ocpp_raw == 7 %}
+          Laden pausiert, durch HA
+        {% elif ocpp_raw == 8 %}
+          Laden pausiert, durch Auto
+        {% elif car_raw == 2 and ocpp_raw in [0, 1, 5] %}
+          Auto angesteckt, noch nicht gestartet
+        {% elif ocpp_raw == 6 %}
+          Auto lädt aktiv
+          
+        {# 2. Fallback: Bei Fehlern (-1) oder unklaren Registerwerten den gepufferten Text mit "Alt:" senden #}
+        {% else %}
+          {{ alt_text }}
+        {% endif %}
+
+    # --- OPTIMIERTER BOOLEAN-SENSOR (Puffert seinen letzten Zustand bei Fehlern) ---
+  - binary_sensor:
+    - name: "Mennekes Ready for Charge"
+      unique_id: mennekes_ready_for_charge
+      device_class: plug
+      icon: mdi:ev-station
+      state: >
+        {% set car_raw = states('sensor.mennekes_fahrzeugstatus_raw') | int(-1) %}
+        {% set ocpp_raw = states('sensor.mennekes_ocpp_status_raw') | int(-1) %}
+        
+        {# Alten Zustand sichern (True oder False) #}
+        {% set old_bool = is_state('binary_sensor.mennekes_ready_for_charge', 'on') %}
+
+        {# 1. Gültige Werte verarbeiten #}
+        {% if car_raw != -1 and ocpp_raw != -1 %}
+          {% set noch_nicht_gestartet = (car_raw == 2 and ocpp_raw in) %}
+          {% set geladen_aber_pausiert = (car_raw in [2, 3, 4] and ocpp_raw in) %}
+          {{ noch_nicht_gestartet or geladen_aber_pausiert }}
+          
+        {# 2. Fallback: Bei Modbus-Ausfall (-1) den alten Zustand beibehalten #}
+        {% else %}
+          {{ old_bool }}
+        {% endif %}

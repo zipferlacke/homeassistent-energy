@@ -1010,9 +1010,7 @@ function enrichPeriod(range) {
   const end = new Date(range.end);
 
   // --- 1. TAG ---
-  const plus1Day = new Date(start);
-  plus1Day.setDate(plus1Day.getDate() + 1);
-  const overDay = end >= plus1Day;
+  const overDay = (end-start) >= 24 * 60 * 60 * 1000-1;
 
   // --- 2. WOCHE (>= 7 Tage ODER exakt Montag bis Sonntag) ---
   const plus1Week = new Date(start);

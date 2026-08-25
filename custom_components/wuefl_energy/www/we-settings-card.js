@@ -1,9 +1,6 @@
 /**
  * we-settings-card.js
  * Die Regeln, die für die ganze Anlage gelten — nicht je Wallbox.
- *
- * Liest zentral konfigurierte Entitäten aus specs.py (Hausakku-Freigabe,
- * Batteriereserve, Priorität bei Überschuss und Preisgrenze).
  */
 
 import {
@@ -20,7 +17,6 @@ const CSS = `
 
 .group {
   margin-top: 1.3rem;
-
   &:first-of-type { margin-top: .4rem; }
   & > h3 { color: var(--w-text-soft); font-size: var(--w-fs-sm); font-weight: 600;
            letter-spacing: .06em; margin-bottom: .7rem; text-transform: uppercase; }
@@ -34,7 +30,6 @@ const CSS = `
   & .note { color: var(--w-text-soft); display: block; font-size: var(--w-fs-sm); line-height: 1.45; }
 }
 
-/* Regler und Zahlenfeld nebeneinander */
 .control {
   align-items: center;
   display: flex;
@@ -51,9 +46,7 @@ const CSS = `
       font-variant-numeric: tabular-nums; height: var(--w-input-h); padding: 0;
       text-align: right; width: 3.2rem;
       &:focus { outline: none; }
-      &::-webkit-outer-spin-button, &::-webkit-inner-spin-button {
-        appearance: none; margin: 0;
-      }
+      &::-webkit-outer-spin-button, &::-webkit-inner-spin-button { appearance: none; margin: 0; }
       appearance: textfield;
     }
     & span { color: var(--w-text-soft); font-size: var(--w-fs-sm); }
@@ -72,31 +65,24 @@ const CSS = `
 }
 
 .choice {
-  background: var(--w-bg-soft);
-  border-radius: var(--w-radius);
-  display: grid; gap: 3px;
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-  margin-top: .5rem; padding: 3px;
-
+  background: var(--w-bg-soft); border-radius: var(--w-radius); display: grid; gap: 3px;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); margin-top: .5rem; padding: 3px;
   & .btn {
     background: transparent; border-radius: calc(var(--w-radius) - 3px);
     font-size: var(--w-fs-sm); height: auto; padding: .55rem .5rem; text-align: center;
-
     &:hover { background: var(--w-bg-hover); }
-    &[aria-pressed="true"] {
-      background: var(--w-accent); box-shadow: 0 1px 3px rgb(0 0 0 / .2);
-      color: var(--w-on-accent);
-    }
+    &[aria-pressed="true"] { background: var(--w-accent); box-shadow: 0 1px 3px rgb(0 0 0 / .2); color: var(--w-on-accent); }
   }
 }
 
 .link {
-  align-items: center; display: flex; gap: .5rem; justify-content: space-between;
-  width: 100%;
+  align-items: center; display: flex; gap: .5rem; justify-content: space-between; width: 100%;
   & ha-icon { --mdc-icon-size: 20px; }
 }
 
 .hint { color: var(--w-text-soft); font-size: var(--w-fs-sm); line-height: 1.5; margin: 0; }
+
+.error-box { background: var(--error-color, #ff5252); color: #fff; padding: 1rem; border-radius: 8px; font-family: monospace; }
 `;
 
 function getEntity(val) {
@@ -117,44 +103,66 @@ class WueflEnergySettingsCard extends HTMLElement {
   #els = {};
 
   static getConfigElement() { return document.createElement('we-settings-card-editor'); }
-  static getStubConfig() { return { title: 'Einstellungen' }; }
+  static getStubConfig() { return { }; }
 
   setConfig(config) {
-    this.#own = config ?? {};
-    this.#apply();
+    try {
+      this.#own = config ?? {};
+      this.#apply();
+    } catch (err) {
+      this.#renderError('setConfig', err);
+    }
   }
 
   set hass(hass) {
-    const first = !this.#hass;
-    const prev = this.#hass;
-    this.#hass = hass;
-    if (first) {
-      this.#loadCentral();
-      window.addEventListener('we-config-changed', () => this.#loadCentral());
+    try {
+      const first = !this.#hass;
+      const prev = this.#hass;
+      this.#hass = hass;
+      if (first) {
+        this.#loadCentral();
+        window.addEventListener('we-config-changed', () => this.#loadCentral());
+      }
+      if (first || statesChanged(prev, hass, this.#watch)) this.#update();
+    } catch (err) {
+      this.#renderError('set hass', err);
     }
-    if (first || statesChanged(prev, hass, this.#watch)) this.#update();
   }
 
   getCardSize() { return 6; }
 
-  async #loadCentral() {
-    const all = await centralConfig(this.#hass);
-    const rules = all.rules ?? {};
-    
-    this.#central = {
-      battery_use_entity: getEntity(rules.battery_use_entity ?? rules.use_battery_for_wallbox ?? all.battery_use_entity),
-      battery_reserve_entity: getEntity(rules.battery_reserve_entity ?? rules.battery_reserve ?? all.battery_reserve_entity),
-      priority_entity: getEntity(rules.priority_entity ?? rules.pv_priority ?? all.priority_entity),
-      price_limit_entity: getEntity(rules.price_limit_entity ?? all.grid?.price_limit ?? all.price_limit_entity),
-      wallbox_count: (all.wallboxes ?? []).length,
-    };
+  #renderError(step, err) {
+    console.error(`🚨 [we-settings-card] Crash in ${step}:`, err);
+    this.innerHTML = `<div class="error-box">
+      <strong>🚨 Systemabsturz in we-settings-card (${step})</strong><br><br>
+      <div style="white-space: pre-wrap; font-size: 12px;">${err.stack || err.message || err}</div>
+    </div>`;
+  }
 
-    this.#apply();
-    this.#update();
+  async #loadCentral() {
+    try {
+      const all = await centralConfig(this.#hass);
+      
+      this.#central = {
+        battery_use_entity: getEntity(all.wallboxes_config?.battery_ussage_charging),
+        battery_reserve_entity: getEntity(all.wallboxes_config?.battery_ussage_limit_charging),
+        battery_bad_weather_entity: getEntity(all.wallboxes_config?.charge_battery_bad_weather),
+        priority_entity: getEntity(all.systemdata?.priority_charging),
+        price_limit_entity: getEntity(all.wallboxes_config?.price_limit_charging),
+        price_import_entity: getEntity(all.grid?.price_import), 
+        price_export_entity: getEntity(all.grid?.price_export),
+        wallbox_count: (all.wallboxes ?? []).length,
+      };
+
+      this.#apply();
+      this.#update();
+    } catch (err) {
+      this.#renderError('loadCentral', err);
+    }
   }
 
   #apply() {
-    this.#config = { title: 'Einstellungen', ...mergeConfig(this.#central, this.#own) };
+    this.#config = { ... mergeConfig(this.#central, this.#own) };
     this.#watch = entityIds(this.#config);
     this.#built = false;
     if (this.shadowRoot) this.shadowRoot.replaceChildren();
@@ -170,16 +178,33 @@ class WueflEnergySettingsCard extends HTMLElement {
     card.innerHTML = `
       <h2></h2>
 
+      <div class="group grid-prices" hidden>
+        <h3>Stromtarife</h3>
+        <div class="row priceImport" hidden>
+          <div class="head"><span class="label">Strompreis Bezug (Fix)</span></div>
+          <div class="control priceImport">
+            <input type="range" min="0" max="100" step="1">
+            <label class="num"><input type="number" min="0" max="100" step="1"><span>ct</span></label>
+          </div>
+        </div>
+        <div class="row priceExport" hidden>
+          <div class="head"><span class="label">Einspeisevergütung (Fix)</span></div>
+          <div class="control priceExport">
+            <input type="range" min="0" max="100" step="1">
+            <label class="num"><input type="number" min="0" max="100" step="1"><span>ct</span></label>
+          </div>
+        </div>
+      </div>
+
       <div class="group wallbox" hidden>
-        <h3>Laderegeln Wallbox</h3>
+        <h3>Laderegeln Wallbox & Hausakku</h3>
 
         <div class="row use" hidden>
           <div class="head">
             <span class="label">Hausakku fürs Auto nutzen</span>
-            <button class="switch" role="switch" aria-checked="false" type="button"><span></span></button>
+            <button class="switch switch-use" role="switch" aria-checked="false" type="button"><span></span></button>
           </div>
-          <span class="note">Ohne Freigabe zieht das Auto nur Sonne und Netzstrom,
-            die Batterie bleibt dem Haus vorbehalten.</span>
+          <span class="note">Ohne Freigabe zieht das Auto nur Sonne und Netzstrom, die Batterie bleibt dem Haus vorbehalten.</span>
           <div class="reserve-block" hidden>
             <span class="sublabel">Akku nutzen bis</span>
             <div class="control reserve">
@@ -190,14 +215,21 @@ class WueflEnergySettingsCard extends HTMLElement {
           </div>
         </div>
 
+        <div class="row bad-weather" hidden>
+          <div class="head">
+            <span class="label">Hausakku Netzladung (Schlechtwetter & Billigstrom)</span>
+            <button class="switch switch-bad-weather" role="switch" aria-checked="false" type="button"><span></span></button>
+          </div>
+          <span class="note">Erlaubt das Netzladen des Hausakkus, wenn der Strompreis günstig und die Solarprognose niedrig ist.</span>
+        </div>
+
         <div class="row limit" hidden>
           <div class="head"><span class="label">Netzstrom nutzen bis</span></div>
           <div class="control limit">
-            <input type="range" min="0" max="500" step="1">
-            <label class="num"><input type="number" min="0" max="500" step="1"><span>ct</span></label>
+            <input type="range" min="0" max="100" step="1">
+            <label class="num"><input type="number" min="0" max="100" step="1"><span>ct</span></label>
           </div>
-          <span class="note">Gilt im Lademodus mit günstigem Strom. Liegt der Börsenpreis
-            darüber, wartet die Wallbox auf Sonne.</span>
+          <span class="note">Gilt im Lademodus mit günstigem Strom. Liegt der Börsenpreis darüber, wartet die Wallbox auf Sonne.</span>
         </div>
       </div>
 
@@ -206,26 +238,19 @@ class WueflEnergySettingsCard extends HTMLElement {
         <div class="row prio">
           <div class="head"><span class="label">Hausakku zuerst oder Auto zuerst</span></div>
           <div class="choice"></div>
-          <span class="note">Wohin der Sonnenüberschuss zuerst geht, wenn Batterie und
-            Auto beide Bedarf haben.</span>
+          <span class="note">Wohin der Sonnenüberschuss zuerst geht, wenn Batterie und Auto beide Bedarf haben.</span>
         </div>
       </div>
 
       <div class="group">
         <h3>Home Assistant Entitäten zuordnen</h3>
         <button type="button" class="btn open-config">
-          <span class="link">
-            <span>Zuordnung öffnen</span>
-            ${icon('mdi:chevron-right')}
-          </span>
+          <span class="link"><span>Zuordnung öffnen</span>${icon('mdi:chevron-right')}</span>
         </button>
-        <p class="hint" style="margin-top:.6rem">Welche Entität wofür steht — Netz,
-          Solaranlage, Batterie, Wallboxen und Fahrzeuge.</p>
+        <p class="hint" style="margin-top:.6rem">Welche Entität wofür steht — Netz, Solaranlage, Batterie, Wallboxen und Fahrzeuge.</p>
       </div>
 
-      <p class="hint empty" hidden>Sobald du in der Zuordnung eine Wallbox anlegst,
-        erscheinen hier automatisch die Laderegler — die Helfer dafür legt die
-        Integration selbst an, ohne dass du etwas zuordnen musst.</p>
+      <p class="hint empty" hidden>Sobald du in der Zuordnung eine Wallbox anlegst, erscheinen hier automatisch die Laderegler — die Helfer dafür legt die Integration selbst an, ohne dass du etwas zuordnen musst.</p>
     `;
     root.appendChild(card);
 
@@ -233,8 +258,16 @@ class WueflEnergySettingsCard extends HTMLElement {
     this.#els = {
       card,
       title: q('h2'),
+      gridPrices: q('.group.grid-prices'),
+      priceImportRow: q('.row.priceImport'),
+      priceImportRange: q('.control.priceImport input[type="range"]'),
+      priceImportNum: q('.control.priceImport input[type="number"]'),
+      priceExportRow: q('.row.priceExport'),
+      priceExportRange: q('.control.priceExport input[type="range"]'),
+      priceExportNum: q('.control.priceExport input[type="number"]'),
       wallbox: q('.group.wallbox'), general: q('.group.general'),
-      use: q('.row.use'), useSwitch: q('.switch'),
+      use: q('.row.use'), useSwitch: q('.switch-use'),
+      badWeatherRow: q('.row.bad-weather'), badWeatherSwitch: q('.switch-bad-weather'),
       reserveBlock: q('.reserve-block'),
       reserveRange: q('.control.reserve input[type="range"]'),
       reserveNum: q('.control.reserve input[type="number"]'),
@@ -245,79 +278,59 @@ class WueflEnergySettingsCard extends HTMLElement {
       empty: q('.hint.empty'),
     };
 
-    this.#els.useSwitch.addEventListener('click', () => {
+    this.#els.useSwitch?.addEventListener('click', () => {
       const on = this.#els.useSwitch.getAttribute('aria-checked') === 'true';
       this.#toggle(this.#config.battery_use_entity, !on);
+    });
+
+    this.#els.badWeatherSwitch?.addEventListener('click', () => {
+      const on = this.#els.badWeatherSwitch.getAttribute('aria-checked') === 'true';
+      this.#toggle(this.#config.battery_bad_weather_entity, !on);
     });
 
     for (const [key, cfgKey] of [
       ['reserve', 'battery_reserve_entity'],
       ['limit', 'price_limit_entity'],
+      ['priceImport', 'price_import_entity'],
+      ['priceExport', 'price_export_entity']
     ]) {
       const range = this.#els[`${key}Range`];
       const numIn = this.#els[`${key}Num`];
 
-      range.addEventListener('input', () => {
-        this.#drag = key;
-        numIn.value = range.value;
-      });
-      range.addEventListener('change', () => {
-        this.#drag = null;
-        this.#setNumber(this.#config[cfgKey], Number(range.value));
-      });
-      numIn.addEventListener('input', () => { this.#drag = key; });
-      numIn.addEventListener('change', () => {
-        this.#drag = null;
-        const v = Math.min(Number(numIn.max), Math.max(Number(numIn.min), Number(numIn.value)));
-        numIn.value = v;
-        range.value = v;
-        this.#setNumber(this.#config[cfgKey], v);
-      });
+      if(range && numIn) {
+        range.addEventListener('input', () => { this.#drag = key; numIn.value = range.value; });
+        range.addEventListener('change', () => { this.#drag = null; this.#setNumber(this.#config[cfgKey], Number(range.value)); });
+        numIn.addEventListener('input', () => { this.#drag = key; });
+        numIn.addEventListener('change', () => {
+          this.#drag = null;
+          const v = Math.min(Number(numIn.max), Math.max(Number(numIn.min), Number(numIn.value)));
+          numIn.value = v; range.value = v; this.#setNumber(this.#config[cfgKey], v);
+        });
+      }
     }
 
-    q('.open-config').addEventListener('click', () => {
-      this.dispatchEvent(new CustomEvent('wuefl-open-config', { bubbles: true, composed: true }));
-      try {
-        const base = window.location.pathname.split('/').slice(0, 2).join('/');
-        history.pushState(null, '', `${base}/zuordnung`);
-        window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
-      } catch {
-        // Sandbox-Schutz fangen
-      }
-    });
+    const cfgBtn = q('.open-config');
+    if (cfgBtn) {
+      cfgBtn.addEventListener('click', () => {
+        this.dispatchEvent(new CustomEvent('wuefl-open-config', { bubbles: true, composed: true }));
+        try {
+          const base = window.location.pathname.split('/').slice(0, 2).join('/');
+          history.pushState(null, '', `${base}/zuordnung`);
+          window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+        } catch { }
+      });
+    }
 
     this.#built = true;
     this.#update();
   }
 
-  /* ------------------------------ Dienste --------------------------- */
-
   #domain(e) { return e ? e.split('.')[0] : null; }
+  #setNumber(id, value) { const d = this.#domain(id); if (d) this.#hass.callService(d, 'set_value', { entity_id: id, value }); }
+  #toggle(id, on) { const d = this.#domain(id); if (d) this.#hass.callService(d, on ? 'turn_on' : 'turn_off', { entity_id: id }); }
+  #setOption(id, option) { const d = this.#domain(id); if (d) this.#hass.callService(d, 'select_option', { entity_id: id, option }); }
 
-  #setNumber(id, value) {
-    const d = this.#domain(id);
-    if (!d) return;
-    this.#hass.callService(d, 'set_value', { entity_id: id, value });
-  }
-
-  #toggle(id, on) {
-    const d = this.#domain(id);
-    if (!d) return;
-    this.#hass.callService(d, on ? 'turn_on' : 'turn_off', { entity_id: id });
-  }
-
-  #setOption(id, option) {
-    const d = this.#domain(id);
-    if (!d) return;
-    this.#hass.callService(d, 'select_option', { entity_id: id, option });
-  }
-
-  /* ------------------------------ Anzeige --------------------------- */
-
-  #has(key) {
-    const id = this.#config[key];
-    return !!id && !!this.#hass.states[id];
-  }
+  #has(key) { return !!this.#config[key] && !!this.#hass.states[this.#config[key]]; }
 
   #syncControl(key, entityId, fallback) {
     const st = entityId ? this.#hass.states[entityId] : null;
@@ -325,63 +338,73 @@ class WueflEnergySettingsCard extends HTMLElement {
 
     const range = this.#els[`${key}Range`];
     const numIn = this.#els[`${key}Num`];
+    if (!range || !numIn) return;
 
     const min = st.attributes.min ?? fallback.min;
     const max = st.attributes.max ?? fallback.max;
     const step = st.attributes.step ?? fallback.step;
 
-    range.min = min;
-    range.max = max;
-    range.step = step;
-
-    numIn.min = min;
-    numIn.max = max;
-    numIn.step = step;
+    range.min = min; range.max = max; range.step = step;
+    numIn.min = min; numIn.max = max; numIn.step = step;
 
     if (this.#drag !== key) {
       const v = num(this.#hass, entityId) ?? fallback.default;
-      range.value = v;
-      numIn.value = v;
+      range.value = v; numIn.value = v;
     }
   }
 
   #update() {
-    if (!this.#built) { this.#build(); return; }
-    if (!this.#hass) return;
-    const c = this.#config;
-    const h = this.#hass;
+    try {
+      if (!this.#built) { this.#build(); return; }
+      if (!this.#hass) return;
+      const c = this.#config;
+      const h = this.#hass;
 
-    this.#els.title.textContent = c.title ?? 'Einstellungen';
+      const hasWallbox = (c.wallbox_count ?? 0) > 0;
+      const hasUse = hasWallbox && this.#has('battery_use_entity');
+      const hasReserve = hasWallbox && this.#has('battery_reserve_entity');
+      const hasBadWeather = this.#has('battery_bad_weather_entity');
+      const hasLimit = hasWallbox && this.#has('price_limit_entity');
+      const hasPrio = hasWallbox && this.#has('priority_entity');
+      
+      const hasPriceImport = this.#has('price_import_entity');
+      const hasPriceExport = this.#has('price_export_entity');
 
-    const hasWallbox = (c.wallbox_count ?? 0) > 0;
-    const hasUse = hasWallbox && this.#has('battery_use_entity');
-    const hasReserve = hasWallbox && this.#has('battery_reserve_entity');
-    const hasLimit = hasWallbox && this.#has('price_limit_entity');
-    const hasPrio = hasWallbox && this.#has('priority_entity');
+      if (this.#els.gridPrices) this.#els.gridPrices.hidden = !hasPriceImport && !hasPriceExport;
+      if (this.#els.priceImportRow) this.#els.priceImportRow.hidden = !hasPriceImport;
+      if (hasPriceImport) this.#syncControl('priceImport', c.price_import_entity, { min: 0, max: 100, step: 1, default: 33 });
 
-    this.#els.use.hidden = !hasUse;
-    let useOn = false;
-    if (hasUse) {
-      useOn = h.states[c.battery_use_entity].state === 'on';
-      this.#els.useSwitch.setAttribute('aria-checked', String(useOn));
+      if (this.#els.priceExportRow) this.#els.priceExportRow.hidden = !hasPriceExport;
+      if (hasPriceExport) this.#syncControl('priceExport', c.price_export_entity, { min: 0, max: 100, step: 1, default: 8 });
+
+      if (this.#els.use) this.#els.use.hidden = !hasUse;
+      let useOn = false;
+      if (hasUse) {
+        useOn = h.states[c.battery_use_entity].state === 'on';
+        if (this.#els.useSwitch) this.#els.useSwitch.setAttribute('aria-checked', String(useOn));
+      }
+
+      const showReserve = hasReserve && useOn;
+      if (this.#els.reserveBlock) this.#els.reserveBlock.hidden = !showReserve;
+      if (showReserve) this.#syncControl('reserve', c.battery_reserve_entity, { min: 0, max: 100, step: 5, default: 20 });
+
+      if (this.#els.badWeatherRow) this.#els.badWeatherRow.hidden = !hasBadWeather;
+      if (hasBadWeather) {
+        const bwOn = h.states[c.battery_bad_weather_entity].state === 'on';
+        if (this.#els.badWeatherSwitch) this.#els.badWeatherSwitch.setAttribute('aria-checked', String(bwOn));
+      }
+
+      if (this.#els.limit) this.#els.limit.hidden = !hasLimit;
+      if (hasLimit) this.#syncControl('limit', c.price_limit_entity, { min: 0, max: 100, step: 1, default: 30 });
+
+      if (this.#els.wallbox) this.#els.wallbox.hidden = !hasUse && !hasLimit && !hasBadWeather;
+      if (this.#els.general) this.#els.general.hidden = !hasPrio;
+      if (hasPrio) this.#renderChoice(h.states[c.priority_entity]);
+
+      if (this.#els.empty) this.#els.empty.hidden = hasUse || hasLimit || hasPrio || hasPriceImport || hasPriceExport || hasBadWeather;
+    } catch (err) {
+      this.#renderError('update', err);
     }
-
-    const showReserve = hasReserve && useOn;
-    this.#els.reserveBlock.hidden = !showReserve;
-    if (showReserve) {
-      this.#syncControl('reserve', c.battery_reserve_entity, { min: 0, max: 100, step: 5, default: 20 });
-    }
-
-    this.#els.limit.hidden = !hasLimit;
-    if (hasLimit) {
-      this.#syncControl('limit', c.price_limit_entity, { min: 0, max: 60, step: 0.5, default: 30 });
-    }
-
-    this.#els.wallbox.hidden = !hasUse && !hasLimit;
-    this.#els.general.hidden = !hasPrio;
-    if (hasPrio) this.#renderChoice(h.states[c.priority_entity]);
-
-    this.#els.empty.hidden = hasUse || hasLimit || hasPrio;
   }
 
   #renderChoice(state) {
@@ -389,16 +412,14 @@ class WueflEnergySettingsCard extends HTMLElement {
     const options = state.attributes.options ?? [];
     const sig = options.join('|');
     const box = this.#els.choice;
+    if (!box) return;
 
     if (box.dataset.sig !== sig) {
       box.dataset.sig = sig;
       box.replaceChildren();
       for (const opt of options) {
         const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'btn';
-        btn.dataset.option = opt;
-        btn.textContent = esc(opt);
+        btn.type = 'button'; btn.className = 'btn'; btn.dataset.option = opt; btn.textContent = esc(opt);
         btn.addEventListener('click', () => this.#setOption(this.#config.priority_entity, opt));
         box.appendChild(btn);
       }
@@ -409,28 +430,8 @@ class WueflEnergySettingsCard extends HTMLElement {
   }
 }
 
-/* -------------------------------------------------------------------- */
-
-const SCHEMA = [
-  { name: 'title', selector: sel.text() },
-  {
-    type: 'expandable', name: '', title: 'Abweichend von der zentralen Zuordnung',
-    schema: [
-      { name: 'battery_use_entity', selector: sel.pick(['switch', 'input_boolean']) },
-      { name: 'battery_reserve_entity', selector: sel.pick(['number', 'input_number']) },
-      { name: 'priority_entity', selector: sel.pick(['select', 'input_select']) },
-      { name: 'price_limit_entity', selector: sel.pick(['number', 'input_number']) },
-    ],
-  },
-];
-
-const LABELS = {
-  title: 'Überschrift',
-  battery_use_entity: 'Freigabe: aus Hausakku laden',
-  battery_reserve_entity: 'Batterie nutzen bis … %',
-  priority_entity: 'Priorität bei Überschuss',
-  price_limit_entity: 'Preisgrenze fürs Laden',
-};
+const SCHEMA = [];
+const LABELS = {};
 
 class WueflEnergySettingsCardEditor extends WueflFormEditor {
   schema = SCHEMA;
@@ -442,6 +443,6 @@ customElements.define('we-settings-card-editor', WueflEnergySettingsCardEditor);
 
 registerCard({
   type: 'we-settings-card',
-  name: 'wuefl Einstellungen',
+  name: 'WEnergy Einstellungen',
   description: 'Laderegeln für alle Wallboxen und der Weg zur Zuordnung.',
 });

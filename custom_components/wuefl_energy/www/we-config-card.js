@@ -1,3 +1,6 @@
+import { saveConfig } from './we-shared.js';
+import { PRESETS } from './presets.js';
+
 /* ------------------------------------------------------------------ *
  * Helper-Funktionen & Selector-Generatoren
  * ------------------------------------------------------------------ */
@@ -36,62 +39,6 @@ function normalizeConfig(cfg) {
 }
 
 /* ------------------------------------------------------------------ *
- * PRESETS (Vorlagen)
- * ------------------------------------------------------------------ */
-
-const PRESETS = {
-  ha_default: {
-    label: 'Standard Home Assistant',
-    hint: 'Sucht nach Standard-Entitäten mit üblichen Namen.',
-    grid: {
-      live: ['sensor.grid_power', 'sensor.netzleistung'],
-      import_total: ['sensor.grid_import_energy', 'sensor.netzbezug_gesamt'],
-      export_total: ['sensor.grid_export_energy', 'sensor.stromeinspeisung_gesamt'],
-    },
-    solar: [
-      {
-        name: 'PV-Anlage Hauptdach',
-        live: ['sensor.pv_power', 'sensor.solar_power', 'sensor.photovoltaik_leistung'],
-        total: ['sensor.pv_energy', 'sensor.solar_energy_total'],
-      },
-    ],
-    battery: [
-      {
-        name: 'Hausspeicher',
-        live: ['sensor.battery_power', 'sensor.batterie_leistung'],
-        percent: ['sensor.battery_state_of_charge', 'sensor.batterie_ladestand'],
-      },
-    ],
-    consumers: {
-      live: ['sensor.house_power', 'sensor.hausverbrauch_live'],
-    },
-  },
-  fronius: {
-    label: 'Fronius Inverter',
-    hint: 'Sucht nach typischen Fronius Symo / Gen24 Sensoren.',
-    grid: {
-      live: ['sensor.solarnet_power_grid'],
-      import_total: ['sensor.smart_meter_energy_ac_consumed'],
-      export_total: ['sensor.smart_meter_energy_ac_produced'],
-    },
-    solar: [
-      {
-        name: 'Fronius PV',
-        live: ['sensor.solarnet_power_photovoltaics'],
-        total: ['sensor.inverter_energy_total'],
-      },
-    ],
-    battery: [
-      {
-        name: 'Fronius Speicher',
-        live: ['sensor.solarnet_power_battery'],
-        percent: ['sensor.inverter_state_of_charge'],
-      },
-    ],
-  },
-};
-
-/* ------------------------------------------------------------------ *
  * BLOCKS Configuration
  * ------------------------------------------------------------------ */
 
@@ -105,14 +52,14 @@ const BLOCKS = [
     empty: 'Netzanschluss einrichten',
     summary: (e) => e.live?.entity || e.live,
     schema: [
-      { name: 'live', selector: () => watt() },
-      { name: 'import_total', selector: () => kwh(true) },
-      { name: 'export_total', selector: () => kwh(true) },
-      { name: 'price_import', selector: () => money() },
-      { name: 'price_export', selector: () => money() },
-      { name: 'price_import_forecast', selector: () => money() },
-      { name: 'price_export_forecast', selector: () => money() },
-      { name: 'color', selector: () => text() },
+      { name: 'live', selector: watt() },
+      { name: 'import_total', selector: kwh(true) },
+      { name: 'export_total', selector: kwh(true) },
+      { name: 'price_import', selector: { entity: { filter: [{ domain: 'sensor' }, { entity_id: 'number.we_price_import_energy' } ]} }},
+      { name: 'price_export', selector: { entity: { filter: [{ domain: 'sensor' }, { entity_id: 'number.we_price_export_energy' } ]} }},
+      { name: 'price_import_forecast', selector: money() },
+      { name: 'price_export_forecast', selector: money() },
+      { name: 'color', selector: text() },
     ],
   },
   {
@@ -125,12 +72,12 @@ const BLOCKS = [
     label: (e, i) => e.name || `PV-Anlage ${i + 1}`,
     summary: (e) => e.live?.entity || e.live,
     schema: [
-      { name: 'name', selector: () => text() },
-      { name: 'live', selector: () => watt() },
-      { name: 'total', selector: () => kwh() },
-      { name: 'forecast', selector: () => kwh(true) },
-      { name: 'temperatur', selector: () => temp() },
-      { name: 'color', selector: () => text() },
+      { name: 'name', selector: text() },
+      { name: 'live', selector: watt() },
+      { name: 'total', selector: kwh() },
+      { name: 'forecast', selector: kwh(true) },
+      { name: 'temperatur', selector: temp() },
+      { name: 'color', selector: text() },
     ],
   },
   {
@@ -144,9 +91,9 @@ const BLOCKS = [
     label: (e, i) => e.name || `String ${i + 1}`,
     summary: (e) => e.live?.entity || e.live,
     schema: [
-      { name: 'name', selector: () => text() },
-      { name: 'live', selector: () => watt() },
-      { name: 'color', selector: () => text() },
+      { name: 'name', selector: text() },
+      { name: 'live', selector: watt() },
+      { name: 'color', selector: text() },
     ],
   },
   {
@@ -159,13 +106,23 @@ const BLOCKS = [
     label: (e, i) => e.name || `Batterie ${i + 1}`,
     summary: (e) => e.live?.entity || e.live,
     schema: [
-      { name: 'name', selector: () => text() },
-      { name: 'live', selector: () => watt() },
-      { name: 'percent', selector: () => percent() },
-      { name: 'in_total', selector: () => kwh() },
-      { name: 'out_total', selector: () => kwh() },
-      { name: 'temperatur', selector: () => temp() },
-      { name: 'color', selector: () => text() },
+      { name: 'name', selector: text() },
+      { name: 'live', selector: watt() },
+      { name: 'percent', selector: percent() },
+      { name: 'in_total', selector: kwh() },
+      { name: 'out_total', selector: kwh() },
+      { name: 'temperatur', selector: temp() },
+      { name: 'color', selector: text() },
+      {
+        type: 'expandable',
+        name: 'control',
+        title: 'Hausakku Lade-/Entladesperre',
+        schema: [
+          { name: 'mode_stop_discharging', selector: { entity: { filter: [{ domain: 'scene' }, { domain: 'script' }, { domain: 'switch' }] } } },
+          { name: 'mode_start_charging', selector: { entity: { filter: [{ domain: 'scene' }, { domain: 'script' }, { domain: 'switch' }] } } },
+          { name: 'normal_mode', selector: { entity: { filter: [{ domain: 'scene' }, { domain: 'script' }, { domain: 'switch' }] } } },
+        ],
+      },
     ],
   },
   {
@@ -177,9 +134,9 @@ const BLOCKS = [
     empty: 'Haushalt einrichten',
     summary: (e) => e.live?.entity || e.live,
     schema: [
-      { name: 'live', selector: () => watt() },
-      { name: 'total', selector: () => kwh() },
-      { name: 'color', selector: () => text() },
+      { name: 'live', selector: watt() },
+      { name: 'total', selector: kwh() },
+      { name: 'color', selector: text() },
     ],
   },
   {
@@ -192,11 +149,11 @@ const BLOCKS = [
     label: (e, i) => e.name || `Wärmepumpe ${i + 1}`,
     summary: (e) => e.live?.entity || e.live,
     schema: [
-      { name: 'name', selector: () => text() },
-      { name: 'live', selector: () => watt() },
-      { name: 'total', selector: () => kwh() },
-      { name: 'temperatur', selector: () => temp() },
-      { name: 'color', selector: () => text() },
+      { name: 'name', selector: text() },
+      { name: 'live', selector: watt() },
+      { name: 'total', selector: kwh() },
+      { name: 'temperatur', selector: temp() },
+      { name: 'color', selector: text() },
     ],
   },
   {
@@ -209,21 +166,21 @@ const BLOCKS = [
     label: (e, i) => e.name || `Wallbox ${i + 1}`,
     summary: (e) => e.live?.entity || e.live,
     schema: [
-      { name: 'name', selector: () => text() },
-      { name: 'live', selector: () => watt() },
-      { name: 'total', selector: () => kwh() },
-      { name: 'total_session', selector: () => kwh() },
-      { name: 'status', selector: () => ({ entity: { filter: { domain: 'sensor' } } }) },
-      { name: 'ready_for_charge', selector: () => bool() },
-      { name: 'car_percent', selector: () => percent() },
-      { name: 'color', selector: () => text() },
+      { name: 'name', selector: text() },
+      { name: 'live', selector: watt() },
+      { name: 'total', selector: kwh() },
+      { name: 'total_session', selector: kwh() },
+      { name: 'status', selector: ({ entity: { filter: { domain: 'sensor' } } }) },
+      { name: 'ready_for_charge', selector: ({ entity: { filter: { domain: ['binary_sensor','sensor'] } } }) },
+      { name: 'car_percent', selector: percent() },
+      { name: 'color', selector: text() },
       {
         type: 'expandable',
         name: 'more',
         title: 'Hardware & Grenzen',
-        fields: [
-          { name: 'phases_value', selector: () => number(1, 3, 1) },
-          { name: 'max_power_value', selector: () => number(1000, 30000, 100) },
+        schema: [
+          { name: 'phases_value', selector: number(1, 3, 1) },
+          { name: 'max_power_value', selector: number(1000, 30000, 100) },
         ],
       },
     ],
@@ -238,10 +195,10 @@ const BLOCKS = [
     label: (e, i) => e.name || `Wassersystem ${i + 1}`,
     summary: (e) => e.live?.entity || e.live,
     schema: [
-      { name: 'name', selector: () => text() },
-      { name: 'live', selector: () => watt() },
-      { name: 'total', selector: () => kwh() },
-      { name: 'color', selector: () => text() },
+      { name: 'name', selector: text() },
+      { name: 'live', selector: watt() },
+      { name: 'total', selector: kwh() },
+      { name: 'color', selector: text() },
     ],
   },
   {
@@ -253,12 +210,12 @@ const BLOCKS = [
     empty: 'Systemdaten einrichten',
     summary: (e) => e.weather_entity?.entity || e.weather_entity,
     schema: [
-      { name: 'system_cost_value', selector: () => number(0, 500000, 100) },
-      { name: 'commissioned_value', selector: () => text() },
-      { name: 'house_base_load', selector: () => watt() },
-      { name: 'weather_entity', selector: () => ({ entity: { filter: { domain: 'weather' } } }) },
-      { name: 'temperatures', selector: () => temp(true) },
-      { name: 'extra_entities', selector: () => ({ entity: { multiple: true } }) },
+      { name: 'system_cost_value', selector: number(0, 500000, 100) },
+      { name: 'commissioned_value', selector: text() },
+      { name: 'house_base_load', selector: watt() },
+      { name: 'weather_entity', selector: ({ entity: { filter: { domain: 'weather' } } }) },
+      { name: 'temperatures', selector: temp(true) },
+      { name: 'extra_entities', selector: ({ entity: { multiple: true } }) },
     ],
   },
 ];
@@ -299,6 +256,9 @@ const LABELS = {
     out_total: 'Entladen gesamt',
     temperatur: 'Batterietemperatur',
     color: 'Farbe (HEX-Code / Name)',
+    mode_stop_discharging: 'Aktion: Entladen stoppen (Einfrieren)',
+    mode_start_charging: 'Aktion: Zwangsladen (Aus dem Netz laden)',
+    normal_mode: 'Aktion: Normalbetrieb (Standard)',
   },
   consumers: {
     live: 'Hausverbrauch (Live)',
@@ -316,7 +276,7 @@ const LABELS = {
     name: 'Bezeichnung',
     live: 'Aktuelle Ladeleistung',
     total: 'Gesamtenergie',
-    total_session: 'Energie des Ladevorgangs',
+    total_session: 'Gesamtenergie des Ladevorgangs',
     status: 'Status der Wallbox',
     ready_for_charge: 'Bereit zum Laden',
     car_percent: 'Fahrzeug Akku %',
@@ -349,14 +309,14 @@ const HELPERS = {
     live: 'Live-Wert in Watt (W). Positiv = Bezug, negativ = Einspeisung.',
     import_total: 'Gesamtzähler Netzbezug in kWh.',
     export_total: 'Gesamtzähler Einspeisung in kWh.',
-    price_import: 'Sensor für aktuellen Bezugsstrompreis.',
-    price_export: 'Sensor für aktuelle Einspeisevergütung.',
+    price_import: 'Sensor für aktuellen Bezugsstrompreis, bei Festpreis "Fix Strompreis" auswählen. In den Einstellung Wert hinterlegen.',
+    price_export: 'Sensor für aktuelle Einspeisevergütung, bei festpreis "Fix Einspeisevergütung" auswählen und in den Einstellung Wert hinterlegen.',
     price_import_forecast: 'Sensor/Attribut für vorhergesagte Bezugspreise.',
     price_export_forecast: 'Sensor/Attribut für vorhergesagte Einspeisepreise.',
     color: 'Farbe für Netzbezug/Einspeisung im Chart (z. B. #e74c3c oder red).',
   },
   solar: {
-    name: 'Name der Anlage oder des Dachs (z. B. "Dach Süd").',
+    name: 'Name der Anlage',
     live: 'Aktuelle PV-Leistung in Watt (W).',
     total: 'Gesamter ertragener Strom in kWh.',
     forecast: 'Prognose-Sensor (z. B. Solcast oder Forecast.Solar).',
@@ -376,6 +336,9 @@ const HELPERS = {
     out_total: 'Gesamte entladene Energie in kWh.',
     temperatur: 'Temperatursensor des Akkus.',
     color: 'Farbe der Batterie im Chart (z. B. #2ecc71 oder green).',
+    mode_stop_discharging: 'Sperrt die Akku-Entladung (z. B. beim Auto-Schnellladen). Wähle hier z. B. ein Skript, das die Entladeleistung auf 0W setzt.',
+    mode_start_charging: 'Erzwingt das Laden aus dem Netz (z. B. bei extrem billigem Strom). Für Sungrow: "scene.sungrow_set_battery_forced_charge".',
+    normal_mode: 'Versetzt den Wechselrichter wieder in den normalen Eigenverbrauchsmodus. Für Sungrow: "scene.sungrow_self_consumption_mode".',
   },
   consumers: {
     live: 'Live-Verbrauch in Watt (W). Leer lassen für automatische Errechnung.',
@@ -395,7 +358,7 @@ const HELPERS = {
     total: 'Gesamter Stromverbrauch der Wallbox in kWh.',
     total_session: 'Verbrauch der aktuellen Ladesession in kWh.',
     status: 'Sensor für Text-Status (z. B. "Fahrzeug verbunden").',
-    ready_for_charge: 'Schalter/Sensor, ob Wallbox freigegeben ist.',
+    ready_for_charge: 'Schalter/Sensor, ob Wallbox bereit zum laden ist.',
     car_percent: 'Batterie-Ladestand des verbundenen Autos in %.',
     phases_value: 'Anzahl aktiv genutzter Phasen (1–3).',
     max_power_value: 'Maximal erreichbare Ladeleistung in Watt (W).',
@@ -704,6 +667,8 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.overlay = this.shadowRoot.querySelector('#overlay');
     this.#els.dialogTitle = this.shadowRoot.querySelector('#dialog-title');
     this.#els.form = this.shadowRoot.querySelector('#form');
+    this.#els.form.schema = []; 
+    this.#els.form.data = {};
     this.#els.btnClose = this.shadowRoot.querySelector('#dialog-close');
     this.#els.btnCancel = this.shadowRoot.querySelector('#btn-cancel');
     this.#els.btnSave = this.shadowRoot.querySelector('#btn-save');
@@ -714,6 +679,7 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.btnSave.addEventListener('click', () => this.#commit());
     this.#els.form.addEventListener('value-changed', (ev) => {
       this.#draft = ev.detail.value;
+      this.#els.form.data = this.#draft;
     });
   }
 
@@ -872,6 +838,43 @@ class WueflEnergyConfigCard extends HTMLElement {
     }
   }
 
+  // Sucht alle bereits verwendeten Entitäten, klammert aber den aktuellen Dialog aus
+  #getUsedEntities(skipBlock, skipIndex, skipParentId) {
+    const used = new Set();
+    const entityRegex = /^[a-z0-9_]+\.[a-z0-9_]+$/; // Filtert saubere HA-Entitäten (z.B. sensor.xyz)
+
+    const findSensors = (obj) => {
+      if (typeof obj === 'string' && entityRegex.test(obj)) {
+        used.add(obj);
+      } else if (Array.isArray(obj)) {
+        obj.forEach(findSensors);
+      } else if (obj && typeof obj === 'object') {
+        Object.values(obj).forEach(findSensors);
+      }
+    };
+
+    // Konfiguration klonen, damit wir unsere Arbeitskopie verändern können
+    const configCopy = JSON.parse(JSON.stringify(this.#config || {}));
+
+    // Den aktuell bearbeiteten Eintrag aus der Kopie löschen, 
+    // damit man seine eigene Entität noch im Dropdown sieht!
+    if (skipBlock) {
+      if (skipBlock.key === 'strings' && skipParentId) {
+        const parent = asList(configCopy.solar).find(s => s.id === skipParentId);
+        if (parent && parent.strings && skipIndex >= 0) {
+          parent.strings.splice(skipIndex, 1);
+        }
+      } else if (skipBlock.kind === 'list' && skipIndex >= 0) {
+        asList(configCopy[skipBlock.key]).splice(skipIndex, 1);
+      } else if (skipBlock.kind === 'single') {
+        configCopy[skipBlock.key] = {};
+      }
+    }
+
+    findSensors(configCopy);
+    return Array.from(used);
+  }
+
   #openDialog(block, index, parentId = null) {
     this.#editing = { block, index, parentId };
     const isNew = index < 0;
@@ -885,7 +888,31 @@ class WueflEnergyConfigCard extends HTMLElement {
     }
 
     this.#els.dialogTitle.textContent = parentId ? `String bearbeiten` : block.title;
-    this.#els.form.schema = block.schema;
+    // 1. Liste aller bereits genutzten Entitäten holen
+    const usedEntities = this.#getUsedEntities(block, index, parentId);
+
+    // 2. Schema rekursiv durchlaufen und 'exclude_entities' injizieren
+    const injectExcludes = (schemaArr) => {
+      return schemaArr.map(field => {
+        const newField = { ...field }; // Feld flach klonen
+        
+        // Wenn es verschachtelt ist (z.B. expandable), rekursiv aufrufen
+        if (newField.schema) {
+          newField.schema = injectExcludes(newField.schema);
+        }
+        
+        // Wenn das Feld ein Entitäten-Selektor ist, Liste hinzufügen
+        if (newField.selector && newField.selector.entity) {
+          newField.selector = JSON.parse(JSON.stringify(newField.selector)); // Selektor tief klonen
+          newField.selector.entity.exclude_entities = usedEntities;
+        }
+        
+        return newField;
+      });
+    };
+
+    // Manipuliertes Schema an das Formular übergeben
+    this.#els.form.schema = injectExcludes(block.schema);
     this.#els.form.computeLabel = (s) => LABELS[block.key]?.[s.name] || s.name;
     this.#els.form.computeHelper = (s) => HELPERS[block.key]?.[s.name] || '';
     this.#els.form.data = this.#draft;
@@ -958,6 +985,7 @@ class WueflEnergyConfigCard extends HTMLElement {
   }
 
   async #persist(config) {
+    // Event weiterhin feuern, falls die Karte doch mal im Standard-Editor geöffnet wird
     this.dispatchEvent(
       new CustomEvent('config-changed', {
         detail: { config },
@@ -965,6 +993,15 @@ class WueflEnergyConfigCard extends HTMLElement {
         composed: true,
       })
     );
+
+    // Nutze deine zentrale Speicher-Logik
+    if (this.#hass) {
+      try {
+        await saveConfig(this.#hass, config);
+      } catch (err) {
+        console.error("Fehler beim Speichern der Konfiguration via we/save:", err);
+      }
+    }
   }
 }
 

@@ -2,6 +2,9 @@
  * we-period-card.js
  * Zeitraumauswahl (Tag, Woche, Monat, Jahr) mit vollständigen Zeitspannen,
  * Vor/Zurück-Navigation ohne Zukunfts-Navigation und integriertem Kalender-Button.
+ * 
+ * NEU: Beim Wechsel der Granularität wird der letzte Zeitraum im zuvor 
+ * gewählten Zeitraum beibehalten (z.B. Wechsel von Jahr 2025 auf Monat -> Dezember 2025).
  */
 import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS } from './we-shared.js';
 
@@ -153,10 +156,37 @@ class WueflEnergyPeriodCard extends HTMLElement {
     this.#els.selector.innerHTML = PERIODS.map((p) => `<button type="button" class="time-btn"
       data-id="${p.id}">${p.label}</button>`).join('');
 
+    // --- NEUE LOGIK FÜR DIE GRANULARITÄTS-WECHSEL ---
     for (const btn of this.#els.selector.querySelectorAll('[data-id]')) {
       btn.addEventListener('click', () => {
-        this.#granularity = btn.dataset.id;
-        this.#offset = 0; // Immer auf die aktuelle Periode zurücksetzen
+        const newGranularity = btn.dataset.id;
+        
+        // Den aktuell aktiven Zeitraum holen, um das Enddatum für den neuen Offset zu ermitteln
+        const range = getPeriod();
+        const targetDate = (range && range.end) ? new Date(range.end) : new Date();
+        const now = new Date();
+
+        if (newGranularity === 'day') {
+          const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const targetDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+          // Differenz in Tagen (Math.round fängt Sommer-/Winterzeit-Übergänge auf)
+          this.#offset = Math.max(0, Math.round((nowDay - targetDay) / 86400000));
+        } else if (newGranularity === 'week') {
+          const getWeekStart = (d) => {
+            const day = d.getDay() || 7;
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day + 1);
+          };
+          // Differenz in Wochen
+          this.#offset = Math.max(0, Math.round((getWeekStart(now) - getWeekStart(targetDate)) / 604800000));
+        } else if (newGranularity === 'month') {
+          // Differenz in Monaten
+          this.#offset = Math.max(0, (now.getFullYear() - targetDate.getFullYear()) * 12 + now.getMonth() - targetDate.getMonth());
+        } else if (newGranularity === 'year') {
+          // Differenz in Jahren
+          this.#offset = Math.max(0, now.getFullYear() - targetDate.getFullYear());
+        }
+
+        this.#granularity = newGranularity;
         this.#els.popup.classList.add('hidden');
         this.#apply();
       });
