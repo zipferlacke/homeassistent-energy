@@ -73,9 +73,10 @@
     }
 
     /* ---------- Text / Data Styling ---------- */
+    /* Zeilen sind echte tspan-Elemente mit x und dy. Kein white-space: pre-line –
+       das rendert nur Firefox, Chrome/WebView und Safari (HA-App) nicht. */
     text {
       fill: var(--c-text);
-      white-space: pre-line;
       font-size:1.2rem;
       .t-header {
         font-size: 1.9rem;
@@ -297,12 +298,7 @@
       </path>
       <g id="label-solar-text" transform="matrix(1, 0, 0, 1, -177.832458, -22.5945)">
         <title>Text</title>
-<text x="302.586" y="130.628"><tspan class="t-header">Solar</tspan>
-<tspan class="v_live">4.5kW</tspan>, <tspan class="v_total">25kWh</tspan><tspan class="t-box" dy="0.5rem">
-<tspan class="t-sub">Dach Ost</tspan> <tspan class="v_sub_live">10kw</tspan>
-<tspan class="t-sub">Dach West</tspan> <tspan class="v_sub_live">15kw</tspan>
-</tspan>
-</text>
+<text x="302.586" y="130.628"><tspan class="t-header">Solar</tspan><tspan class="line" x="302.586" dy="1.3em"><tspan class="v_live">4.5kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">25kWh</tspan></tspan><tspan class="t-box"><tspan class="line sub" x="302.586" dy="1.8em"><tspan class="t-sub">Dach Ost</tspan> <tspan class="v_sub_live">10kW</tspan></tspan><tspan class="line sub" x="302.586" dy="1.3em"><tspan class="t-sub">Dach West</tspan> <tspan class="v_sub_live">15kW</tspan></tspan></tspan></text>
       </g>
     </g>
     <g id="label-wallbox" class="label">
@@ -320,11 +316,7 @@
       </path>
       <g id="label-wallbox-text" transform="matrix(1, 0, 0, 1, -48.650562, 50.689007)">
         <title>Text</title>
-<text y="165" x="600"><tspan class="t-header">Wallbox</tspan><tspan class="t-box" dy="0.5rem">
-<tspan class="wstation"><tspan class="t-sub">Carport</tspan> <tspan class="v_cap">80%</tspan><tspan class="v_live">11kW</tspan>, <tspan class="v_total">50kWh</tspan></tspan>
-<tspan dy="0.25rem" class="wstation"><tspan class="t-sub">Gerage</tspan> <tspan class="v_cap">80%</tspan><tspan class="v_live">11kW</tspan>, <tspan class="v_total">50kWh</tspan></tspan>
-</tspan>
-</text>
+<text x="600" y="165"><tspan class="t-header">Wallbox</tspan><tspan class="t-box"><tspan class="line wstation" x="600" dy="1.8em"><tspan class="t-sub">Carport</tspan> <tspan class="v_cap">80 % · </tspan><tspan class="v_live">11kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">50kWh</tspan></tspan><tspan class="line wstation" x="600" dy="1.3em"><tspan class="t-sub">Garage</tspan> <tspan class="v_cap">80 % · </tspan><tspan class="v_live">11kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">50kWh</tspan></tspan></tspan></text>
       </g>
     </g>
     <g id="label-netz" class="label">
@@ -332,12 +324,7 @@
       <path class="cable" d="M 691.442 574.094 L 678.095 570.469 L 629.157 593.469 L 612.746 588.668 L 612.853 491.989" style=""></path>
       <g id="label-netz-text" transform="matrix(1, 0, 0, 1, 34.144436, 25.004732)">
         <title>Text</title>
-<text x="625" y="595"><tspan class="t-header">Netz</tspan>
-<tspan class="v_live">2kW</tspan>, <tspan class="v_total">10kWh</tspan><tspan dy="0.5rem" class="t-box">
-<tspan class="t-sub">Bezug</tspan> <tspan class="v_in">5kWh</tspan>
-<tspan class="t-sub">Einspeisung</tspan> <tspan class="v_out">3kWh</tspan>
-</tspan>
-</text>
+<text x="625" y="595"><tspan class="t-header">Netz</tspan><tspan class="line" x="625" dy="1.3em"><tspan class="v_live">2kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">10kWh</tspan></tspan><tspan class="t-box"><tspan class="line sub" x="625" dy="1.8em"><tspan class="t-sub">Bezug</tspan> <tspan class="v_in">5kWh</tspan></tspan><tspan class="line sub" x="625" dy="1.3em"><tspan class="t-sub">Einspeisung</tspan> <tspan class="v_out">3kWh</tspan></tspan></tspan></text>
       </g>
     </g>
     <g id="label-batterie" class="label">
@@ -364,12 +351,7 @@
       <path class="cable" d="M 444.219 603.316 L 452.634 605.969 L 453.373 537.959 L 460.369 540.808 L 544.369 505.854" style=""></path>
       <g id="label-batterie-text" transform="matrix(1, 0, 0, 1, 55.879063, 79.539398)" style="">
         <title>Text</title>
-<text y="600" x="211.97"><tspan class="t-header">Batterie</tspan>
-<tspan class="v_live">5kW</tspan>, <tspan class="v_total">20kWh</tspan><tspan dy="0.5rem" class="box">
-<tspan class="t-sub">Geladen</tspan> <tspan class="v_in">7kWh</tspan>
-<tspan class="t-sub">Entladen</tspan> <tspan class="v_out">2kWh</tspan>
-</tspan>
-</text>
+<text x="211.97" y="600"><tspan class="t-header">Batterie</tspan><tspan class="line" x="211.97" dy="1.3em"><tspan class="v_live">5kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">20kWh</tspan></tspan><tspan class="t-box"><tspan class="line sub" x="211.97" dy="1.8em"><tspan class="t-sub">Geladen</tspan> <tspan class="v_in">7kWh</tspan></tspan><tspan class="line sub" x="211.97" dy="1.3em"><tspan class="t-sub">Entladen</tspan> <tspan class="v_out">2kWh</tspan></tspan></tspan></text>
       </g>
     </g>
     <g id="label-waermepumpe" class="label">
@@ -398,9 +380,7 @@
       <path class="cable" d="M 561.815 511.818 L 562.437 558.199" style="transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(-1, 0, 0, -1, -1.070953, 0.408936)"></path>
       <g id="label-waermepumpe-text" transform="matrix(1, 0, 0, 1, 25.410934, -3.834377)">
         <title>Text</title>
-<text x="413" y="705"><tspan class="t-header">Wärmepumpe</tspan>
-<tspan class="v_live">3kW</tspan>, <tspan class="v_total">12kWh</tspan>
-</text>
+<text x="413" y="705"><tspan class="t-header">Wärmepumpe</tspan><tspan class="line" x="413" dy="1.3em"><tspan class="v_live">3kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">12kWh</tspan></tspan></text>
       </g>
     </g>
     <g id="ha-box" class="device" transform="matrix(1.168783, 0, 0, 0.866328, -40.39854, 98.562447)" style="">
@@ -417,9 +397,7 @@
       <title>Haushalt</title>
       <g id="group-3" transform="matrix(1, 0, 0, 1, -338.293579, -163.739349)">
         <title>Text</title>
-<text x="460" y="770"><tspan class="t-header">Haushalt</tspan>
-<tspan class="v_live">1.5kW</tspan>, <tspan class="v_total">8kWh</tspan>
-</text>
+<text x="460" y="770"><tspan class="t-header">Haushalt</tspan><tspan class="line" x="460" dy="1.3em"><tspan class="v_live">1.5kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">8kWh</tspan></tspan></text>
       </g>
     </g>
   </g>

@@ -498,64 +498,34 @@ class WueflEnergyLiveCard extends HTMLElement {
       el.style.setProperty('--c-highlight', color);
     };
 
-    const repeat = (container, templateSelector, items, fill) => {
+    /**
+     * Wiederholt eine Zeile (tspan mit x/dy) innerhalb eines Containers.
+     * Die erste Zeile im SVG ist die Vorlage. Die erste erzeugte Zeile
+     * übernimmt deren dy (Abstand zur Überschrift), alle weiteren das dy
+     * der zweiten Vorlagenzeile. Keine Zeilenumbrüche im Text – die rendert
+     * nur Firefox, nicht die HA-App.
+     */
+    const repeatLines = (container, templateSelector, items, fill) => {
       if (!container) return;
 
       if (!container.__wueflTpl) {
-        const first = container.querySelector(templateSelector);
-        if (!first) return;
-        const before = first.previousSibling;
-        const last = container.lastChild;
+        const lines = container.querySelectorAll(templateSelector);
+        if (!lines.length) return;
         container.__wueflTpl = {
-          node: first.cloneNode(true),
-          indent: before && before.nodeType === 3 ? before.nodeValue : '\n          ',
-          tail: last && last.nodeType === 3 ? last.nodeValue : '\n          ',
+          node: lines[0].cloneNode(true),
+          firstDy: lines[0].getAttribute('dy') ?? '1.3em',
+          dy: lines[1]?.getAttribute('dy') ?? '1.3em',
         };
-        container.__wueflTpl.node.removeAttribute('dy');
       }
       const tpl = container.__wueflTpl;
 
-      container.textContent = '';
+      container.replaceChildren();
       items.forEach((item, i) => {
-        container.appendChild(document.createTextNode(tpl.indent));
         const node = tpl.node.cloneNode(true);
+        node.setAttribute('dy', i === 0 ? tpl.firstDy : tpl.dy);
         fill(node, item, i);
         container.appendChild(node);
       });
-      container.appendChild(document.createTextNode(tpl.tail));
-    };
-
-    const repeatPair = (container, nameSel, valueSel, items, fill) => {
-      if (!container) return;
-
-      if (!container.__wueflPair) {
-        const name = container.querySelector(nameSel);
-        const value = container.querySelector(valueSel);
-        if (!name || !value) return;
-        const before = name.previousSibling;
-        const between = name.nextSibling;
-        const last = container.lastChild;
-        container.__wueflPair = {
-          name: name.cloneNode(true),
-          value: value.cloneNode(true),
-          indent: before && before.nodeType === 3 ? before.nodeValue : '\n          \t',
-          sep: between && between.nodeType === 3 ? between.nodeValue : ' ',
-          tail: last && last.nodeType === 3 ? last.nodeValue : '\n          ',
-        };
-      }
-      const tpl = container.__wueflPair;
-
-      container.textContent = '';
-      items.forEach((item, i) => {
-        container.appendChild(document.createTextNode(tpl.indent));
-        const name = tpl.name.cloneNode(true);
-        const value = tpl.value.cloneNode(true);
-        fill(name, value, item, i);
-        container.appendChild(name);
-        container.appendChild(document.createTextNode(tpl.sep));
-        container.appendChild(value);
-      });
-      container.appendChild(document.createTextNode(tpl.tail));
     };
 
     /* --- Solar --- */
@@ -574,7 +544,6 @@ class WueflEnergyLiveCard extends HTMLElement {
           }
 
           // Einzelne Strings in t_strings erfassen, ohne sie in t_live aufzusummieren
-          console.log("KENN", s.strings, s.strings.length);
           if (Array.isArray(s.strings) && s.strings.length > 0) {
             for (const st of s.strings) {
               const ent = getEntity(st.live);
@@ -601,12 +570,12 @@ class WueflEnergyLiveCard extends HTMLElement {
       T('#label-solar-text', 'v_total', tot && t_total !== null ? fmtEnergy(t_total) : '');
 
       // t_strings zeilenweise untereinander einfügen
-      repeatPair(
+      repeatLines(
         svg.querySelector('#label-solar-text .t-box'),
-        '.t-sub', '.v_sub_live', t_strings,
-        (name, value, st) => {
-          name.textContent = st.name;
-          value.textContent = fmtPower(st.value);
+        '.line', t_strings,
+        (node, st) => {
+          node.querySelector('.t-sub').textContent = st.name;
+          node.querySelector('.v_sub_live').textContent = fmtPower(st.value);
         },
       );
 
@@ -670,7 +639,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       const list = this.#wallboxes();
       T('#label-wallbox-text', 't-header', 'Wallbox');
       const box = svg.querySelector('#label-wallbox-text .t-box');
-      repeat(box, '.wstation', list, (node, wb, i) => {
+      repeatLines(box, '.wstation', list, (node, wb, i) => {
         const pw = Math.abs(power(h, wb.power_entity) ?? 0);
         const soc = num(h, wb.car_soc_entity);
         const day = todaySum(this.#today, wb.today_energy_entity);
@@ -679,7 +648,7 @@ class WueflEnergyLiveCard extends HTMLElement {
         const live = node.querySelector('.v_live');
         const total = node.querySelector('.v_total');
         if (name) name.textContent = wb.name ?? `Auto ${i + 1}`;
-        if (cap) cap.textContent = soc === null ? '' : fmtPercent(soc);
+        if (cap) cap.textContent = soc === null ? '' : `${fmtPercent(soc)} · `;
         if (live) live.textContent = fmtPower(pw);
         if (total) total.textContent = tot && day !== null ? fmtEnergy(day) : '';
       });
@@ -705,6 +674,11 @@ class WueflEnergyLiveCard extends HTMLElement {
     T('#label-haushalt', 'v_live', fmtPower(p.house));
     T('#label-haushalt', 'v_total', tot && he !== null ? fmtEnergy(he) : '');
     dev('#house', p.house >= 20, COLORS.house);
+
+    // ", " nur, wenn danach auch ein Tageswert steht
+    for (const sep of svg.querySelectorAll('.sep')) {
+      sep.textContent = sep.nextElementSibling?.textContent ? ', ' : '';
+    }
 
     /* --- Flüsse --- */
     this.#flow('solar', p.pv, false, COLORS.pv);
