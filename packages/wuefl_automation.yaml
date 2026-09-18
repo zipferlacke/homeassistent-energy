@@ -76,7 +76,9 @@ automation:
 
       has_wallbox: "{{ mode_entity != '' and wallbox_power_set_entity != '' and wallbox_activate_entity != '' }}"
       has_battery: "{{ batterien | count > 0 }}"
-      can_control_battery: "{{ batt_normal_mode != '' and states(batt_normal_mode) not in ['unknown', 'unavailable'] }}"
+      # Szenen stehen auf "unknown", bis sie einmal aktiviert wurden – deshalb
+      # nur prüfen, ob die Entität existiert und erreichbar ist
+      can_control_battery: "{{ batt_normal_mode != '' and expand(batt_normal_mode) | count > 0 and states(batt_normal_mode) != 'unavailable' }}"
 
       # --- Einstellungen ----------------------------------------------------
       modus: "{{ states(mode_entity) if mode_entity else 'Aus' }}"
