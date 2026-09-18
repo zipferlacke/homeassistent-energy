@@ -242,57 +242,81 @@ class WueflEnergyChart extends HTMLElement {
         return { ms: parseInt(bucketStr, 10) || 3600000, unit: 'h', val: 1 };
     }
 
+    /**
+     * Beginn des Buckets, in den der Zeitpunkt `t` fällt.
+     *
+     * Ausgerichtet an der lokalen Zeit ab `origin` (Beginn des Zeitraums),
+     * nicht an UTC — sonst beginnt ein Tages-Bucket in Deutschland um 1 bzw.
+     * 2 Uhr und die Werte rutschen einen Tag nach vorn.
+     */
+    #bucketKey(t, bucketInfo, origin) {
+        const d = new Date(t);
+        if (bucketInfo.unit === 'm' || bucketInfo.unit === 'y') {
+            const months = bucketInfo.unit === 'y' ? 12 * bucketInfo.val : bucketInfo.val;
+            const idx = (d.getFullYear() - origin.getFullYear()) * 12 + d.getMonth() - origin.getMonth();
+            const start = Math.floor(idx / months) * months;
+            return new Date(origin.getFullYear(), origin.getMonth() + start, 1).getTime();
+        }
+        if (bucketInfo.unit === 'd' || bucketInfo.unit === 'w') {
+            const days = bucketInfo.unit === 'w' ? 7 * bucketInfo.val : bucketInfo.val;
+            const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const originDay = new Date(origin.getFullYear(), origin.getMonth(), origin.getDate());
+            const idx = Math.round((dayStart - originDay) / 86400000);
+            const startIdx = Math.floor(idx / days) * days;
+            return new Date(originDay.getFullYear(), originDay.getMonth(), originDay.getDate() + startIdx).getTime();
+        }
+        const ms = bucketInfo.ms;
+        return origin.getTime() + Math.floor((t - origin.getTime()) / ms) * ms;
+    }
+
+    /** Beginn des nächsten Buckets nach `key`. */
+    #nextBucket(key, bucketInfo) {
+        const d = new Date(key);
+        if (bucketInfo.unit === 'm') return new Date(d.getFullYear(), d.getMonth() + bucketInfo.val, 1).getTime();
+        if (bucketInfo.unit === 'y') return new Date(d.getFullYear() + bucketInfo.val, d.getMonth(), 1).getTime();
+        if (bucketInfo.unit === 'd') return new Date(d.getFullYear(), d.getMonth(), d.getDate() + bucketInfo.val).getTime();
+        if (bucketInfo.unit === 'w') return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * bucketInfo.val).getTime();
+        return key + bucketInfo.ms;
+    }
+
+    /**
+     * Fasst die Statistikzeilen in Buckets zusammen.
+     *
+     * Vergangene Buckets ohne Daten bekommen bei Zählern (change) eine 0 —
+     * da wurde nachweislich nichts verbraucht. Bei Mittelwerten (mean) ist
+     * "keine Daten" dagegen etwas anderes als 0, dort bleibt es leer (null).
+     * Buckets, die noch in der Zukunft liegen, entstehen gar nicht erst:
+     * das Diagramm endet bei "jetzt", statt eine Null-Linie weiterzuziehen.
+     */
     #bucketize(rows, bucketInfo, statType = 'change', start = null, end = null) {
         const buckets = new Map();
-        const isMonthly = bucketInfo?.unit === 'm';
+        const origin = start ?? new Date(0);
+        const now = Date.now();
+        const isMean = statType === 'mean';
 
-        // Lückenloses Auffüllen (Pre-filling) aller Bucket-Zeiträume
         if (start && end) {
-            if (isMonthly) {
-                let cur = new Date(start.getFullYear(), start.getMonth(), 1, 0, 0, 0, 0);
-                const endMs = end.getTime();
-                while (cur.getTime() <= endMs) {
-                    buckets.set(cur.getTime(), { sum: 0, count: 0 });
-                    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1, 0, 0, 0, 0);
-                }
-            } else {
-                const bucketMs = bucketInfo?.ms || bucketInfo;
-                if (bucketMs > 0) {
-                    const startKey = Math.floor(start.getTime() / bucketMs) * bucketMs;
-                    const endKey = Math.floor(end.getTime() / bucketMs) * bucketMs;
-                    for (let k = startKey; k <= endKey; k += bucketMs) {
-                        buckets.set(k, { sum: 0, count: 0 });
-                    }
-                }
+            const last = Math.min(end.getTime(), now);
+            for (let k = this.#bucketKey(start.getTime(), bucketInfo, origin); k <= last; k = this.#nextBucket(k, bucketInfo)) {
+                buckets.set(k, { sum: 0, count: 0 });
             }
         }
 
-        if (rows?.length) {
-            for (const row of rows) {
-                const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
-                if (Number.isNaN(t)) continue;
+        for (const row of rows ?? []) {
+            const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
+            if (Number.isNaN(t) || t > now) continue;
 
-                let key;
-                if (isMonthly) {
-                    const d = new Date(t);
-                    key = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0).getTime();
-                } else {
-                    const bucketMs = bucketInfo?.ms || bucketInfo;
-                    key = Math.floor(t / bucketMs) * bucketMs;
-                }
+            const value = Number(isMean ? (row.mean ?? row.state) : row.change);
+            if (!Number.isFinite(value)) continue;
 
-                const value = Number(statType === 'mean' ? (row.mean ?? row.state) : row.change);
-                if (!Number.isFinite(value)) continue;
-
-                const b = buckets.get(key) ?? { sum: 0, count: 0 };
-                b.sum += value; b.count += 1;
-                buckets.set(key, b);
-            }
+            const key = this.#bucketKey(t, bucketInfo, origin);
+            const b = buckets.get(key) ?? { sum: 0, count: 0 };
+            b.sum += value; b.count += 1;
+            buckets.set(key, b);
         }
 
         return [...buckets.entries()]
             .sort((a, b) => a[0] - b[0])
-            .map(([t, b]) => [t, statType === 'mean' ? (b.count > 0 ? b.sum / b.count : 0) : b.sum]);
+            .map(([t, b]) => [t, isMean ? (b.count > 0 ? b.sum / b.count : null) : b.sum]);
     }
 
     #calculateNativeChipValue(dbStats, seriesList) {
@@ -462,6 +486,7 @@ class WueflEnergyChart extends HTMLElement {
                     stat_type: s.stat_type || 'change',
                     chartTargetUnit,
                     chartData: bucketed.map(([t, v]) => {
+                        if (v === null) return [t, null];
                         const val = v * manualMulti * autoChartScale * sign;
                         return [t, Math.abs(val) < 0.000001 ? 0 : val];
                     })

@@ -89,7 +89,6 @@ export class WueflChartWrapper extends HTMLElement {
 
   /** Aggregation passend zum Zeitraum, überschreibbar per Karten-Option. */
   _aggregation(range) {
-    console.log("Range",range)
     if (this._own.aggregation) return this._own.aggregation;
     if (range.overYear) return '1m';
     if (range.overMonth) return '1d';
