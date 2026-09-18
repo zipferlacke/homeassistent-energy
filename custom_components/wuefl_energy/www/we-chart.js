@@ -502,7 +502,9 @@ class WueflEnergyChart extends HTMLElement {
 
             if (this.#config.chip) {
                 const spanDays = (end - start) / 86400000;
-                const chipPeriod = spanDays <= 1.05 ? '5minute' : 'day';
+                // 5-Minuten-Werte hält der Recorder nur ~10 Tage – ältere Tage stündlich
+                const recent = Date.now() - start < 9 * 86400000;
+                const chipPeriod = spanDays <= 1.05 ? (recent ? '5minute' : 'hour') : 'day';
                 let chipStats = dbStats;
                 if (chipPeriod !== period) {
                     try {

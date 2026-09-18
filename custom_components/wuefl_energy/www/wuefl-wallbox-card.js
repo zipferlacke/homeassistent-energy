@@ -11,26 +11,23 @@ import {
   chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
   applyColorVars, colorOf, navigateToView, TOGGLE_CSS, isReadOnly, applyReadOnly,
+  getPeriod, onPeriodChange,
 } from './we-shared.js';
 import './we-chart.js';
 
-const PERIODS = [
-  { key: 'day', label: 'Tag' },
-  { key: 'week', label: 'Woche' },
-  { key: 'month', label: 'Monat' },
-  { key: 'year', label: 'Jahr' },
-];
-
-/** Kalenderzeitraum, in dem "jetzt" liegt. */
-function periodRange(key, now = new Date()) {
-  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-  if (key === 'week') {
-    const monday = d - ((now.getDay() + 6) % 7);
-    return [new Date(y, m, monday), new Date(y, m, monday + 6, 23, 59, 59, 999)];
+/**
+ * Darstellung des Verlaufs für den gewählten Zeitraum (Zeitraum-Karte oben
+ * auf der Seite): bis zu einer Woche die Ladeleistung als Linie, darüber die
+ * geladene Energie als Balken. 5-Minuten-Werte hält der Recorder nur ~10 Tage,
+ * ältere Tage kommen deshalb stündlich.
+ */
+function historyMode(range, now = Date.now()) {
+  const days = (range.end - range.start) / 86_400_000;
+  if (days <= 7.01) {
+    const fine = days <= 1.01 && now - range.start < 9 * 86_400_000;
+    return { power: true, aggregation: fine ? '5min' : '1h' };
   }
-  if (key === 'month') return [new Date(y, m, 1), new Date(y, m + 1, 0, 23, 59, 59, 999)];
-  if (key === 'year') return [new Date(y, 0, 1), new Date(y, 11, 31, 23, 59, 59, 999)];
-  return [new Date(y, m, d), new Date(y, m, d, 23, 59, 59, 999)];
+  return { power: false, aggregation: days <= 62 ? '1d' : '1m' };
 }
 
 const MODE_KINDS = [
@@ -56,6 +53,7 @@ ${TOGGLE_CSS}
   margin-top: 1rem;
   & .hhead { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; }
   & .htitle { font-weight: 600; }
+  & .hnote { color: var(--secondary-text-color); font-size: .8rem; }
   & .plot { height: 230px; margin: .3rem -8px 0; }
   /* Das Diagramm bringt ein eigenes ha-card mit – hier ohne zweiten Rahmen */
   & we-chart {
@@ -169,8 +167,8 @@ class WueflWallboxCard extends HTMLElement {
   #els = {};
   #watch = [];
   #drag = null;
-  #period = 'day';
   #historyKey = '';
+  #stopPeriod = null;
 
   static getConfigElement() { return document.createElement('wuefl-wallbox-card-editor'); }
   static getStubConfig() { return { wallbox: 1 }; }
@@ -178,6 +176,15 @@ class WueflWallboxCard extends HTMLElement {
   setConfig(config) {
     this.#own = config ?? {};
     this.#apply();
+  }
+
+  connectedCallback() {
+    this.#stopPeriod ??= onPeriodChange(() => this.#renderHistory());
+  }
+
+  disconnectedCallback() {
+    this.#stopPeriod?.();
+    this.#stopPeriod = null;
   }
 
   set hass(hass) {
@@ -302,9 +309,7 @@ class WueflWallboxCard extends HTMLElement {
       <div class="history" hidden>
         <div class="hhead">
           <span class="htitle">Verlauf</span>
-          <div class="time-buttons">
-            ${PERIODS.map((p) => `<button type="button" class="time-btn" data-period="${p.key}">${p.label}</button>`).join('')}
-          </div>
+          <span class="hnote">Zeitraum oben auf der Seite wählen</span>
         </div>
         <div class="plot"><we-chart></we-chart></div>
       </div>
@@ -356,18 +361,11 @@ class WueflWallboxCard extends HTMLElement {
       cur: q('.slider.cur'),
       adv: q('details.adv'),
       history: q('.history'), chart: q('we-chart'),
-      periodBtns: [...card.querySelectorAll('.time-btn')],
       openSettings: q('.open-settings'),
       stats: q('.stats'),
     };
 
     this.#els.openSettings.addEventListener('click', () => navigateToView('einstellungen'));
-    for (const btn of this.#els.periodBtns) {
-      btn.addEventListener('click', () => {
-        this.#period = btn.dataset.period;
-        this.#renderHistory();
-      });
-    }
 
     this.#els.targetInput.addEventListener('input', () => {
       this.#drag = 'target';
@@ -633,10 +631,10 @@ class WueflWallboxCard extends HTMLElement {
   }
 
   /**
-   * Verlauf: an Tag und Woche die Ladeleistung als Kurve, im Monat die
-   * geladene Energie je Tag, im Jahr je Monat – aus dem Gesamtzähler.
-   * Der Chip zeigt die Summe im Zeitraum. Nur neu konfigurieren, wenn sich
-   * Zeitraum oder Entitäten ändern; die Daten lädt we-chart selbst nach.
+   * Verlauf im Zeitraum der Zeitraum-Karte: bis eine Woche die Ladeleistung
+   * als Kurve, darüber die geladene Energie je Tag bzw. Monat aus dem
+   * Gesamtzähler. Der Chip zeigt die Summe im Zeitraum. Nur neu
+   * konfigurieren, wenn sich Zeitraum oder Entitäten ändern.
    */
   #renderHistory() {
     const c = this.#config;
@@ -647,27 +645,24 @@ class WueflWallboxCard extends HTMLElement {
     box.hidden = !live && !total;
     if (box.hidden) return;
 
-    for (const btn of this.#els.periodBtns) {
-      btn.classList.toggle('active', btn.dataset.period === this.#period);
-    }
-
-    const [start, end] = periodRange(this.#period);
+    const range = getPeriod();
+    const start = new Date(range.start), end = new Date(range.end);
+    const mode = historyMode({ start, end });
     const color = cssColor(this, '--w-wallbox', '#22C3D6');
-    const key = [this.#period, live, total, color, start.getTime()].join('|');
+    const key = [live, total, color, start.getTime(), end.getTime()].join('|');
     if (key !== this.#historyKey) {
       this.#historyKey = key;
-      // Tag und Woche: Ladeleistung als Linie, Monat und Jahr: kWh als Balken
-      const power = (['day', 'week'].includes(this.#period) && live) || !total;
+      const power = (mode.power && live) || !total;
       const chartCfg = power
         ? {
             series: [{ entity: live, name: 'Ladeleistung', color, stat_type: 'mean', fill: 'gradient', type: 'line' }],
             y_axes: [{ unit: 'kW', min: 0 }],
-            aggregation: { day: '5min', week: '1h', month: '1d', year: '1m' }[this.#period],
+            aggregation: mode.aggregation,
           }
         : {
             series: [{ entity: total, name: 'Geladen', color, stat_type: 'change', type: 'bar' }],
             y_axes: [{ unit: 'kWh', min: 0 }],
-            aggregation: { day: '1h', week: '1d', month: '1d', year: '1m' }[this.#period],
+            aggregation: mode.aggregation,
           };
       this.#els.chart.setConfig({
         title: '',

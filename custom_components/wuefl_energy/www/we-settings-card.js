@@ -250,14 +250,6 @@ class WueflEnergySettingsCard extends HTMLElement {
         </div>
       </div>
 
-      <div class="group look">
-        <h3>Darstellung</h3>
-        <div class="row">
-          <button type="button" class="btn writable reset-colors">${icon('mdi:palette-outline')}<span>Standardfarben wiederherstellen</span></button>
-          <span class="note colors-note">Entfernt alle eigenen Farben aus der Zuordnung – Grafik, Diagramme und Kacheln nutzen wieder die Vorgaben.</span>
-        </div>
-      </div>
-
       <div class="group access">
         <h3>Zugriff</h3>
         <div class="row">
@@ -305,9 +297,6 @@ class WueflEnergySettingsCard extends HTMLElement {
       empty: q('.hint.empty'),
     };
 
-    this.#els.resetColors = q('.reset-colors');
-    this.#els.colorsNote = q('.colors-note');
-    this.#els.resetColors.addEventListener('click', () => this.#resetColors());
     this.#els.roSwitch = q('.switch-ro');
     this.#els.roNote = q('.ro-note');
     this.#els.roSwitch.addEventListener('click', () => {
@@ -366,23 +355,6 @@ class WueflEnergySettingsCard extends HTMLElement {
   #toggle(id, on) { const d = this.#domain(id); if (d && !isReadOnly()) this.#hass.callService(d, on ? 'turn_on' : 'turn_off', { entity_id: id }); }
   #setOption(id, option) { const d = this.#domain(id); if (d && !isReadOnly()) this.#hass.callService(d, 'select_option', { entity_id: id, option }); }
 
-  /** Alle eigenen Farben (color, color_in, color_export) aus der Zuordnung entfernen. */
-  async #resetColors() {
-    if (isReadOnly() || !this.#hass?.user?.is_admin) return;
-    if (!window.confirm('Alle eigenen Farben entfernen und die Standardfarben verwenden?')) return;
-    const strip = (v) => {
-      if (Array.isArray(v)) return v.map(strip);
-      if (!v || typeof v !== 'object') return v;
-      return Object.fromEntries(
-        Object.entries(v)
-          .filter(([k]) => !['color', 'color_in', 'color_export'].includes(k))
-          .map(([k, x]) => [k, strip(x)]),
-      );
-    };
-    await saveConfig(this.#hass, strip(await rawConfig(this.#hass)));
-    this.#els.colorsNote.textContent = 'Standardfarben wiederhergestellt.';
-  }
-
   /** Nur-Lesen-Modus umschalten – landet in der Zuordnung, also nur für Admins. */
   async #setReadOnly(on) {
     if (!this.#hass?.user?.is_admin) return;
@@ -422,7 +394,6 @@ class WueflEnergySettingsCard extends HTMLElement {
 
       applyReadOnly(this);
       const admin = !!h.user?.is_admin;
-      this.#els.resetColors.disabled = !admin;
       this.#els.roSwitch.setAttribute('aria-checked', String(!!c.read_only));
       this.#els.roSwitch.disabled = !admin;
       this.#els.roSwitch.style.opacity = admin ? '' : '.55';

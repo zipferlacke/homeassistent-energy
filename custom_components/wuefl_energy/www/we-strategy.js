@@ -194,6 +194,8 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
       const multiple = wallboxes.length > 1;
       const wbCards = [
         { type: 'markdown', content: multiple ? '# Wallboxen' : '# Wallbox', text_only: true, slot: 'head' },
+        // Ein Zeitraum für die Verläufe aller Wallboxen
+        { type: 'custom:we-period-card', slot: 'time' },
         ...wallboxes.map((wb, i) => ({
           type: 'custom:wuefl-wallbox-card',
           // slot = Bereich im Grid, wallbox = welche Wallbox der Zuordnung (1-basiert)
@@ -202,14 +204,14 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
         }))
       ];
 
-      const wbMobileAreas = ['"head"', ...wallboxes.map((_, i) => `"wb_${i}"`)].join('\n');
+      const wbMobileAreas = ['"head"', '"time"', ...wallboxes.map((_, i) => `"wb_${i}"`)].join('\n');
       const wbDesktopAreas = multiple
-        ? ['"head head"', ...Array.from({ length: Math.ceil(wallboxes.length / 2) }, (_, i) => {
+        ? ['"head head"', '"time time"', ...Array.from({ length: Math.ceil(wallboxes.length / 2) }, (_, i) => {
             const left = `wb_${i * 2}`;
             const right = wallboxes[i * 2 + 1] ? `wb_${i * 2 + 1}` : `wb_${i * 2}`;
             return `"${left} ${right}"`;
           })].join('\n')
-        : '"head"\n"wb_0"';
+        : '"head"\n"time"\n"wb_0"';
 
       views.push({
         type: 'sections',

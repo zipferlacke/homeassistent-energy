@@ -416,6 +416,7 @@ class WueflEnergyConfigCard extends HTMLElement {
   #draft = {};
   #els = {};
   #onChanged = null;
+  #doneTimer = null;
 
   set hass(hass) {
     const first = !this.#hass;
@@ -501,6 +502,49 @@ class WueflEnergyConfigCard extends HTMLElement {
           font-size: 0.78rem;
           color: var(--secondary-text-color);
         }
+
+        /* Farben: Zurücksetzen mit Bestätigung direkt in der Leiste */
+        .colors-bar {
+          align-items: center;
+          border-top: 1px solid var(--divider-color, #e0e0e0);
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 4px;
+          padding-top: 8px;
+        }
+        .colors-info {
+          align-items: center;
+          color: var(--secondary-text-color);
+          display: inline-flex;
+          flex: 1;
+          font-size: 0.82rem;
+          gap: 6px;
+          min-width: 12rem;
+        }
+        .colors-info ha-icon { --mdc-icon-size: 18px; }
+        .colors-bar .btn:disabled { cursor: default; opacity: .45; }
+        .colors-confirm {
+          align-items: center;
+          background: color-mix(in srgb, var(--warning-color, #ffa600) 12%, transparent);
+          border-radius: 8px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          padding: 8px 10px;
+        }
+        .colors-confirm[hidden] { display: none; }
+        .colors-confirm .txt { flex: 1; font-size: 0.85rem; min-width: 12rem; }
+        .btn.danger { background: var(--error-color, #db4437); }
+        .colors-done {
+          align-items: center;
+          color: var(--success-color, #43a047);
+          display: flex;
+          font-size: 0.82rem;
+          gap: 6px;
+        }
+        .colors-done[hidden] { display: none; }
+        .colors-done ha-icon { --mdc-icon-size: 18px; }
 
         .block {
           background: var(--card-background-color, #fff);
@@ -702,6 +746,19 @@ class WueflEnergyConfigCard extends HTMLElement {
             </button>
           </div>
           <div id="report" class="preset-report"></div>
+
+          <div class="colors-bar">
+            <span class="colors-info">${icon('mdi:palette-outline')}<span id="colors-count"></span></span>
+            <button type="button" class="btn small secondary" id="btn-reset-colors">
+              ${icon('mdi:restore')} Standardfarben wiederherstellen
+            </button>
+          </div>
+          <div class="colors-confirm" id="colors-confirm" hidden>
+            <span class="txt" id="colors-confirm-txt"></span>
+            <button type="button" class="btn small secondary" id="btn-colors-cancel">Abbrechen</button>
+            <button type="button" class="btn small danger" id="btn-colors-ok">${icon('mdi:restore')} Zurücksetzen</button>
+          </div>
+          <div class="colors-done" id="colors-done" hidden>${icon('mdi:check-circle-outline')}<span></span></div>
         </div>
 
         <div id="blocks"></div>
@@ -739,6 +796,16 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.btnSave = this.shadowRoot.querySelector('#btn-save');
 
     this.#els.btnApplyPreset.addEventListener('click', () => this.#applyPreset());
+
+    const $ = (id) => this.shadowRoot.querySelector(id);
+    this.#els.colorsCount = $('#colors-count');
+    this.#els.btnResetColors = $('#btn-reset-colors');
+    this.#els.colorsConfirm = $('#colors-confirm');
+    this.#els.colorsConfirmTxt = $('#colors-confirm-txt');
+    this.#els.colorsDone = $('#colors-done');
+    this.#els.btnResetColors.addEventListener('click', () => this.#askResetColors());
+    $('#btn-colors-cancel').addEventListener('click', () => { this.#els.colorsConfirm.hidden = true; });
+    $('#btn-colors-ok').addEventListener('click', () => this.#resetColors());
     this.#els.btnClose.addEventListener('click', () => this.#closeDialog());
     this.#els.btnCancel.addEventListener('click', () => this.#closeDialog());
     this.#els.btnSave.addEventListener('click', () => this.#commit());
@@ -856,6 +923,13 @@ class WueflEnergyConfigCard extends HTMLElement {
 
   #render() {
     if (!this.#built || !this.#config) return;
+
+    const colors = countColors(this.#config);
+    this.#els.colorsCount.textContent = colors
+      ? `${colors} eigene ${colors === 1 ? 'Farbe' : 'Farben'} gesetzt`
+      : 'Alle Objekte nutzen die Standardfarben';
+    this.#els.btnResetColors.disabled = !colors;
+    if (!colors) this.#els.colorsConfirm.hidden = true;
 
     const stringBlock = BLOCKS.find((b) => b.key === 'strings');
 
@@ -1087,6 +1161,41 @@ class WueflEnergyConfigCard extends HTMLElement {
     await this.#persist(next);
   }
 
+  /* ------------------------------------------------------------------ *
+   * Standardfarben wiederherstellen
+   * ------------------------------------------------------------------ */
+
+  #askResetColors() {
+    const n = countColors(this.#config);
+    if (!n) return;
+    this.#els.colorsDone.hidden = true;
+    this.#els.colorsConfirmTxt.textContent =
+      `${n} eigene ${n === 1 ? 'Farbe' : 'Farben'} entfernen? Grafik, Diagramme und Kacheln nutzen danach wieder die Standardfarben.`;
+    this.#els.colorsConfirm.hidden = false;
+  }
+
+  async #resetColors() {
+    this.#els.colorsConfirm.hidden = true;
+    const n = countColors(this.#config);
+    if (!n || this.#config.settings?.read_only) return;
+    const next = stripColors(this.#config);
+    this.#config = next;
+    this.#render();
+    const done = this.#els.colorsDone;
+    try {
+      await saveConfig(this.#hass, next);
+      done.style.color = '';
+      done.querySelector('span').textContent =
+        `Standardfarben wiederhergestellt – ${n} eigene ${n === 1 ? 'Farbe' : 'Farben'} entfernt.`;
+    } catch (err) {
+      done.style.color = 'var(--error-color, #db4437)';
+      done.querySelector('span').textContent = `Speichern fehlgeschlagen: ${err?.message ?? err}`;
+    }
+    done.hidden = false;
+    clearTimeout(this.#doneTimer);
+    this.#doneTimer = setTimeout(() => { done.hidden = true; }, 6000);
+  }
+
   async #persist(config) {
     if (config.settings?.read_only) return;
     // Nur über die Integration speichern. Früher ging die Zuordnung zusätzlich
@@ -1105,6 +1214,24 @@ class WueflEnergyConfigCard extends HTMLElement {
 /* ------------------------------------------------------------------ *
  * Editor & Registration
  * ------------------------------------------------------------------ */
+
+const COLOR_KEYS = ['color', 'color_in', 'color_export'];
+
+/** Anzahl der eigenen Farben (color, color_in, color_export) in der Zuordnung. */
+function countColors(v) {
+  if (Array.isArray(v)) return v.reduce((n, x) => n + countColors(x), 0);
+  if (!v || typeof v !== 'object') return 0;
+  return Object.entries(v).reduce(
+    (n, [k, x]) => n + (COLOR_KEYS.includes(k) && x != null && x !== '' ? 1 : countColors(x)), 0);
+}
+
+/** Zuordnung ohne eigene Farben. */
+function stripColors(v) {
+  if (Array.isArray(v)) return v.map(stripColors);
+  if (!v || typeof v !== 'object') return v;
+  return Object.fromEntries(
+    Object.entries(v).filter(([k]) => !COLOR_KEYS.includes(k)).map(([k, x]) => [k, stripColors(x)]));
+}
 
 class WueflFormEditor extends HTMLElement {
   setConfig() {}

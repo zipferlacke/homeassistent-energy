@@ -92,6 +92,8 @@ const CSS = `
 }
 `;
 
+const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const WEEKDAY_MONTH = { weekday: 'long', day: 'numeric', month: 'long' };
 const MONTH_YEAR = { month: 'long', year: 'numeric' };
 
@@ -152,41 +154,15 @@ class WueflEnergyPeriodCard extends HTMLElement {
       next: card.querySelector('.next'),
     };
 
-    this.#granularity = getPeriod().period === 'custom' ? 'day' : getPeriod().period;
     this.#els.selector.innerHTML = PERIODS.map((p) => `<button type="button" class="time-btn"
       data-id="${p.id}">${p.label}</button>`).join('');
 
-    // --- NEUE LOGIK FÜR DIE GRANULARITÄTS-WECHSEL ---
+    // Beim Wechsel der Granularität den zuletzt gewählten Zeitraum beibehalten
     for (const btn of this.#els.selector.querySelectorAll('[data-id]')) {
       btn.addEventListener('click', () => {
-        const newGranularity = btn.dataset.id;
-        
-        // Den aktuell aktiven Zeitraum holen, um das Enddatum für den neuen Offset zu ermitteln
         const range = getPeriod();
-        const targetDate = (range && range.end) ? new Date(range.end) : new Date();
-        const now = new Date();
-
-        if (newGranularity === 'day') {
-          const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const targetDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-          // Differenz in Tagen (Math.round fängt Sommer-/Winterzeit-Übergänge auf)
-          this.#offset = Math.max(0, Math.round((nowDay - targetDay) / 86400000));
-        } else if (newGranularity === 'week') {
-          const getWeekStart = (d) => {
-            const day = d.getDay() || 7;
-            return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day + 1);
-          };
-          // Differenz in Wochen
-          this.#offset = Math.max(0, Math.round((getWeekStart(now) - getWeekStart(targetDate)) / 604800000));
-        } else if (newGranularity === 'month') {
-          // Differenz in Monaten
-          this.#offset = Math.max(0, (now.getFullYear() - targetDate.getFullYear()) * 12 + now.getMonth() - targetDate.getMonth());
-        } else if (newGranularity === 'year') {
-          // Differenz in Jahren
-          this.#offset = Math.max(0, now.getFullYear() - targetDate.getFullYear());
-        }
-
-        this.#granularity = newGranularity;
+        this.#granularity = btn.dataset.id;
+        this.#offset = this.#offsetFor(this.#granularity, range?.end ? new Date(range.end) : new Date());
         this.#els.popup.classList.add('hidden');
         this.#apply();
       });
@@ -218,8 +194,38 @@ class WueflEnergyPeriodCard extends HTMLElement {
     this.#els.from.addEventListener('change', applyCustom);
     this.#els.to.addEventListener('change', applyCustom);
 
-    this.#apply();
+    // Den Zeitraum übernehmen, der schon gilt (z. B. von einer anderen Seite),
+    // statt beim Aufbau wieder auf "heute" zu springen.
+    const range = getPeriod();
+    if (range.period === 'custom') {
+      this.#els.from.value = isoDate(new Date(range.start));
+      this.#els.to.value = isoDate(new Date(range.end));
+      this.#syncButtons();
+    } else {
+      this.#granularity = range.period;
+      this.#offset = this.#offsetFor(range.period, new Date(range.start));
+      this.#apply();
+    }
     this.#built = true;
+  }
+
+  /** Wie viele Zeiträume der Granularität liegt `date` vor heute? */
+  #offsetFor(granularity, date) {
+    const now = new Date();
+    if (granularity === 'day') {
+      const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      // Math.round fängt Sommer-/Winterzeit-Übergänge auf
+      return Math.max(0, Math.round((nowDay - day) / 86400000));
+    }
+    if (granularity === 'week') {
+      const weekStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - (d.getDay() || 7) + 1);
+      return Math.max(0, Math.round((weekStart(now) - weekStart(date)) / 604800000));
+    }
+    if (granularity === 'month') {
+      return Math.max(0, (now.getFullYear() - date.getFullYear()) * 12 + now.getMonth() - date.getMonth());
+    }
+    return Math.max(0, now.getFullYear() - date.getFullYear());
   }
 
   /**
@@ -261,7 +267,11 @@ class WueflEnergyPeriodCard extends HTMLElement {
     }
     if (this.#granularity === 'day') return start.toLocaleDateString('de-DE', WEEKDAY_MONTH);
     if (this.#granularity === 'week') {
-      return `${start.getDate()}.–${end.getDate()}. ${end.toLocaleDateString('de-DE', { month: 'long' })}`;
+      const month = (d) => d.toLocaleDateString('de-DE', { month: 'long' });
+      // Über den Monatswechsel: "27. Juli – 2. August"
+      return start.getMonth() === end.getMonth()
+        ? `${start.getDate()}.–${end.getDate()}. ${month(end)}`
+        : `${start.getDate()}. ${month(start)} – ${end.getDate()}. ${month(end)}`;
     }
     if (this.#granularity === 'month') return start.toLocaleDateString('de-DE', MONTH_YEAR);
     return String(start.getFullYear());
