@@ -581,14 +581,22 @@ class WueflEnergyChart extends HTMLElement {
                 z: s.stack ? totalSeries + 1 - index : 2,
                 itemStyle: { color: s.resolvedColor }, 
                 areaStyle, 
-                lineStyle: chartType === 'line' ? { width: 1.5 } : undefined
+                lineStyle: chartType === 'line' ? { width: 1.5 } : undefined,
+                ...(chartType === 'bar' ? { barCategoryGap: '25%', barMaxWidth: 48 } : {}),
             };
         });
 
         const spansYears = start.getFullYear() !== end.getFullYear();
 
         const options = {
-            xAxis: [{ type: 'time', min: start.getTime(), max: end.getTime() }],
+            xAxis: [{
+                type: 'time', min: start.getTime(), max: end.getTime(),
+                // Kräftige Null-Linie – trennt Erzeugung (oben) und Verbrauch (unten)
+                axisLine: {
+                    show: true, onZero: true,
+                    lineStyle: { width: 2, color: this.#resolveColor('var(--primary-text-color, #888888)') },
+                },
+            }],
             yAxis: yAxisEcharts,
             grid: { top: 15, left: 10, right: 10, bottom: 5, containLabel: true },
             legend: { show: false },

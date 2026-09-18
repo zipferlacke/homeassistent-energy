@@ -54,7 +54,10 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
           stat_type: 'change',
           sign: def.sign,
           fill: 'gradient',
-          stack: def.sign > 0 ? 'up' : 'down',
+          // Ein gemeinsamer Stapel: ECharts stapelt positive Werte nach oben
+          // und negative nach unten – so stehen die Balken übereinander statt
+          // nebeneinander und können doppelt so breit sein.
+          stack: 'energie',
           type: range.overMonth ? 'bar' : 'line',
         });
       }
