@@ -10,7 +10,7 @@ import {
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
-  applyColorVars, colorOf,
+  applyColorVars, colorOf, navigateToView,
 } from './we-shared.js';
 
 const MODE_KINDS = [
@@ -111,31 +111,8 @@ ${TILE_CSS}
   & .full { flex: 0 0 auto; font-size: var(--w-fs-sm); height: auto; padding: .4rem .8rem; }
 }
 
-details {
-  border-top: 1px solid var(--w-line);
-  margin-top: .7rem;
-
-  & summary {
-    align-items: center; cursor: pointer; display: flex; font-size: var(--w-fs-sm);
-    gap: .5rem; list-style: none; padding: .6rem 0; user-select: none;
-
-    &::-webkit-details-marker { display: none; }
-    & > span { flex: 1 1 auto; }
-    & .chev { --mdc-icon-size: 20px; color: var(--w-text-soft); transition: transform .2s ease; }
-  }
-  &[open] summary .chev { transform: rotate(180deg); }
-  &:hover summary { color: var(--w-accent); }
-  & .body { background: var(--w-bg-soft); border-radius: var(--w-radius); padding: .65rem .75rem; }
-}
-
-.ref {
-  border-top: 1px solid var(--w-line);
-  color: var(--w-text-soft);
-  font-size: var(--w-fs-sm);
-  line-height: 1.45;
-  margin: .7rem 0 0;
-  padding-top: .6rem;
-}
+/* Aufklapper und Hinweis kommen aus BASE_CSS (details.fold, .info) */
+.card > .info { margin-top: .8rem; }
 
 .slider {
   & + .slider { margin-top: .8rem; }
@@ -286,20 +263,28 @@ class WueflWallboxCard extends HTMLElement {
         <button type="button" class="btn full" aria-pressed="false">Einmalig 100 %</button>
       </div>
 
-      <details class="adv">
-        <summary>${icon('mdi:tune')}<span>Mehr Optionen</span>${icon('mdi:chevron-down', 'class="chev"')}</summary>
+      <details class="fold adv" hidden>
+        <summary>
+          <span class="ico">${icon('mdi:tune-variant')}</span>
+          <span>Mehr Optionen</span>
+          ${icon('mdi:chevron-down', 'class="chev"')}
+        </summary>
         <div class="body">
           <div class="slider cur" hidden>
             <div class="line"><span>Maximaler Ladestrom</span><output>–</output></div>
             <input type="range">
             <span class="note">Gilt nur für diese Wallbox. Begrenzt den Strom pro Phase.</span>
           </div>
-          <p class="ref">Hausakku-Freigabe, Batteriereserve und die Preisgrenze für Netzstrom
-            gelten für alle Wallboxen zusammen und stehen in der Ansicht
-            <strong>Einstellungen</strong>.</p>
         </div>
       </details>
 
+      <div class="stats"></div>
+
+      <div class="info">
+        ${icon('mdi:information-outline')}
+        <div class="txt">Hausakku-Freigabe, Reserve und Preisgrenze gelten für alle Wallboxen –
+          <button type="button" class="link open-settings">in den Einstellungen</button>.</div>
+      </div>
       <div class="stats"></div>
     `;
     root.appendChild(card);
@@ -319,8 +304,11 @@ class WueflWallboxCard extends HTMLElement {
       target: q('.target'), targetInput: q('.target input'), targetOut: q('.target output'), full: q('.full'),
       cur: q('.slider.cur'),
       adv: q('details.adv'),
+      openSettings: q('.open-settings'),
       stats: q('.stats'),
     };
+
+    this.#els.openSettings.addEventListener('click', () => navigateToView('einstellungen'));
 
     this.#els.targetInput.addEventListener('input', () => {
       this.#drag = 'target';
@@ -567,6 +555,8 @@ class WueflWallboxCard extends HTMLElement {
     }
 
     this.#syncSlider('cur', c.current_entity, { min: 6, max: 16, step: 1 });
+    // Aufklapper nur zeigen, wenn es darin etwas einzustellen gibt
+    this.#els.adv.hidden = this.#els.cur.hidden;
 
     this.#renderStats();
   }

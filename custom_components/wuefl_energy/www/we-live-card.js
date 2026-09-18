@@ -128,19 +128,7 @@ ${TILE_CSS}
   margin-top: .75rem;
 }
 
-.explain {
-  background: var(--w-bg-soft);
-  border-left: 3px solid var(--w-accent);
-  border-radius: var(--w-radius);
-  color: var(--w-text-soft);
-  font-size: var(--w-fs-sm);
-  line-height: 1.5;
-  margin-top: .55rem;
-  padding: .6rem .75rem;
-
-  & p { margin: 0 0 .4rem; }
-  & p:last-child { margin: 0; }
-}
+.explain { margin-top: .6rem; }
 
 .forecast {
   background: var(--w-bg-soft);
@@ -301,7 +289,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       </div>
       <div class="scene"><div class="state">Grafik wird geladen …</div></div>
       <div class="money"></div>
-      <div class="explain" hidden></div>
+      <div class="explain info" hidden></div>
       <div class="forecast" hidden>
         <div class="fhead"><span>Heute: Strompreis und PV-Prognose</span><span class="legend"></span></div>
         <div class="plot plotbox"></div>
@@ -820,7 +808,9 @@ class WueflEnergyLiveCard extends HTMLElement {
     const el = this.#els.explainBox;
     if (!el) return;
     el.hidden = !this.#explain;
-    el.innerHTML = this.#explain ? texts[this.#explain] ?? '' : '';
+    el.innerHTML = this.#explain
+      ? `${icon('mdi:information-outline')}<div class="txt">${texts[this.#explain] ?? ''}</div>`
+      : '';
   }
 
   /* --------------------- Preis und Prognose in einem ---------------- */

@@ -145,6 +145,54 @@ dialog {
   & .actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: .9rem; }
 }
 
+/* Hinweis: getönte Fläche mit Info-Icon statt grauem Kasten mit Randstrich. */
+.info {
+  align-items: flex-start;
+  background: color-mix(in srgb, var(--w-accent) 9%, transparent);
+  border-radius: var(--w-radius);
+  color: var(--w-text);
+  display: flex;
+  font-size: var(--w-fs-sm);
+  gap: .65rem;
+  line-height: 1.5;
+  padding: .7rem .85rem;
+
+  & > ha-icon { --mdc-icon-size: 18px; color: var(--w-accent); flex: 0 0 auto; margin-top: .1rem; }
+  & > .txt { flex: 1 1 auto; min-width: 0; }
+  & p { margin: 0; }
+  & p + p { margin-top: .35rem; }
+  & .link {
+    background: none; border: 0; color: var(--w-accent); cursor: pointer;
+    font: inherit; font-weight: 600; padding: 0;
+    &:hover { text-decoration: underline; }
+  }
+}
+
+/* Aufklappbereich: abgerundete Fläche, Icon im Kreis, Pfeil dreht sich. */
+details.fold {
+  background: var(--w-bg-soft);
+  border-radius: var(--w-radius);
+  margin-top: .8rem;
+  overflow: hidden;
+
+  & > summary {
+    align-items: center; cursor: pointer; display: flex; font-weight: 500;
+    gap: .7rem; list-style: none; padding: .7rem .85rem; user-select: none;
+    &::-webkit-details-marker { display: none; }
+    & > span { flex: 1 1 auto; }
+    & .ico {
+      background: color-mix(in srgb, var(--w-accent) 15%, transparent); border-radius: 50%;
+      color: var(--w-accent); display: grid; flex: 0 0 auto; height: 2rem; place-items: center; width: 2rem;
+      & ha-icon { --mdc-icon-size: 18px; }
+    }
+    & .chev { --mdc-icon-size: 22px; color: var(--w-text-soft); transition: transform .2s ease; }
+    &:hover { background: var(--w-bg-hover); }
+    &:focus-visible { outline: 2px solid var(--w-accent); outline-offset: -2px; }
+  }
+  &[open] > summary .chev { transform: rotate(180deg); }
+  & > .body { display: grid; gap: .8rem; padding: .2rem .85rem .9rem; }
+}
+
 /* Diagrammflächen – Achsen und Gitter sehen überall gleich aus. */
 .plotbox {
   position: relative;
