@@ -16,7 +16,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
-from .specs import enrich_config, required_specs
+from .specs import enrich_config, required_specs, strip_generated
 
 
 DOMAIN = "we"
@@ -60,11 +60,19 @@ async def _integration_version(hass: HomeAssistant) -> str:
 
 @callback
 def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
-    """Schreibt die vollständige Konfiguration inkl. angereicherter Entitäten in den Lese-Sensor."""
+    """Schreibt die vollständige Konfiguration inkl. Helfer-Entitäten in den Lese-Sensor.
+
+    Alles steht unter dem Attribut "config", in Templates also:
+    state_attr('sensor.we_config', 'config').grid.live
+    """
     hass.states.async_set(
         CONFIG_SENSOR_ENTITY_ID,
         "configured",
-        attributes=enrich_config(config),
+        attributes={
+            "friendly_name": "W-Energie Zuordnung",
+            "icon": "mdi:format-list-checks",
+            "config": enrich_config(config),
+        },
     )
 
 
@@ -97,7 +105,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    data = await store.async_load() or {}
+    # Ältere Versionen haben teils die angereicherte Config gespeichert.
+    data = strip_generated(await store.async_load() or {})
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].update({
@@ -170,11 +179,17 @@ async def async_sync_entities(hass: HomeAssistant) -> None:
                 registry.async_remove(entity_id)
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/get"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/get",
+        # raw: nur die Zuordnung des Nutzers, ohne Helfer – für den Editor.
+        vol.Optional("raw", default=False): bool,
+    }
+)
 @callback
 def websocket_get_config(hass: HomeAssistant, connection, msg: dict) -> None:
     config = hass.data.get(DOMAIN, {}).get("config", {})
-    connection.send_result(msg["id"], enrich_config(config))
+    connection.send_result(msg["id"], config if msg["raw"] else enrich_config(config))
 
 
 @websocket_api.require_admin
@@ -190,7 +205,7 @@ async def websocket_save_config(hass: HomeAssistant, connection, msg: dict) -> N
         connection.send_error(msg["id"], "not_ready", "Integration noch nicht eingerichtet")
         return
 
-    config = msg["config"]
+    config = strip_generated(msg["config"])
     hass.data[DOMAIN]["config"] = config
     await hass.data[DOMAIN]["store"].async_save(config)
 

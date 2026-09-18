@@ -142,15 +142,21 @@ class WueflEnergySettingsCard extends HTMLElement {
   async #loadCentral() {
     try {
       const all = await centralConfig(this.#hass);
-      
+      // Pfade wie in specs.py (config_path) – dort steht entweder der Helfer
+      // der Integration oder die Entität, die der Nutzer stattdessen gewählt hat.
+      const rules = all.wallboxes_config ?? {};
+      // Preise nur als Regler zeigen, wenn es ein einstellbarer Festpreis ist –
+      // ein echter Tarif-Sensor lässt sich nicht verstellen.
+      const adjustable = (id) => (/^(number|input_number)\./.test(id ?? '') ? id : null);
+
       this.#central = {
-        battery_use_entity: getEntity(all.wallboxes_config?.battery_ussage_charging),
-        battery_reserve_entity: getEntity(all.wallboxes_config?.battery_ussage_limit_charging),
-        battery_bad_weather_entity: getEntity(all.wallboxes_config?.charge_battery_bad_weather),
-        priority_entity: getEntity(all.systemdata?.priority_charging),
-        price_limit_entity: getEntity(all.wallboxes_config?.price_limit_charging),
-        price_import_entity: getEntity(all.grid?.price_import), 
-        price_export_entity: getEntity(all.grid?.price_export),
+        battery_use_entity: getEntity(rules.battery_ussage_charging),
+        battery_reserve_entity: getEntity(rules.battery_ussage_limit_charging),
+        battery_bad_weather_entity: getEntity(rules.charge_battery_bad_weather),
+        priority_entity: getEntity(rules.priority_charging),
+        price_limit_entity: getEntity(rules.price_limit_charging),
+        price_import_entity: adjustable(getEntity(all.grid?.price_import)),
+        price_export_entity: adjustable(getEntity(all.grid?.price_export)),
         wallbox_count: (all.wallboxes ?? []).length,
       };
 

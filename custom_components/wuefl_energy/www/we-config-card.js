@@ -1,4 +1,4 @@
-import { saveConfig } from './we-shared.js';
+import { saveConfig, rawConfig } from './we-shared.js';
 import { PRESETS } from './presets.js';
 
 /* ------------------------------------------------------------------ *
@@ -325,7 +325,7 @@ const HELPERS = {
   },
   strings: {
     name: 'Name des Strings (z. B. "Dach Süd" oder "MPPT 1").',
-    entity: 'Live-Wert dieser einzelnen Fläche in Watt (W).',
+    live: 'Live-Wert dieser einzelnen Fläche in Watt (W).',
     color: 'Farbcode für Charts/Graphen (z. B. #ff9f43 oder orange).',
   },
   battery: {
@@ -393,14 +393,22 @@ class WueflEnergyConfigCard extends HTMLElement {
   #els = {};
 
   set hass(hass) {
+    const first = !this.#hass;
     this.#hass = hass;
     if (this.#els.form) {
       this.#els.form.hass = hass;
     }
+    if (first) this.#load();
   }
 
-  setConfig(config) {
-    this.#config = normalizeConfig(config);
+  /** Kartenoptionen enthalten keine Zuordnung – die kommt aus der Integration. */
+  setConfig() {
+    if (!this.#config) this.#config = normalizeConfig({});
+    if (this.#built) this.#render();
+  }
+
+  async #load() {
+    this.#config = normalizeConfig(await rawConfig(this.#hass));
     if (this.#built) this.#render();
   }
 
@@ -776,7 +784,7 @@ class WueflEnergyConfigCard extends HTMLElement {
             <div class="entry sub-entry">
               <div class="txt">
                 <b>${esc(st.name || `String ${stIdx + 1}`)}</b>
-                <span>${esc(st.entity?.entity || st.entity || 'kein Sensor')}</span>
+                <span>${esc(st.live?.entity || st.live || 'kein Sensor')}</span>
               </div>
               <button type="button" class="act edit" data-block="strings" data-parent-id="${e.id}" data-index="${stIdx}">
                 ${icon('mdi:pencil')}
@@ -985,16 +993,9 @@ class WueflEnergyConfigCard extends HTMLElement {
   }
 
   async #persist(config) {
-    // Event weiterhin feuern, falls die Karte doch mal im Standard-Editor geöffnet wird
-    this.dispatchEvent(
-      new CustomEvent('config-changed', {
-        detail: { config },
-        bubbles: true,
-        composed: true,
-      })
-    );
-
-    // Nutze deine zentrale Speicher-Logik
+    // Nur über die Integration speichern. Früher ging die Zuordnung zusätzlich
+    // als "config-changed" raus – im Karteneditor landete sie so als
+    // Kartenoption im Dashboard und von dort wieder im Speicher.
     if (this.#hass) {
       try {
         await saveConfig(this.#hass, config);

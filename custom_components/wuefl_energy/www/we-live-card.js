@@ -246,7 +246,7 @@ class WueflEnergyLiveCard extends HTMLElement {
   }
 
   #getSystemCost() {
-    const val = this.#config.systemdata?.system_cost?.value;
+    const val = this.#config.systemdata?.system_cost_value;
     return val !== undefined && val !== null ? Number(val) : NaN;
   }
 
@@ -255,11 +255,9 @@ class WueflEnergyLiveCard extends HTMLElement {
     const ents = [];
     if (Array.isArray(c.solar)) {
       for (const s of c.solar) {
-        if (Array.isArray(s.forecast)) {
-          for (const f of s.forecast) {
-            const ent = getEntity(f);
-            if (ent) ents.push(ent);
-          }
+        for (const f of asList(s.forecast)) {
+          const ent = getEntity(f);
+          if (ent) ents.push(ent);
         }
       }
     }
@@ -271,9 +269,9 @@ class WueflEnergyLiveCard extends HTMLElement {
     this.#config = { show_totals: true, ...merged };
     this.#watch = collectEntities(this.#config);
 
-    const priceEnt = getEntity(this.#config.grid?.price?.import);
+    const priceEnts = [this.#config.grid?.price_import, this.#config.grid?.price_import_forecast].map(getEntity);
     const pvForecastEnts = this.#getForecastEntities();
-    this.#watchPlot = [priceEnt, ...pvForecastEnts].filter(Boolean);
+    this.#watchPlot = [...priceEnts, ...pvForecastEnts].filter(Boolean);
 
     this.#plotDirty = true;
     this.#built = false;
@@ -727,7 +725,7 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     const pImp = priceInfo(h, c, 'import').now;
     const pExp = priceInfo(h, c, 'export').now;
-    const ref = c.grid?.price?.import?.reference ?? pImp;
+    const ref = pImp;
 
     const own = pv !== null ? Math.max(0, pv - (exp ?? 0)) : null;
     const saved = own !== null && ref !== null ? (own * ref) / 100 : null;

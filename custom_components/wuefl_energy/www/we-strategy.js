@@ -196,7 +196,9 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
         { type: 'markdown', content: multiple ? '# Wallboxen' : '# Wallbox', text_only: true, slot: 'head' },
         ...wallboxes.map((wb, i) => ({
           type: 'custom:wuefl-wallbox-card',
-          slot: `wb_${i}`
+          // slot = Bereich im Grid, wallbox = welche Wallbox der Zuordnung (1-basiert)
+          slot: `wb_${i}`,
+          wallbox: i + 1,
         }))
       ];
 
@@ -297,7 +299,9 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
             }
           ],
           cards: [
-            { type: 'custom:we-config-card', slot: 'main', ...config },
+            // Lädt die Zuordnung selbst über we/get – nicht als Kartenoption
+            // mitgeben, sonst landen Helfer und Kartenoptionen im Speicher.
+            { type: 'custom:we-config-card', slot: 'main' },
           ]
         }]
       }]

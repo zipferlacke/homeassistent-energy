@@ -1,4 +1,11 @@
-"""specs.py – welche Helfer-Entitäten es geben soll."""
+"""specs.py – welche Helfer-Entitäten es geben soll.
+
+Einzige Stelle, an der die Helfer definiert sind. Jeder Helfer sagt über
+`config_path` selbst, unter welchem Schlüssel er in der Zuordnung auftaucht
+(sensor.we_config, we/get). Karten und Automation lesen immer diese Pfade –
+egal ob dort ein Helfer der Integration steht oder eine echte Entität des
+Nutzers, die ihn ersetzt.
+"""
 from __future__ import annotations
 
 import copy
@@ -12,7 +19,7 @@ GLOBAL_SWITCH = [
         "name": "Hausakku-Freigabe Laden",
         "icon": "mdi:home-battery",
         "default": False,
-        "rules_field": "battery_use_entity"
+        "config_path": ("wallboxes_config", "battery_ussage_charging"),
     },
     {
         "unique_id": "we_charge_battery_with_grid_bad_weather",
@@ -20,7 +27,7 @@ GLOBAL_SWITCH = [
         "name": "Hausakku Netzladung (Schlechtwetter & Billigstrom)",
         "icon": "mdi:battery-charging",
         "default": False,
-        "rules_field": "charge_battery_bad_weather_entity"
+        "config_path": ("wallboxes_config", "charge_battery_bad_weather")
     }
 ]
 
@@ -31,7 +38,7 @@ GLOBAL_NUMBERS = [
         "name": "Hausakku-Nutzungsgrenze Laden",
         "icon": "mdi:battery-lock",
         "min": 0, "max": 100, "step": 5, "unit": "%", "default": 20,
-        "rules_field": "battery_reserve_entity",
+        "config_path": ("wallboxes_config", "battery_ussage_limit_charging"),
     },
     {
         "unique_id": "we_price_limit_charging",
@@ -39,7 +46,7 @@ GLOBAL_NUMBERS = [
         "name": "Preisgrenze Laden",
         "icon": "mdi:cash-clock",
         "min": 0, "max": 500, "step": 1, "unit": "ct", "default": 20,
-        "rules_field": "price_limit_entity",
+        "config_path": ("wallboxes_config", "price_limit_charging"),
     },
     {
         "unique_id": "we_price_import_energy",
@@ -47,7 +54,7 @@ GLOBAL_NUMBERS = [
         "name": "Fix Strompreis",
         "icon": "mdi:cash-clock",
         "min": 0, "max": 300, "step": 1, "unit": "ct", "default": 33,
-        "rules_field": "price_import_energy",
+        "config_path": ("grid", "price_import"),
     },
     {
         "unique_id": "we_price_export_energy",
@@ -55,7 +62,7 @@ GLOBAL_NUMBERS = [
         "name": "Fix Einspeisevergütung",
         "icon": "mdi:cash-clock",
         "min": 0, "max": 300, "step": 1, "unit": "ct", "default": 8,
-        "rules_field": "price_export_energy",
+        "config_path": ("grid", "price_export"),
     },
 ]
 
@@ -67,7 +74,7 @@ GLOBAL_SELECT = [
         "icon": "mdi:priority-high",
         "options": ["Hausakku zuerst", "Auto zuerst"],
         "default": "Hausakku zuerst",
-        "rules_field": "priority_entity"
+        "config_path": ("wallboxes_config", "priority_charging"),
     }
 ]
 
@@ -118,7 +125,7 @@ def required_specs(config: dict) -> dict[str, list[dict]]:
         })
 
         # 2. Soll-Sendeleistung (Number: 0 bis max_power)
-        max_p = wallbox.get("max_power") or 11000
+        max_p = (wallbox.get("more") or {}).get("max_power_value") or 11000
         numbers.append({
             "unique_id": f"we_send_power_{slug}",
             "entity_id": f"number.we_send_power_{slug}",
@@ -166,34 +173,80 @@ def required_specs(config: dict) -> dict[str, list[dict]]:
     return {"switch": switches, "number": numbers, "select": selects}
 
 
+def _get(config: dict, path: tuple[str, ...]):
+    for key in path:
+        if not isinstance(config, dict):
+            return None
+        config = config.get(key)
+    return config
+
+
+def _set(config: dict, path: tuple[str, ...], value) -> None:
+    for key in path[:-1]:
+        if not isinstance(config.get(key), dict):
+            config[key] = {}
+        config = config[key]
+    config[path[-1]] = value
+
+
+def _all_specs(config: dict) -> list[dict]:
+    return [spec for group in required_specs(config).values() for spec in group]
+
+
 def enrich_config(config: dict) -> dict:
-    """Reichert das Config-Objekt direkt mit allen generierten Entitäts-IDs an."""
-    enriched = copy.deepcopy(config)
-    specs = required_specs(enriched)
+    """Zuordnung des Nutzers plus die Helfer-Entitäten der Integration.
 
-    # 1. Map für Wallboxen aufbauen
-    wb_map: dict[str, dict] = {}
-    for group in specs.values():
-        for spec in group:
-            if "wallbox_id" in spec:
-                wb_map.setdefault(spec["wallbox_id"], {})[spec["wallbox_field"]] = spec["entity_id"]
+    Globale Helfer landen unter ihrem `config_path`, Wallbox-Helfer im
+    jeweiligen Wallbox-Eintrag unter `wallbox_field`. Der Helfer ist immer
+    nur die Vorgabe: steht am selben Pfad schon eine Entität des Nutzers
+    (z. B. ein echter Strompreis-Sensor statt des Festpreises), gilt die.
+    """
+    enriched = copy.deepcopy(config or {})
+    wallboxes = {wb.get("id"): wb for wb in enriched.get("wallboxes") or [] if isinstance(wb, dict)}
 
-    # Injektion in einzelne Wallboxen
-    if "wallboxes" in enriched and isinstance(enriched["wallboxes"], list):
-        for wb in enriched["wallboxes"]:
-            wb_id = wb.get("id")
-            if wb_id and wb_id in wb_map:
-                wb.update(wb_map[wb_id])
-
-    # 2. wallboxes_config IMMER auf Root-Ebene garantieren
-    enriched["wallboxes_config"] = {
-        "battery_ussage_charging": "switch.we_battery_ussage_charging",
-        "charge_battery_bad_weather": "switch.we_charge_battery_with_grid_bad_weather",
-        "battery_ussage_limit_charging": "number.we_battery_ussage_limit_charging",
-        "price_limit_charging": "number.we_price_limit_charging",
-    }
-
-    # 3. systemdata.priority_charging IMMER setzen
-    enriched.setdefault("systemdata", {})["priority_charging"] = "select.we_priority_charging"
+    for spec in _all_specs(enriched):
+        if "wallbox_id" in spec:
+            wb = wallboxes.get(spec["wallbox_id"])
+            if wb is not None:
+                wb[spec["wallbox_field"]] = spec["entity_id"]
+            continue
+        path = spec.get("config_path")
+        if not path:
+            continue
+        if _get(enriched, path):
+            continue
+        _set(enriched, path, spec["entity_id"])
 
     return enriched
+
+
+# Schlüssel, die nie zur gespeicherten Zuordnung gehören: Kartenoptionen,
+# die beim Speichern aus dem Dashboard mitrutschen können.
+_CARD_KEYS = ("type", "slot", "view_layout", "grid_options", "internal")
+
+
+def strip_generated(config: dict) -> dict:
+    """Gegenstück zu enrich_config: entfernt alles, was die Integration selbst
+    erzeugt, damit nur die echte Zuordnung des Nutzers gespeichert wird."""
+    stripped = copy.deepcopy(config or {})
+    for key in _CARD_KEYS:
+        stripped.pop(key, None)
+
+    helper_ids = {spec["entity_id"] for spec in _all_specs(stripped)}
+    for spec in _all_specs(stripped):
+        if "wallbox_id" in spec:
+            for wb in stripped.get("wallboxes") or []:
+                if isinstance(wb, dict) and wb.get(spec["wallbox_field"]) in helper_ids:
+                    wb.pop(spec["wallbox_field"], None)
+            continue
+        path = spec.get("config_path")
+        if path and _get(stripped, path) in helper_ids:
+            parent = _get(stripped, path[:-1])
+            parent.pop(path[-1], None)
+
+    if isinstance(stripped.get("wallboxes_config"), dict) and not stripped["wallboxes_config"]:
+        stripped.pop("wallboxes_config")
+    # Altlast: Priorität lag früher unter systemdata
+    if isinstance(stripped.get("systemdata"), dict):
+        stripped["systemdata"].pop("priority_charging", None)
+    return stripped

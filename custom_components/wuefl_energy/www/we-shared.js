@@ -372,8 +372,13 @@ export function fmtDuration(hours) {
  * Fehlt der Sensor, greift der Festpreis aus der Config.
  */
 export function priceInfo(hass, config, direction = 'import') {
-  const entity = direction === 'import' ? config.price_entity : config.price_export_entity;
-  const fixed = direction === 'import' ? config.price_import_fixed : config.price_export_fixed;
+  const imp = direction === 'import';
+  // Eigene Kartenoptionen zuerst, sonst die zentrale Zuordnung (grid.*)
+  const entity = imp
+    ? config.price_entity ?? config.grid?.price_import
+    : config.price_export_entity ?? config.grid?.price_export;
+  const forecastEntity = imp ? config.grid?.price_import_forecast : config.grid?.price_export_forecast;
+  const fixed = imp ? config.price_import_fixed : config.price_export_fixed;
   const st = entity ? hass?.states?.[entity] : null;
 
   if (!st) return { now: fixed ?? null, unit: 'ct/kWh', forecast: [], fixed: true };
@@ -385,8 +390,10 @@ export function priceInfo(hass, config, direction = 'import') {
   if (Number.isFinite(now)) now *= toCt;
   else now = fixed ?? null;
 
+  // Prognose aus eigenem Sensor, sonst aus den Attributen des Preissensors
+  const fst = (forecastEntity && hass?.states?.[forecastEntity]) || st;
   const attr = config.price_forecast_attribute ?? 'prices';
-  const raw = st.attributes[attr] ?? st.attributes.forecast ?? st.attributes.data ?? [];
+  const raw = fst.attributes[attr] ?? fst.attributes.forecast ?? fst.attributes.data ?? [];
   const forecast = (Array.isArray(raw) ? raw : [])
     .map((e) => {
       const t = e.start_time ?? e.startsAt ?? e.start ?? e.time ?? e.datetime;
@@ -831,18 +838,18 @@ export async function centralConfig(hass) {
   return config
 }
 
-/** Rohe Zuordnung, wie sie geBatteriet ist — für die Einstellungsansicht. */
-export async function rawConfig(hass, withInternal=false) {
-  const data = await hass.callWS({ type: 'we/get' }).catch(() => ({}));
-  if(withInternal) return data;
-  // "internal" ist ein vom Backend berechnetes Zusatzfeld, kein Teil der
-  // vom Nutzer gepflegten Zuordnung — beim Bearbeiten und erneuten
-  // Batterien soll es nicht versehentlich mit persistiert werden.
-  const { internal, ...rest } = data ?? {};
-  return rest;
+/**
+ * Zuordnung aus der Integration.
+ * withInternal = true: inklusive der Helfer-Entitäten der Integration
+ * (Lademodus, Laderegler …) – so, wie Karten und Automation sie sehen.
+ * withInternal = false: nur das, was der Nutzer selbst zugeordnet hat –
+ * für den Editor, damit keine Helfer mit abgespeichert werden.
+ */
+export async function rawConfig(hass, withInternal = false) {
+  return (await hass.callWS({ type: 'we/get', raw: !withInternal }).catch(() => ({}))) ?? {};
 }
 
-/** Zuordnung Batterien und alle offenen Karten benachrichtigen. */
+/** Zuordnung speichern und alle offenen Karten benachrichtigen. */
 export async function saveConfig(hass, config) {
   await hass.callWS({ type: 'we/save', config });
   centralPromise = null;

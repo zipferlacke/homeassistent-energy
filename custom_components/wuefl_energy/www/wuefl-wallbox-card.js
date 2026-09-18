@@ -161,7 +161,7 @@ class WueflWallboxCard extends HTMLElement {
   #drag = null;
 
   static getConfigElement() { return document.createElement('wuefl-wallbox-card-editor'); }
-  static getStubConfig() { return { slot: 1 }; }
+  static getStubConfig() { return { wallbox: 1 }; }
 
   setConfig(config) {
     this.#own = config ?? {};
@@ -183,14 +183,22 @@ class WueflWallboxCard extends HTMLElement {
 
   async #loadCentral() {
     const all = await centralConfig(this.#hass);
-    const wb = (all.wallboxes ?? [])[(this.#own.slot ?? 1) - 1] ?? {};
+    // Welche Wallbox: "wallbox" (1-basiert) aus der Strategy, sonst ein
+    // numerischer "slot" aus älteren, von Hand angelegten Karten.
+    const index = Number(this.#own.wallbox ?? this.#own.slot) || 1;
+    const wb = (all.wallboxes ?? [])[index - 1] ?? {};
+    const rules = all.wallboxes_config ?? {};
+    const more = wb.more ?? {};
     this.#central = {
       ...wb,
       battery: all.battery,
       grid: all.grid,
-      pv_forecast_entities: wb.pv_forecast_entities ?? all.systemdata?.pv_forecast,
-      price_entity: wb.price_entity ?? all.grid?.import_price,
-      price_limit_entity: wb.price_limit_entity ?? all.grid?.price_limit,
+      max_power: more.max_power_value,
+      phases: more.phases_value,
+      house_base_load: all.systemdata?.house_base_load,
+      pv_forecast_entities: asList(all.solar).flatMap((s) => asList(s.forecast)),
+      price_entity: all.grid?.price_import,
+      price_limit_entity: rules.price_limit_charging,
     };
     this.#apply();
     this.#update();
@@ -199,16 +207,19 @@ class WueflWallboxCard extends HTMLElement {
   #apply() {
     const merged = mergeConfig(this.#central, this.#own);
 
-    const car_soc = getEntity(merged.car_soc_entity ?? merged.car_soc);
-    const target_soc = getEntity(merged.charge_percent_limit ?? merged.target_soc_entity ?? merged.target_soc);
-    const mode = getEntity(merged.charge_type ?? merged.mode_entity ?? merged.mode);
-    const power_ent = getEntity(merged.send_power ?? merged.power_entity ?? merged.power);
+    // Kartenoptionen (…_entity) gewinnen, sonst die Felder der Zuordnung
+    const car_soc = getEntity(merged.car_soc_entity ?? merged.car_percent);
+    const target_soc = getEntity(merged.target_soc_entity ?? merged.charge_percent_limit);
+    const mode = getEntity(merged.mode_entity ?? merged.charge_type);
+    const power_ent = getEntity(merged.power_entity ?? merged.live);
     const status = getEntity(merged.status_entity ?? merged.status);
-    const today = getEntity(merged.today_energy_entity ?? merged.today_energy ?? merged.total);
-    const total = getEntity(merged.total_energy_entity ?? merged.total_energy ?? merged.total);
-    const current = getEntity(merged.current_entity ?? merged.current);
+    const today = getEntity(merged.today_energy_entity ?? merged.total_session);
+    const total = getEntity(merged.total_energy_entity ?? merged.total);
+    // Ein Stromregler (A) nur, wenn die Karte ausdrücklich einen bekommt –
+    // die Ladeleistung setzt sonst die Automation über send_power.
+    const current = getEntity(merged.current_entity);
     const current_actual = getEntity(merged.current_actual_entity ?? merged.current_actual);
-    const ignore_limit = getEntity(merged.ignore_percent_limit ?? merged.ignore_percent_limit_entity);
+    const ignore_limit = getEntity(merged.ignore_percent_limit_entity ?? merged.ignore_percent_limit);
 
     this.#config = {
       name: 'Wallbox',
@@ -419,7 +430,10 @@ class WueflWallboxCard extends HTMLElement {
       return inHours(needed / full, `Zeit ist eine Prognose · volle Leistung, ${fmtPower(c.max_power ?? 11000)}`);
     }
 
-    const base = (c.house_base_load ?? 400) / 1000;
+    const baseW = typeof c.house_base_load === 'string'
+      ? power(this.#hass, c.house_base_load)
+      : c.house_base_load;
+    const base = (baseW ?? 400) / 1000;
 
     const solar = () => solarEta(
       this.#hass, c.pv_forecast_entities, c.pv_forecast_attribute, base, needed,
@@ -645,7 +659,7 @@ class WueflWallboxCard extends HTMLElement {
 
 const SCHEMA = [
   {
-    name: 'slot',
+    name: 'wallbox',
     selector: {
       select: {
         mode: 'dropdown',
@@ -668,7 +682,7 @@ const SCHEMA = [
 ];
 
 const LABELS = {
-  slot: 'Welche Wallbox aus der zentralen Zuordnung',
+  wallbox: 'Welche Wallbox aus der zentralen Zuordnung',
   name: 'Name des Fahrzeugs',
   capacity: 'Akkukapazität in kWh',
   max_power: 'Maximale Ladeleistung in W',
