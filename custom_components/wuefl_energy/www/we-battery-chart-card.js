@@ -5,7 +5,7 @@
  * Liest den Akkustand (percent), Name und Farbe aus dem neuen zentralen
  * `battery`-Array der we-config-card.
  */
-import { registerCard, WueflFormEditor, sel } from './we-shared.js';
+import { registerCard, WueflFormEditor, sel, colorOf } from './we-shared.js';
 import { WueflChartWrapper } from './we-chart-base.js';
 
 function getBatterySocSeries(cfg) {
@@ -20,7 +20,7 @@ function getBatterySocSeries(cfg) {
     series.push({
       entity,
       name: b.name || (batteries.length > 1 ? `Batterie ${i + 1}` : 'Ladestand'),
-      color: b.color || 'var(--energy-battery-out-color, #4db0a2)',
+      color: colorOf('battery', b, i),
       stat_type: 'mean',
       fill: 'gradient',
     });

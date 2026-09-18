@@ -10,6 +10,7 @@ import {
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
+  applyColorVars, colorOf,
 } from './we-shared.js';
 
 const MODE_KINDS = [
@@ -189,6 +190,9 @@ class WueflWallboxCard extends HTMLElement {
     const wb = (all.wallboxes ?? [])[index - 1] ?? {};
     const rules = all.wallboxes_config ?? {};
     const more = wb.more ?? {};
+    // Farben der Zuordnung, die Wallbox-Farbe von genau dieser Wallbox
+    applyColorVars(this, all);
+    this.style.setProperty('--w-wallbox', colorOf('wallboxes', wb, index - 1));
     this.#central = {
       ...wb,
       battery: all.battery,

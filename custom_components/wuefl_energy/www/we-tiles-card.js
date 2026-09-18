@@ -6,23 +6,23 @@
  */
 import {
   asList, fmtEnergy, esc, registerCard, centralConfig, WueflFormEditor, sel,
-  cssColor, TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats,
+  TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats, colorOf,
 } from './we-shared.js';
 
 const SERIES = [
-  { key: 'pv_energy', label: 'Solar', color: '--energy-solar-color', fallback: '#ff9800', icon: 'mdi:solar-power',
+  { key: 'pv_energy', label: 'Solar', color: (c) => colorOf('solar', asList(c.solar)[0]), icon: 'mdi:solar-power',
     getIds: (c) => asList(c.solar).map(s => s.total).filter(Boolean) },
-  { key: 'battery_out', label: 'Batterie', color: '--energy-battery-out-color', fallback: '#4db0a2', icon: 'mdi:battery-high', pair: 'battery', short: 'entladen',
+  { key: 'battery_out', label: 'Batterie', color: (c) => colorOf('battery', asList(c.battery)[0]), icon: 'mdi:battery-high', pair: 'battery', short: 'entladen',
     getIds: (c) => asList(c.battery).map(b => b.out_total).filter(Boolean) },
-  { key: 'battery_in', label: 'Batterie', color: '--energy-battery-in-color', fallback: '#f6c34c', icon: 'mdi:battery-high', pair: 'battery', short: 'geladen',
+  { key: 'battery_in', label: 'Batterie', color: (c) => colorOf('battery', asList(c.battery)[0], 0, 'color_in'), icon: 'mdi:battery-high', pair: 'battery', short: 'geladen',
     getIds: (c) => asList(c.battery).map(b => b.in_total).filter(Boolean) },
-  { key: 'grid_import', label: 'Netz', color: '--energy-grid-consumption-color', fallback: '#488fc2', icon: 'mdi:transmission-tower', pair: 'grid', short: 'Bezug',
+  { key: 'grid_import', label: 'Netz', color: (c) => colorOf('grid', c.grid), icon: 'mdi:transmission-tower', pair: 'grid', short: 'Bezug',
     getIds: (c) => asList(c.grid?.import_total).filter(Boolean) },
-  { key: 'grid_export', label: 'Netz', color: '--energy-grid-return-color', fallback: '#8353d1', icon: 'mdi:transmission-tower', pair: 'grid', short: 'Einspeisung',
+  { key: 'grid_export', label: 'Netz', color: (c) => colorOf('grid', c.grid, 0, 'color_export'), icon: 'mdi:transmission-tower', pair: 'grid', short: 'Einspeisung',
     getIds: (c) => asList(c.grid?.export_total).filter(Boolean) },
-  { key: 'house_energy', label: 'Haushalt', color: '--wuefl-house-color', fallback: '#e57373', icon: 'mdi:home',
+  { key: 'house_energy', label: 'Haushalt', color: (c) => colorOf('consumers', c.consumers), icon: 'mdi:home',
     getIds: (c) => asList(c.consumers?.total).filter(Boolean) },
-  { key: 'wallbox_energy', label: 'Wallbox', color: '--wuefl-wallbox-color', fallback: '#ba68c8', icon: 'mdi:ev-station',
+  { key: 'wallbox_energy', label: 'Wallbox', color: (c) => colorOf('wallboxes', asList(c.wallboxes)[0]), icon: 'mdi:ev-station',
     getIds: (c) => asList(c.wallboxes).map(w => w.total).filter(Boolean) },
 ];
 const PAIR_NAMES = { grid: 'Netz', battery: 'Batterie' };
@@ -32,10 +32,6 @@ const CSS = `
 .card { ${GRID_CSS} }
 ${TILE_CSS}
 .ha-tile { min-height: auto; }
-.discharge-text { color: var(--energy-battery-out-color, #4db0a2); }
-.charge-text { color: var(--energy-battery-in-color, #f6c34c); }
-.import-text { color: var(--energy-grid-consumption-color, #488fc2); }
-.export-text { color: var(--energy-grid-return-color, #8353d1); }
 .state { color: var(--secondary-text-color); padding: 24px 0; text-align: center; }
 `;
 
@@ -120,15 +116,15 @@ class WueflEnergyTilesCard extends HTMLElement {
     const seen = new Set();
 
     for (const s of used) {
-      const color = cssColor(this, s.color, s.fallback);
+      const color = s.color(this.#config);
       if (s.pair) {
         if (seen.has(s.pair)) continue;
         seen.add(s.pair);
         const both = used.filter((x) => x.pair === s.pair);
         const total = both.reduce((a, x) => a + this.#total(x), 0);
         const subs = both.map((x) => {
-          const cls = x.short === 'entladen' ? 'discharge-text' : x.short === 'geladen' ? 'charge-text' : x.short === 'Bezug' ? 'import-text' : 'export-text';
-          return `<span class="sub-item ${cls}">${fmtEnergy(this.#total(x))} ${esc(x.short)}</span>`;
+          const c = x.color(this.#config);
+          return `<span class="sub-item" style="color: ${c}">${fmtEnergy(this.#total(x))} ${esc(x.short)}</span>`;
         }).join('');
         html.push(`<ha-card class="ha-tile"><div class="tile-content">
           <div class="tile-icon-container" style="--icon-color: ${color}; --icon-bg: color-mix(in srgb, ${color} 18%, transparent);">

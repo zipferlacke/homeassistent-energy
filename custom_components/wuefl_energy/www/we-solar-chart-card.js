@@ -3,15 +3,8 @@
  * Solarproduktion (Gesamt sowie einzelne Anlagen / Strings).
  * Liest die Konfiguration direkt aus dem zentralen `solar`-Array der we-config-card.
  */
-import { registerCard, WueflFormEditor, sel } from './we-shared.js';
+import { registerCard, WueflFormEditor, sel, colorOf } from './we-shared.js';
 import { WueflChartWrapper } from './we-chart-base.js';
-
-const STRING_COLORS = [
-  'var(--energy-grid-consumption-color, #488fc2)',
-  'var(--wuefl-wallbox-color, #ba68c8)',
-  'var(--energy-battery-out-color, #4db0a2)',
-  'var(--wuefl-heatpump-color, #d85a30)',
-];
 
 function getEntity(val) {
   if (!val) return null;
@@ -44,7 +37,7 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
         series.push({
           entity: plantLive,
           name: plant.name || (solarPlants.length > 1 ? `Anlage ${plantIdx + 1}` : 'Gesamt'),
-          color: plant.color || 'var(--energy-solar-color, #ff9800)',
+          color: colorOf('solar', plant, plantIdx),
           stat_type: 'mean',
           fill: 'gradient',
           type: range.overMonth ? 'bar' : 'line',
@@ -63,7 +56,7 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
         series.push({
           entity: strLive,
           name: str.name || `String ${strIdx + 1}`,
-          color: str.color || STRING_COLORS[colorIdx++ % STRING_COLORS.length],
+          color: colorOf('strings', str, colorIdx++),
           stat_type: 'mean',
           fill: 'gradient',
           type: range.overMonth ? 'bar' : 'line',
@@ -85,7 +78,7 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
               entity: chipEntity,
               unit: 'kWh',
               stat_type: 'sum',
-              color: 'var(--energy-solar-color, #ff9800)',
+              color: colorOf('solar', solarPlants[0]),
             },
           }
         : {}),

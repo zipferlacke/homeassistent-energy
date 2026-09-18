@@ -9,7 +9,7 @@ import {
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtEuro, esc, icon, registerCard,
   weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
   statesChanged, pvForecast, todayTotals, todaySum,
-  COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
+  COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, applyColorVars,
 } from './we-shared.js';
 
 // Relativ zum Modul, damit die Grafik aus demselben versionierten Pfad kommt.
@@ -268,6 +268,8 @@ class WueflEnergyLiveCard extends HTMLElement {
     const merged = mergeConfig(this.#central, this.#own);
     this.#config = { show_totals: true, ...merged };
     this.#watch = collectEntities(this.#config);
+    // Farben der Zuordnung → --w-solar, --w-house, … (Grafik, Flüsse, Kacheln)
+    applyColorVars(this, this.#config);
 
     const priceEnts = [this.#config.grid?.price_import, this.#config.grid?.price_import_forecast].map(getEntity);
     const pvForecastEnts = this.#getForecastEntities();
@@ -748,7 +750,7 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     if (saved !== null) {
       tiles.push(tileHtml({
-        icon: 'mdi:solar-power', color: cssColor(this, '--energy-solar-color', '#ff9800'),
+        icon: 'mdi:solar-power', color: cssColor(this, '--w-solar', '#ff9800'),
         title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }), click: 'saved',
       }));
     }

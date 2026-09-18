@@ -1,4 +1,4 @@
-import { saveConfig, rawConfig } from './we-shared.js';
+import { saveConfig, rawConfig, colorOf } from './we-shared.js';
 import { PRESETS } from './presets.js';
 
 /* ------------------------------------------------------------------ *
@@ -17,6 +17,24 @@ const percent = () => ({ entity: { filter: { device_class: 'battery' } } });
 const money = () => ({ entity: { filter: { device_class: 'monetary' } } });
 const bool = () => ({ boolean: {} });
 const number = (min, max, step) => ({ number: { min, max, step, mode: 'box' } });
+const color = () => ({ color_rgb: {} });
+
+/**
+ * Früher waren Farben Freitext ("#ff9800", "orange"). Der Farbwähler
+ * erwartet [r, g, b] – alte Werte werden beim Öffnen umgerechnet.
+ */
+function toRgbArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return value;
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.fillStyle = '#010203';
+  ctx.fillStyle = value.trim();
+  const hex = ctx.fillStyle;
+  if (!/^#[0-9a-f]{6}$/i.test(hex) || (hex === '#010203' && value.trim() !== '#010203')) return undefined;
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+}
+
+const COLOR_FIELDS = ['color', 'color_in', 'color_export'];
 
 function findEntity(states, pattern) {
   if (!states) return null;
@@ -59,7 +77,8 @@ const BLOCKS = [
       { name: 'price_export', selector: { entity: { filter: [{ domain: 'sensor' }, { entity_id: 'number.we_price_export_energy' } ]} }},
       { name: 'price_import_forecast', selector: money() },
       { name: 'price_export_forecast', selector: money() },
-      { name: 'color', selector: text() },
+      { name: 'color', selector: color() },
+      { name: 'color_export', selector: color() },
     ],
   },
   {
@@ -77,7 +96,7 @@ const BLOCKS = [
       { name: 'total', selector: kwh() },
       { name: 'forecast', selector: kwh(true) },
       { name: 'temperatur', selector: temp() },
-      { name: 'color', selector: text() },
+      { name: 'color', selector: color() },
     ],
   },
   {
@@ -93,7 +112,7 @@ const BLOCKS = [
     schema: [
       { name: 'name', selector: text() },
       { name: 'live', selector: watt() },
-      { name: 'color', selector: text() },
+      { name: 'color', selector: color() },
     ],
   },
   {
@@ -112,7 +131,8 @@ const BLOCKS = [
       { name: 'in_total', selector: kwh() },
       { name: 'out_total', selector: kwh() },
       { name: 'temperatur', selector: temp() },
-      { name: 'color', selector: text() },
+      { name: 'color', selector: color() },
+      { name: 'color_in', selector: color() },
       {
         type: 'expandable',
         name: 'control',
@@ -136,7 +156,7 @@ const BLOCKS = [
     schema: [
       { name: 'live', selector: watt() },
       { name: 'total', selector: kwh() },
-      { name: 'color', selector: text() },
+      { name: 'color', selector: color() },
     ],
   },
   {
@@ -153,7 +173,7 @@ const BLOCKS = [
       { name: 'live', selector: watt() },
       { name: 'total', selector: kwh() },
       { name: 'temperatur', selector: temp() },
-      { name: 'color', selector: text() },
+      { name: 'color', selector: color() },
     ],
   },
   {
@@ -173,7 +193,7 @@ const BLOCKS = [
       { name: 'status', selector: ({ entity: { filter: { domain: 'sensor' } } }) },
       { name: 'ready_for_charge', selector: ({ entity: { filter: { domain: ['binary_sensor','sensor'] } } }) },
       { name: 'car_percent', selector: percent() },
-      { name: 'color', selector: text() },
+      { name: 'color', selector: color() },
       {
         type: 'expandable',
         name: 'more',
@@ -198,7 +218,7 @@ const BLOCKS = [
       { name: 'name', selector: text() },
       { name: 'live', selector: watt() },
       { name: 'total', selector: kwh() },
-      { name: 'color', selector: text() },
+      { name: 'color', selector: color() },
     ],
   },
   {
@@ -233,7 +253,8 @@ const LABELS = {
     price_export: 'Einspeisevergütung',
     price_import_forecast: 'Preisprognose Bezug',
     price_export_forecast: 'Preisprognose Einspeisung',
-    color: 'Farbe (HEX-Code / Name)',
+    color: 'Farbe Bezug',
+    color_export: 'Farbe Einspeisung',
   },
   solar: {
     name: 'Bezeichnung',
@@ -241,12 +262,12 @@ const LABELS = {
     total: 'PV-Ertrag gesamt',
     forecast: 'Ertragsprognose',
     temperatur: 'Wechselrichter-Temperatur',
-    color: 'Farbe (HEX-Code / Name)',
+    color: 'Farbe',
   },
   strings: {
     name: 'Bezeichnung',
     live: 'Leistungs-Sensor (Watt)',
-    color: 'Farbe (HEX-Code / Name)',
+    color: 'Farbe',
   },
   battery: {
     name: 'Bezeichnung',
@@ -255,7 +276,8 @@ const LABELS = {
     in_total: 'Geladen gesamt',
     out_total: 'Entladen gesamt',
     temperatur: 'Batterietemperatur',
-    color: 'Farbe (HEX-Code / Name)',
+    color: 'Farbe Entladen',
+    color_in: 'Farbe Laden',
     mode_stop_discharging: 'Aktion: Entladen stoppen (Einfrieren)',
     mode_start_charging: 'Aktion: Zwangsladen (Aus dem Netz laden)',
     normal_mode: 'Aktion: Normalbetrieb (Standard)',
@@ -263,14 +285,14 @@ const LABELS = {
   consumers: {
     live: 'Hausverbrauch (Live)',
     total: 'Hausverbrauch gesamt',
-    color: 'Farbe (HEX-Code / Name)',
+    color: 'Farbe',
   },
   heatpump: {
     name: 'Bezeichnung',
     live: 'Elektrische Leistung',
     total: 'Gesamtverbrauch',
     temperatur: 'Temperatur Sensor',
-    color: 'Farbe (HEX-Code / Name)',
+    color: 'Farbe',
   },
   wallboxes: {
     name: 'Bezeichnung',
@@ -280,7 +302,7 @@ const LABELS = {
     status: 'Status der Wallbox',
     ready_for_charge: 'Bereit zum Laden',
     car_percent: 'Fahrzeug Akku %',
-    color: 'Farbe (HEX-Code / Name)',
+    color: 'Farbe',
     phases_value: 'Anzahl Phasen',
     max_power_value: 'Maximale Ladeleistung',
   },
@@ -288,7 +310,7 @@ const LABELS = {
     name: 'Bezeichnung',
     live: 'Aktuelle Leistung / Durchfluss',
     total: 'Gesamtverbrauch',
-    color: 'Farbe (HEX-Code / Name)',
+    color: 'Farbe',
   },
   systemdata: {
     system_cost_value: 'Anschaffungskosten (€)',
@@ -313,7 +335,8 @@ const HELPERS = {
     price_export: 'Sensor für aktuelle Einspeisevergütung, bei festpreis "Fix Einspeisevergütung" auswählen und in den Einstellung Wert hinterlegen.',
     price_import_forecast: 'Sensor/Attribut für vorhergesagte Bezugspreise.',
     price_export_forecast: 'Sensor/Attribut für vorhergesagte Einspeisepreise.',
-    color: 'Farbe für Netzbezug/Einspeisung im Chart (z. B. #e74c3c oder red).',
+    color: 'Farbe für den Netzbezug in Grafik und Diagrammen. Leer = Farbe aus dem Theme.',
+    color_export: 'Farbe für die Einspeisung. Leer = Farbe aus dem Theme.',
   },
   solar: {
     name: 'Name der Anlage',
@@ -321,12 +344,12 @@ const HELPERS = {
     total: 'Gesamter ertragener Strom in kWh.',
     forecast: 'Prognose-Sensor (z. B. Solcast oder Forecast.Solar).',
     temperatur: 'Temperatursensor des Wechselrichters.',
-    color: 'Hauptfarbe der PV-Anlage im Chart (z. B. #f1c40f oder yellow).',
+    color: 'Farbe der PV-Anlage in Grafik und Diagrammen. Leer = Vorgabe.',
   },
   strings: {
     name: 'Name des Strings (z. B. "Dach Süd" oder "MPPT 1").',
     live: 'Live-Wert dieser einzelnen Fläche in Watt (W).',
-    color: 'Farbcode für Charts/Graphen (z. B. #ff9f43 oder orange).',
+    color: 'Farbe des Strings im Solar-Diagramm. Leer = Vorgabe.',
   },
   battery: {
     name: 'Name des Speichers.',
@@ -335,7 +358,8 @@ const HELPERS = {
     in_total: 'Gesamte geladene Energie in kWh.',
     out_total: 'Gesamte entladene Energie in kWh.',
     temperatur: 'Temperatursensor des Akkus.',
-    color: 'Farbe der Batterie im Chart (z. B. #2ecc71 oder green).',
+    color: 'Farbe fürs Entladen in Grafik und Diagrammen. Leer = Farbe aus dem Theme.',
+    color_in: 'Farbe fürs Laden. Leer = Farbe aus dem Theme.',
     mode_stop_discharging: 'Sperrt die Akku-Entladung (z. B. beim Auto-Schnellladen). Wähle hier z. B. ein Skript, das die Entladeleistung auf 0W setzt.',
     mode_start_charging: 'Erzwingt das Laden aus dem Netz (z. B. bei extrem billigem Strom). Für Sungrow: "scene.sungrow_set_battery_forced_charge".',
     normal_mode: 'Versetzt den Wechselrichter wieder in den normalen Eigenverbrauchsmodus. Für Sungrow: "scene.sungrow_self_consumption_mode".',
@@ -343,14 +367,14 @@ const HELPERS = {
   consumers: {
     live: 'Live-Verbrauch in Watt (W). Leer lassen für automatische Errechnung.',
     total: 'Gesamtverbrauchszähler im Haushalt in kWh.',
-    color: 'Farbe für den Hausverbrauch im Chart (z. B. #3498db oder blue).',
+    color: 'Farbe des Hausverbrauchs in Grafik und Diagrammen. Leer = Vorgabe.',
   },
   heatpump: {
     name: 'Name der Wärmepumpe.',
     live: 'Elektrische Leistungsaufnahme in Watt (W).',
     total: 'Gesamte verbrauchte Energie in kWh.',
     temperatur: 'Temperatursensor (z. B. Vorlauf oder Raum).',
-    color: 'Farbe der Wärmepumpe im Chart (z. B. #e67e22 oder orange).',
+    color: 'Farbe der Wärmepumpe in Grafik und Diagrammen. Leer = Vorgabe.',
   },
   wallboxes: {
     name: 'Name der Wallbox.',
@@ -362,13 +386,13 @@ const HELPERS = {
     car_percent: 'Batterie-Ladestand des verbundenen Autos in %.',
     phases_value: 'Anzahl aktiv genutzter Phasen (1–3).',
     max_power_value: 'Maximal erreichbare Ladeleistung in Watt (W).',
-    color: 'Farbe der Wallbox im Chart (z. B. #9b59b6 oder purple).',
+    color: 'Farbe der Wallbox in Grafik und Diagrammen. Leer = Vorgabe.',
   },
   water: {
     name: 'Name des Systems (z. B. "Frischstation").',
     live: 'Live-Durchfluss oder Wärmeleistung.',
     total: 'Gesamter Verbrauchszähler.',
-    color: 'Farbe des Wassersystems im Chart (z. B. #1abc9c oder teal).',
+    color: 'Farbe des Wassersystems in den Diagrammen. Leer = Vorgabe.',
   },
   systemdata: {
     system_cost_value: 'Gesamte Anschaffungskosten der Anlage in Euro (€).',
@@ -510,6 +534,13 @@ class WueflEnergyConfigCard extends HTMLElement {
         }
         .entry .txt b {
           font-size: 0.95rem;
+        }
+        .swatch {
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          flex-shrink: 0;
+          border: 1px solid var(--divider-color, #ccc);
         }
         .entry .txt span {
           font-size: 0.8rem;
@@ -782,6 +813,7 @@ class WueflEnergyConfigCard extends HTMLElement {
           const stringsList = asList(e.strings);
           const stringRows = stringsList.map((st, stIdx) => `
             <div class="entry sub-entry">
+              <span class="swatch" style="background: ${colorOf('strings', st, stIdx)}"></span>
               <div class="txt">
                 <b>${esc(st.name || `String ${stIdx + 1}`)}</b>
                 <span>${esc(st.live?.entity || st.live || 'kein Sensor')}</span>
@@ -814,6 +846,7 @@ class WueflEnergyConfigCard extends HTMLElement {
         return `
           <div class="entry-card">
             <div class="entry">
+              ${b.key === 'systemdata' ? '' : `<span class="swatch" style="background: ${colorOf(b.key, e, i)}"></span>`}
               <div class="txt"><b>${esc(label)}</b><span>${esc(sub ?? 'noch nichts zugeordnet')}</span></div>
               <button type="button" class="act edit" data-block="${b.key}" data-index="${i}">${icon('mdi:pencil')}</button>
               ${b.kind === 'list' ? `<button type="button" class="act del" data-block="${b.key}" data-index="${i}">${icon('mdi:delete')}</button>` : ''}
@@ -893,6 +926,10 @@ class WueflEnergyConfigCard extends HTMLElement {
       this.#draft = isNew ? {} : { ...stringsList[index] };
     } else {
       this.#draft = isNew ? {} : { ...(block.kind === 'list' ? asList(this.#config[block.key])[index] : this.#config[block.key]) };
+    }
+
+    for (const f of COLOR_FIELDS) {
+      if (f in this.#draft) this.#draft[f] = toRgbArray(this.#draft[f]);
     }
 
     this.#els.dialogTitle.textContent = parentId ? `String bearbeiten` : block.title;

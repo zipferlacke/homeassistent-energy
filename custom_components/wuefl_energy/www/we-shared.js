@@ -50,8 +50,8 @@ export const TOKENS_CSS = `
   --w-batt-in:     var(--energy-battery-in-color, #f6c34c);
 
   /* Dafür hat HA nichts Eigenes — hier gelten unsere Werte. */
-  --w-house:       var(--wuefl-house-color, #488fc2);
-  --w-wallbox:     var(--wuefl-wallbox-color, #7f77dd);
+  --w-house:       var(--wuefl-house-color, #e57373);
+  --w-wallbox:     var(--wuefl-wallbox-color, #ba68c8);
   --w-heatpump:    var(--wuefl-heatpump-color, #d85a30);
   --w-price:       var(--wuefl-price-color, #fbaa00);
 }
@@ -178,6 +178,74 @@ export const COLORS = {
   heatpump: 'var(--w-heatpump)',
   price: 'var(--w-price)',
 };
+
+/* ------------------------------------------------------------------ *
+ * Farben je Objekt der Zuordnung
+ *
+ * Jedes Objekt (Netz, PV-Anlage, String, Batterie, Haushalt, Wärmepumpe,
+ * Wallbox, Wasser) kann in der Zuordnung eine eigene Farbe haben. Ohne
+ * eigene Farbe gilt die Vorgabe: das erste Objekt einer Art bekommt die
+ * Theme-Farbe (wie im HA-Energie-Dashboard), weitere eine Farbe aus der
+ * Palette, damit sie sich im Diagramm unterscheiden.
+ *
+ * Die Vorgaben sind vollständige var(--ha-variable, #fallback)-Ausdrücke,
+ * damit sie auch in Karten ohne TOKENS_CSS (z. B. we-chart) auflösen.
+ * ------------------------------------------------------------------ */
+
+const PALETTE = ['#488fc2', '#ba68c8', '#4db0a2', '#d85a30', '#f6c34c', '#8353d1', '#e57373', '#7cb342'];
+
+const DEFAULT_COLORS = {
+  grid:        { color: 'var(--energy-grid-consumption-color, #488fc2)', color_export: 'var(--energy-grid-return-color, #8353d1)' },
+  solar:       { color: 'var(--energy-solar-color, #ff9800)', palette: ['#ffb74d', '#f57c00', '#ffd54f', '#e65100'] },
+  strings:     { color: PALETTE[0], palette: PALETTE.slice(1) },
+  battery:     { color: 'var(--energy-battery-out-color, #4db0a2)', color_in: 'var(--energy-battery-in-color, #f6c34c)', palette: ['#26a69a', '#80cbc4'] },
+  consumers:   { color: 'var(--wuefl-house-color, #e57373)' },
+  heatpump:    { color: 'var(--wuefl-heatpump-color, #d85a30)', palette: ['#ff8a65', '#bf360c'] },
+  wallboxes:   { color: 'var(--wuefl-wallbox-color, #ba68c8)', palette: ['#9575cd', '#f06292', '#7986cb'] },
+  water:       { color: 'var(--wuefl-water-color, #26c6da)', palette: ['#4dd0e1', '#00838f'] },
+};
+
+/** Farbwert aus der Zuordnung als CSS-Farbe: [r,g,b] vom Farbwähler oder Text. */
+export function toCssColor(value) {
+  if (Array.isArray(value) && value.length >= 3) return `rgb(${value[0]}, ${value[1]}, ${value[2]})`;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return null;
+}
+
+/**
+ * Farbe eines Objekts der Zuordnung.
+ * kind:  Schlüssel der Zuordnung ("solar", "battery", "grid", …)
+ * entry: der Eintrag selbst (für seine eigene Farbe)
+ * index: Position in der Liste, für die Vorgabe weiterer Einträge
+ * field: "color" (Standard), "color_in" (Batterie laden), "color_export" (Netz einspeisen)
+ */
+export function colorOf(kind, entry, index = 0, field = 'color') {
+  const own = toCssColor(entry?.[field]);
+  if (own) return own;
+  const d = DEFAULT_COLORS[kind] ?? {};
+  if (index > 0 && d.palette?.length) return d.palette[(index - 1) % d.palette.length];
+  return d[field] ?? d.color ?? PALETTE[index % PALETTE.length];
+}
+
+/**
+ * Setzt die Karten-Tokens (--w-solar, --w-house, …) auf die Farben der
+ * Zuordnung. Alles, was COLORS benutzt (Live-Grafik, Kacheln, Flüsse),
+ * übernimmt damit automatisch die gewählten Farben.
+ */
+export function applyColorVars(el, config) {
+  const first = (v) => (Array.isArray(v) ? v[0] : v);
+  const vars = {
+    '--w-solar': colorOf('solar', first(config?.solar)),
+    '--w-grid-in': colorOf('grid', config?.grid),
+    '--w-grid-out': colorOf('grid', config?.grid, 0, 'color_export'),
+    '--w-batt-out': colorOf('battery', first(config?.battery)),
+    '--w-batt-in': colorOf('battery', first(config?.battery), 0, 'color_in'),
+    '--w-house': colorOf('consumers', config?.consumers),
+    '--w-wallbox': colorOf('wallboxes', first(config?.wallboxes)),
+    '--w-heatpump': colorOf('heatpump', first(config?.heatpump)),
+  };
+  for (const [k, v] of Object.entries(vars)) el.style.setProperty(k, v);
+}
 
 /** Ein Icon als HTML. Nur hier definiert, damit ein Wechsel leichtfällt. */
 export const icon = (name, extra = '') =>
@@ -878,12 +946,13 @@ export function mergeConfig(central, own) {
  */
 export function cssColor(element, colorString, fallback) {
   if (!colorString) return fallback;
-  const cleanVar = colorString.startsWith('var(') ? colorString.slice(4, -1).trim() : colorString;
-  if (cleanVar.startsWith('--')) {
-    const computed = getComputedStyle(element).getPropertyValue(cleanVar).trim();
-    if (computed) return computed;
-  }
-  return cleanVar.startsWith('--') ? fallback : cleanVar;
+  const str = String(colorString).trim();
+  // "var(--name)", "var(--name, #fallback)" oder bloß "--name"
+  const m = str.match(/^var\(\s*(--[^,\s)]+)\s*(?:,\s*(.+))?\)$/);
+  const name = m ? m[1] : str.startsWith('--') ? str : null;
+  if (!name) return str;
+  const computed = getComputedStyle(element).getPropertyValue(name).trim();
+  return computed || m?.[2]?.trim() || fallback;
 }
 
 /* ------------------------------------------------------------------ *
