@@ -309,7 +309,7 @@ template:
         {% elif ocpp_raw == 8 %}
           Laden pausiert, durch Auto
         {% elif ocpp_raw == 6 or car_raw in [3, 4] %}
-          Auto lädt aktiv
+          Auto lädt
         {% elif car_raw == 2 %}
           Auto angesteckt, noch nicht gestartet
 
