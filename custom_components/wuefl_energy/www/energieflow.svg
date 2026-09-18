@@ -298,7 +298,7 @@
       </path>
       <g id="label-solar-text" transform="matrix(1, 0, 0, 1, -177.832458, -22.5945)">
         <title>Text</title>
-<text x="302.586" y="130.628"><tspan class="t-header">Solar</tspan><tspan class="line" x="302.586" dy="1.3em"><tspan class="v_live">4.5kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">25kWh</tspan></tspan><tspan class="t-box"><tspan class="line sub" x="302.586" dy="1.8em"><tspan class="t-sub">Dach Ost</tspan> <tspan class="v_sub_live">10kW</tspan></tspan><tspan class="line sub" x="302.586" dy="1.3em"><tspan class="t-sub">Dach West</tspan> <tspan class="v_sub_live">15kW</tspan></tspan></tspan></text>
+<text x="302.586" y="130.628" data-anchor="bottom" data-bottom="236"><tspan class="t-header">Solar</tspan><tspan class="line" x="302.586" dy="1.3em"><tspan class="v_live">4.5kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">25kWh</tspan></tspan><tspan class="t-box"><tspan class="line sub" x="302.586" dy="1.8em"><tspan class="t-sub">Dach Ost</tspan> <tspan class="v_sub_live">10kW</tspan></tspan><tspan class="line sub" x="302.586" dy="1.3em"><tspan class="t-sub">Dach West</tspan> <tspan class="v_sub_live">15kW</tspan></tspan></tspan></text>
       </g>
     </g>
     <g id="label-wallbox" class="label">
@@ -316,7 +316,7 @@
       </path>
       <g id="label-wallbox-text" transform="matrix(1, 0, 0, 1, -48.650562, 50.689007)">
         <title>Text</title>
-<text x="600" y="165"><tspan class="t-header">Wallbox</tspan><tspan class="t-box"><tspan class="line wstation" x="600" dy="1.8em"><tspan class="t-sub">Carport</tspan> <tspan class="v_cap">80 % · </tspan><tspan class="v_live">11kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">50kWh</tspan></tspan><tspan class="line wstation" x="600" dy="1.3em"><tspan class="t-sub">Garage</tspan> <tspan class="v_cap">80 % · </tspan><tspan class="v_live">11kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">50kWh</tspan></tspan></tspan></text>
+<text x="600" y="165" data-anchor="bottom" data-bottom="218"><tspan class="t-header">Wallbox</tspan><tspan class="t-box"><tspan class="line wstation" x="600" dy="1.8em"><tspan class="t-sub">Carport</tspan> <tspan class="v_cap">80 % · </tspan><tspan class="v_live">11kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">50kWh</tspan></tspan><tspan class="line wstation" x="600" dy="1.3em"><tspan class="t-sub">Garage</tspan> <tspan class="v_cap">80 % · </tspan><tspan class="v_live">11kW</tspan><tspan class="sep">, </tspan><tspan class="v_total">50kWh</tspan></tspan></tspan></text>
       </g>
     </g>
     <g id="label-netz" class="label">

@@ -31,6 +31,9 @@ function getEntity(val) {
   return null;
 }
 
+/** Alle Entitäten eines Feldes – Einzelwert, Liste oder {entity}. */
+const entitiesOf = (val) => asList(val).map(getEntity).filter(Boolean);
+
 function collectEntities(obj, list = []) {
   if (!obj) return list;
   if (typeof obj === 'string') {
@@ -585,10 +588,8 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     /* --- Netz --- */
     if (has.netz) {
-      const impEntity = getEntity(c.grid?.import_total);
-      const expEntity = getEntity(c.grid?.export_total);
-      const imp = todaySum(this.#today, impEntity);
-      const exp = todaySum(this.#today, expEntity);
+      const imp = todaySum(this.#today, entitiesOf(c.grid?.import_total));
+      const exp = todaySum(this.#today, entitiesOf(c.grid?.export_total));
 
       T('#label-netz-text', 't-header', 'Netz');
       T('#label-netz-text', 'v_live', `${p.grid >= 0 ? 'importiert ' : 'exportiert '}${fmtPower(Math.abs(p.grid))}`);
@@ -668,7 +669,7 @@ class WueflEnergyLiveCard extends HTMLElement {
     }
 
     /* --- Haushalt --- */
-    const houseEnergyEntity = getEntity(c.consumers?.total);
+    const houseEnergyEntity = entitiesOf(c.consumers?.total);
     const he = todaySum(this.#today, houseEnergyEntity);
     T('#label-haushalt', 't-header', 'Haushalt');
     T('#label-haushalt', 'v_live', fmtPower(p.house));
@@ -678,6 +679,15 @@ class WueflEnergyLiveCard extends HTMLElement {
     // ", " nur, wenn danach auch ein Tageswert steht
     for (const sep of svg.querySelectorAll('.sep')) {
       sep.textContent = sep.nextElementSibling?.textContent ? ', ' : '';
+    }
+    // Unterzeilen ohne Wert (z. B. "Bezug" ohne Tageszähler) ausblenden
+    for (const line of svg.querySelectorAll('.line.sub')) {
+      const values = [...line.querySelectorAll('[class^="v_"]')];
+      line.style.display = values.length && values.every((v) => !v.textContent) ? 'none' : '';
+    }
+    // Labels über einem Gerät wachsen nach oben statt ins Bild
+    for (const text of svg.querySelectorAll('text[data-anchor="bottom"]')) {
+      this.#anchorBottom(text);
     }
 
     /* --- Flüsse --- */
@@ -692,6 +702,21 @@ class WueflEnergyLiveCard extends HTMLElement {
     const anyActive = [p.pv, p.grid, p.battery, p.wallbox, p.heatpump]
       .some((w) => Math.abs(w) >= 20);
     dev('#ha-box', anyActive, 'var(--w-accent)');
+  }
+
+  /**
+   * Hält die Unterkante eines Labels fest (data-bottom, in Koordinaten des
+   * Textes). Kommen Zeilen hinzu – mehr Strings, mehr Wallboxen – wandert
+   * der Block nach oben, statt über Dach oder Gerät zu laufen.
+   */
+  #anchorBottom(text) {
+    text.removeAttribute('transform');
+    let box;
+    try { box = text.getBBox(); } catch { return; }
+    if (!box.height) return; // ausgeblendet oder noch nicht gerendert
+    const bottom = Number(text.dataset.bottom);
+    if (!Number.isFinite(bottom)) return;
+    text.setAttribute('transform', `translate(0 ${(bottom - (box.y + box.height)).toFixed(1)})`);
   }
 
   #flow(key, watt, reverse, color) {
@@ -715,8 +740,8 @@ class WueflEnergyLiveCard extends HTMLElement {
   #renderMoney() {
     const c = this.#config;
     const h = this.#hass;
-    const impEntity = getEntity(c.grid?.import_total);
-    const expEntity = getEntity(c.grid?.export_total);
+    const impEntity = entitiesOf(c.grid?.import_total);
+    const expEntity = entitiesOf(c.grid?.export_total);
     const pvTotalEntities = Array.isArray(c.solar)
       ? c.solar.map(s => getEntity(s.total)).filter(Boolean)
       : [];
