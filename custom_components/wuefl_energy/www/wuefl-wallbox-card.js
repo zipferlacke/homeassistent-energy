@@ -180,6 +180,8 @@ class WueflWallboxCard extends HTMLElement {
 
   connectedCallback() {
     this.#stopPeriod ??= onPeriodChange(() => this.#renderHistory());
+    // Zeitraum kann sich geändert haben, während die Karte ausgehängt war
+    if (this.#hass) this.#renderHistory();
   }
 
   disconnectedCallback() {

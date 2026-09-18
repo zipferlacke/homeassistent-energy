@@ -15,6 +15,7 @@ export class WueflChartWrapper extends HTMLElement {
   _hass = null;
   _built = false;
   _stopPeriod = null;
+  _onConfigChanged = () => this._loadCentral();
   _chart = null;
 
   /** Karten überschreiben das: liefert die Chart-Konfiguration oder null. */
@@ -32,16 +33,33 @@ export class WueflChartWrapper extends HTMLElement {
     const first = !this._hass;
     this._hass = hass;
     if (this._chart) this._chart.hass = hass;
-    if (first) {
-      this._loadCentral();
-      window.addEventListener('we-config-changed', () => this._loadCentral());
-      this._stopPeriod = onPeriodChange(() => this._refresh());
-    }
+    if (first) this._loadCentral();
+    if (this.isConnected) this._listen();
     if (!this._built) this._build();
+  }
+
+  /*
+   * HA hängt Karten beim Seiten- oder Layoutwechsel aus und wieder ein. Die
+   * Anmeldung am Zeitraum muss deshalb mitwandern – sonst reagiert die Karte
+   * nach dem ersten Aushängen nie wieder auf den Picker.
+   */
+  connectedCallback() {
+    if (!this._hass) return;
+    this._listen();
+    // Zeitraum kann sich geändert haben, während die Karte ausgehängt war
+    this._refresh();
   }
 
   disconnectedCallback() {
     this._stopPeriod?.();
+    this._stopPeriod = null;
+    window.removeEventListener('we-config-changed', this._onConfigChanged);
+  }
+
+  _listen() {
+    if (this._stopPeriod) return;
+    this._stopPeriod = onPeriodChange(() => this._refresh());
+    window.addEventListener('we-config-changed', this._onConfigChanged);
   }
 
   getCardSize() { return 4; }

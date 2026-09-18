@@ -55,15 +55,31 @@ class WueflEnergyTilesCard extends HTMLElement {
   set hass(hass) {
     const first = !this.#hass;
     this.#hass = hass;
-    if (first) {
-      this.#loadCentral();
-      window.addEventListener('we-config-changed', () => this.#loadCentral());
-      this.#stopPeriod = onPeriodChange(() => this.#refresh());
-    }
+    if (first) this.#loadCentral();
+    if (this.isConnected) this.#listen();
     if (!this.#built) this.#build();
   }
 
-  disconnectedCallback() { this.#stopPeriod?.(); }
+  // An- und Abmelden wandert mit dem Ein- und Aushängen der Karte mit
+  connectedCallback() {
+    if (!this.#hass) return;
+    this.#listen();
+    this.#refresh();
+  }
+
+  disconnectedCallback() {
+    this.#stopPeriod?.();
+    this.#stopPeriod = null;
+    window.removeEventListener('we-config-changed', this.#onConfigChanged);
+  }
+
+  #onConfigChanged = () => this.#loadCentral();
+
+  #listen() {
+    if (this.#stopPeriod) return;
+    this.#stopPeriod = onPeriodChange(() => this.#refresh());
+    window.addEventListener('we-config-changed', this.#onConfigChanged);
+  }
   getCardSize() { return 3; }
 
   async #loadCentral() {
@@ -99,11 +115,16 @@ class WueflEnergyTilesCard extends HTMLElement {
       return;
     }
     const ids = used.flatMap((s) => s.getIds(this.#config));
-    this.#stats = await fetchStats(this.#hass, ids, getPeriod(), ['change']);
+    // Nur die zuletzt gestartete Abfrage zeichnet – ältere Antworten verwerfen
+    const seq = ++this.#seq;
+    const stats = await fetchStats(this.#hass, ids, getPeriod(), ['change']);
+    if (seq !== this.#seq) return;
+    this.#stats = stats;
     this.#render(used);
   }
 
   #stats = {};
+  #seq = 0;
 
   #total(s) {
     return s.getIds(this.#config).reduce(

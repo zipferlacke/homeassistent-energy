@@ -14,6 +14,9 @@ class WueflEnergyChart extends HTMLElement {
     #hiddenSeries = new Set();
     #isActive = false;
     #lastFetch = 0;
+    // Laufende Nummer der Abfrage: schnelles Hin- und Herschalten startet
+    // mehrere Abfragen, nur die zuletzt gestartete darf zeichnen.
+    #seq = 0;
 
     #unitFactors = {
         'mW': 0.001, 'W': 1, 'kW': 1000, 'MW': 1000000, 'GW': 1000000000,
@@ -454,6 +457,8 @@ class WueflEnergyChart extends HTMLElement {
     async #refresh() {
         if (!this.#built || !this.#hass || !this.#config?.series?.length) return;
         this.#lastFetch = Date.now();
+        const seq = ++this.#seq;
+        const stale = () => seq !== this.#seq;
         this.#els.title.textContent = this.#config.title || '';
 
         const { start, end } = this.#calculateTimeBounds(this.#config.range, this.#config.start, this.#config.end);
@@ -474,6 +479,7 @@ class WueflEnergyChart extends HTMLElement {
                 start_time: start.toISOString(), end_time: end.toISOString(),
                 statistic_ids: Array.from(idsToFetch), period, types: ['change', 'mean', 'max', 'min'],
             });
+            if (stale()) return;
 
             const processedSeries = this.#config.series.map(s => {
                 const raw = dbStats[s.entity] || [];
@@ -518,6 +524,7 @@ class WueflEnergyChart extends HTMLElement {
                         chipStats = dbStats;
                     }
                 }
+                if (stale()) return;
                 const finalVal = this.#calculateNativeChipValue(chipStats, processedSeries);
                 if (finalVal !== null && !isNaN(finalVal)) {
                     this.#els.chip.style.display = 'flex';
@@ -536,6 +543,7 @@ class WueflEnergyChart extends HTMLElement {
             this.#renderChart(processedSeries, yAxesConfig, start, end, bucketInfo);
 
         } catch (err) {
+            if (stale()) return;
             this.#els.slot.innerHTML = `<div class="error">Fehler: ${err.message}</div>`;
         }
     }
