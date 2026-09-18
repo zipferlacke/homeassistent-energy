@@ -10,8 +10,28 @@ import {
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
-  applyColorVars, colorOf, navigateToView,
+  applyColorVars, colorOf, navigateToView, TOGGLE_CSS,
 } from './we-shared.js';
+import './we-chart.js';
+
+const PERIODS = [
+  { key: 'day', label: 'Tag' },
+  { key: 'week', label: 'Woche' },
+  { key: 'month', label: 'Monat' },
+  { key: 'year', label: 'Jahr' },
+];
+
+/** Kalenderzeitraum, in dem "jetzt" liegt. */
+function periodRange(key, now = new Date()) {
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  if (key === 'week') {
+    const monday = d - ((now.getDay() + 6) % 7);
+    return [new Date(y, m, monday), new Date(y, m, monday + 6, 23, 59, 59, 999)];
+  }
+  if (key === 'month') return [new Date(y, m, 1), new Date(y, m + 1, 0, 23, 59, 59, 999)];
+  if (key === 'year') return [new Date(y, 0, 1), new Date(y, 11, 31, 23, 59, 59, 999)];
+  return [new Date(y, m, d), new Date(y, m, d, 23, 59, 59, 999)];
+}
 
 const MODE_KINDS = [
   { match: /aus|off|stop/i, icon: 'mdi:power', kind: 'off' },
@@ -31,6 +51,18 @@ function getEntity(val) {
 
 const CSS = `
 ${TILE_CSS}
+${TOGGLE_CSS}
+.history {
+  margin-top: 1rem;
+  & .hhead { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; }
+  & .htitle { font-weight: 600; }
+  & .plot { height: 230px; margin: .3rem -8px 0; }
+  /* Das Diagramm bringt ein eigenes ha-card mit – hier ohne zweiten Rahmen */
+  & we-chart {
+    --ha-card-background: transparent; --ha-card-border-width: 0; --ha-card-box-shadow: none;
+    display: block; height: 100%;
+  }
+}
 .card {
   ${GRID_CSS}
 }
@@ -137,6 +169,8 @@ class WueflWallboxCard extends HTMLElement {
   #els = {};
   #watch = [];
   #drag = null;
+  #period = 'day';
+  #historyKey = '';
 
   static getConfigElement() { return document.createElement('wuefl-wallbox-card-editor'); }
   static getStubConfig() { return { wallbox: 1 }; }
@@ -230,6 +264,7 @@ class WueflWallboxCard extends HTMLElement {
   #build() {
     const root = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
     adoptSheet(root, CSS, 'wallbox');
+    this.#historyKey = ''; // neues Diagramm-Element → neu konfigurieren
 
     const card = document.createElement('div');
     card.className = 'card';
@@ -261,6 +296,16 @@ class WueflWallboxCard extends HTMLElement {
         <input type="range" id="tgt" min="20" max="100" step="5">
         <output>–</output>
         <button type="button" class="btn full" aria-pressed="false">Einmalig 100 %</button>
+      </div>
+
+      <div class="history" hidden>
+        <div class="hhead">
+          <span class="htitle">Verlauf</span>
+          <div class="time-buttons">
+            ${PERIODS.map((p) => `<button type="button" class="time-btn" data-period="${p.key}">${p.label}</button>`).join('')}
+          </div>
+        </div>
+        <div class="plot"><we-chart></we-chart></div>
       </div>
 
       <details class="fold adv" hidden>
@@ -304,11 +349,19 @@ class WueflWallboxCard extends HTMLElement {
       target: q('.target'), targetInput: q('.target input'), targetOut: q('.target output'), full: q('.full'),
       cur: q('.slider.cur'),
       adv: q('details.adv'),
+      history: q('.history'), chart: q('we-chart'),
+      periodBtns: [...card.querySelectorAll('.time-btn')],
       openSettings: q('.open-settings'),
       stats: q('.stats'),
     };
 
     this.#els.openSettings.addEventListener('click', () => navigateToView('einstellungen'));
+    for (const btn of this.#els.periodBtns) {
+      btn.addEventListener('click', () => {
+        this.#period = btn.dataset.period;
+        this.#renderHistory();
+      });
+    }
 
     this.#els.targetInput.addEventListener('input', () => {
       this.#drag = 'target';
@@ -559,6 +612,55 @@ class WueflWallboxCard extends HTMLElement {
     this.#els.adv.hidden = this.#els.cur.hidden;
 
     this.#renderStats();
+    this.#renderHistory();
+  }
+
+  /**
+   * Verlauf: am Tag die Ladeleistung als Kurve, in Woche/Monat die geladene
+   * Energie je Tag, im Jahr je Monat – aus dem Gesamtzähler der Wallbox.
+   * Der Chip zeigt die Summe im Zeitraum. Nur neu konfigurieren, wenn sich
+   * Zeitraum oder Entitäten ändern; die Daten lädt we-chart selbst nach.
+   */
+  #renderHistory() {
+    const c = this.#config;
+    const live = c.power_entity;
+    const total = c.total_energy_entity;
+    const box = this.#els.history;
+    if (!box) return;
+    box.hidden = !live && !total;
+    if (box.hidden) return;
+
+    for (const btn of this.#els.periodBtns) {
+      btn.classList.toggle('active', btn.dataset.period === this.#period);
+    }
+
+    const [start, end] = periodRange(this.#period);
+    const color = cssColor(this, '--w-wallbox', '#22C3D6');
+    const key = [this.#period, live, total, color, start.getTime()].join('|');
+    if (key !== this.#historyKey) {
+      this.#historyKey = key;
+      const power = (this.#period === 'day' && live) || !total;
+      const chartCfg = power
+        ? {
+            series: [{ entity: live, name: 'Ladeleistung', color, stat_type: 'mean', fill: 'gradient', type: 'line' }],
+            y_axes: [{ unit: 'kW', min: 0 }],
+            aggregation: { day: '5min', week: '1h', month: '1d', year: '1m' }[this.#period],
+          }
+        : {
+            series: [{ entity: total, name: 'Geladen', color, stat_type: 'change', type: 'bar' }],
+            y_axes: [{ unit: 'kWh', min: 0 }],
+            aggregation: { day: '1h', week: '1d', month: '1d', year: '1m' }[this.#period],
+          };
+      this.#els.chart.setConfig({
+        title: '',
+        start: start.toISOString(),
+        end: end.toISOString(),
+        legend: { hidden: true },
+        ...chartCfg,
+        ...(total ? { chip: { entity: total, unit: 'kWh', stat_type: 'change', calc_type: 'sum', color } } : {}),
+      });
+    }
+    this.#els.chart.hass = this.#hass;
   }
 
   #amps(watt) {

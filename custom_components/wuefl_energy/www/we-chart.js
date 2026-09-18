@@ -13,6 +13,7 @@ class WueflEnergyChart extends HTMLElement {
     #els = {};
     #hiddenSeries = new Set();
     #isActive = false;
+    #lastFetch = 0;
 
     #unitFactors = {
         'mW': 0.001, 'W': 1, 'kW': 1000, 'MW': 1000000, 'GW': 1000000000,
@@ -35,10 +36,15 @@ class WueflEnergyChart extends HTMLElement {
         if (this.#built) this.#refresh();
     }
 
+    /**
+     * HA setzt hass bei jeder Zustandsänderung irgendeiner Entität neu. Die
+     * Statistik ändert sich aber höchstens alle 5 Minuten – deshalb nur dann
+     * neu abfragen. Zeitraum- oder Konfigurationswechsel laden sofort (config).
+     */
     set hass(hass) {
         this.#hass = hass;
         if (!this.#built) this.#build();
-        else if (this.#config?.series) this.#refresh();
+        if (this.#config?.series && Date.now() - this.#lastFetch > 300000) this.#refresh();
     }
 
     #build() {
@@ -447,6 +453,7 @@ class WueflEnergyChart extends HTMLElement {
 
     async #refresh() {
         if (!this.#built || !this.#hass || !this.#config?.series?.length) return;
+        this.#lastFetch = Date.now();
         this.#els.title.textContent = this.#config.title || '';
 
         const { start, end } = this.#calculateTimeBounds(this.#config.range, this.#config.start, this.#config.end);
