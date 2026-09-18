@@ -360,9 +360,9 @@ const HELPERS = {
     temperatur: 'Temperatursensor des Akkus.',
     color: 'Farbe fürs Entladen in Grafik und Diagrammen. Leer = Farbe aus dem Theme.',
     color_in: 'Farbe fürs Laden. Leer = Farbe aus dem Theme.',
-    mode_stop_discharging: 'Sperrt die Akku-Entladung (z. B. beim Auto-Schnellladen). Wähle hier z. B. ein Skript, das die Entladeleistung auf 0W setzt.',
-    mode_start_charging: 'Erzwingt das Laden aus dem Netz (z. B. bei extrem billigem Strom). Für Sungrow: "scene.sungrow_set_battery_forced_charge".',
-    normal_mode: 'Versetzt den Wechselrichter wieder in den normalen Eigenverbrauchsmodus. Für Sungrow: "scene.sungrow_self_consumption_mode".',
+    mode_stop_discharging: 'Sperrt die Akku-Entladung (z. B. beim Auto-Schnellladen). Für Sungrow (mkaiser): "scene.self_consumption_mode_no_battery_discharge".',
+    mode_start_charging: 'Erzwingt das Laden aus dem Netz (z. B. bei extrem billigem Strom). Für Sungrow (mkaiser): "scene.battery_forced_charge".',
+    normal_mode: 'Versetzt den Wechselrichter wieder in den normalen Eigenverbrauchsmodus. Für Sungrow (mkaiser): "scene.self_consumption_mode_max_battery_discharge".',
   },
   consumers: {
     live: 'Live-Verbrauch in Watt (W). Leer lassen für automatische Errechnung.',
@@ -738,47 +738,57 @@ class WueflEnergyConfigCard extends HTMLElement {
     let filled = 0;
     const missing = [];
 
+    const MULTI = ['import_total', 'export_total', 'forecast', 'temperatures', 'extra_entities'];
+    const isPattern = (v) => typeof v === 'string' && /^[a-z_]+\./.test(v);
     const resolve = (parts) => asList(parts).map((p) => findEntity(states, p)).filter(Boolean);
+
+    /**
+     * Füllt ein Objekt der Vorlage: Entitätsmuster werden gesucht, feste
+     * Werte (Name, Phasen, max. Leistung) übernommen, Unterobjekte
+     * (control, more) und Listen von Objekten (strings) rekursiv befüllt.
+     * `current` sind vorhandene Werte – die werden nie überschrieben.
+     */
+    const fill = (template, current, path) => {
+      const out = { ...(current ?? {}) };
+      for (const [field, spec] of Object.entries(template)) {
+        const have = out[field];
+        if (Array.isArray(have) ? have.length : have !== undefined && have !== '') continue;
+
+        if (Array.isArray(spec) && spec.some((x) => x && typeof x === 'object')) {
+          const rows = spec
+            .map((t, i) => ({ id: `${field}_${Date.now().toString(36)}_${i}`, ...fill(t, {}, `${path}.${field}`) }))
+            .filter((r) => Object.keys(r).some((k) => isPattern(r[k])));
+          if (rows.length) out[field] = rows;
+        } else if (spec && typeof spec === 'object' && !Array.isArray(spec)) {
+          const sub = fill(spec, {}, `${path}.${field}`);
+          if (Object.keys(sub).length) out[field] = sub;
+        } else if (isPattern(spec) || (Array.isArray(spec) && spec.every(isPattern))) {
+          const found = resolve(spec);
+          if (!found.length) {
+            missing.push(`${path}.${field}`);
+            continue;
+          }
+          out[field] = MULTI.includes(field) ? found : found[0];
+          filled += 1;
+        } else {
+          out[field] = spec;
+        }
+      }
+      return out;
+    };
 
     for (const [key, spec] of Object.entries(preset)) {
       if (key === 'label' || key === 'hint') continue;
 
       if (Array.isArray(spec)) {
         if (asList(next[key]).length) continue;
-        const rows = [];
-        for (const template of spec) {
-          const row = { id: `${key}_${Date.now().toString(36)}` };
-          for (const [field, parts] of Object.entries(template)) {
-            if (field === 'name') {
-              row.name = parts;
-              continue;
-            }
-            const found = resolve(parts);
-            if (found.length) {
-              row[field] = found[0];
-              filled += 1;
-            } else missing.push(`${key}.${field}`);
-          }
-          if (Object.keys(row).length > 2) rows.push(row);
-        }
+        const rows = spec
+          .map((t, i) => ({ id: `${key}_${Date.now().toString(36)}_${i}`, ...fill(t, {}, key) }))
+          .filter((r) => Object.keys(r).some((k) => isPattern(r[k])));
         if (rows.length) next[key] = rows;
         continue;
       }
-
-      const target = { ...(next[key] ?? {}) };
-      for (const [field, parts] of Object.entries(spec)) {
-        const current = target[field];
-        if (Array.isArray(current) ? current.length : current) continue;
-        const found = resolve(parts);
-        if (!found.length) {
-          missing.push(`${key}.${field}`);
-          continue;
-        }
-        const multi = ['import_total', 'export_total', 'energy_total', 'forecast', 'temperatures', 'extra_entities'];
-        target[field] = multi.includes(field) ? found : found[0];
-        filled += 1;
-      }
-      next[key] = target;
+      next[key] = fill(spec, next[key], key);
     }
 
     this.#config = next;
@@ -788,8 +798,8 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.report.innerHTML = filled
       ? `<strong>${filled} Felder gefüllt.</strong>` +
         (missing.length ? ` Nicht gefunden: ${esc(missing.join(', '))}.` : '') +
-        (preset.hint ? `<br>${preset.hint}` : '')
-      : 'Keine passenden Sensoren gefunden. Läuft die Integration?';
+        (preset.hint ? `<br>${esc(preset.hint)}` : '')
+      : 'Keine passenden Sensoren gefunden. Sind die Geräte-Pakete eingebunden und HA neu gestartet?';
   }
 
   /* ------------------------------------------------------------------ *
