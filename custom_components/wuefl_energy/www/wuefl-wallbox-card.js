@@ -557,7 +557,13 @@ class WueflWallboxCard extends HTMLElement {
 
     let label;
     if (rawStatus) {
+      // Text der Wallbox selbst (z. B. "Laden pausiert, durch HA"); "Alt: …"
+      // heißt: Register gerade nicht lesbar, letzter bekannter Zustand
       label = rawStatus;
+    } else if (c.status_entity && !rawStatusObj) {
+      label = `Status-Sensor ${c.status_entity} nicht gefunden`;
+    } else if (c.status_entity) {
+      label = 'Status der Wallbox gerade nicht verfügbar';
     } else if (state === 'frei') label = 'kein Fahrzeug angeschlossen';
     else if (kind === 'off') label = 'Laden aus';
     else if (charging) label = 'lädt';
@@ -567,8 +573,10 @@ class WueflWallboxCard extends HTMLElement {
 
     const amps = this.#amps(pw);
     const today = energy(h, c.today_energy_entity);
+    // Beim Laden Strom und Leistung zusätzlich zum Status der Wallbox
     this.#els.state.textContent = [
-      charging ? (amps !== null ? `${amps} · ${fmtPower(pw)}` : fmtPower(pw)) : label,
+      rawStatus ?? (charging ? null : label),
+      charging ? (amps !== null ? `${amps} · ${fmtPower(pw)}` : fmtPower(pw)) : null,
       today !== null ? `heute ${fmtEnergy(today)}` : null,
     ].filter(Boolean).join(' · ');
 

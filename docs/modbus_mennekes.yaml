@@ -295,20 +295,24 @@ template:
         {% set old_clean = old if not old.startswith('Alt: ') else old[5:] %}
         {% set alt_text = 'Alt: ' ~ old_clean %}
 
-        {# 1. Die bekannten, klaren Zustände abfragen #}
+        {# 1. Die bekannten, klaren Zustände abfragen.
+              Reihenfolge wichtig: Pausen und "beendet" vor "lädt", weil das
+              Fahrzeugregister auch in der Pause noch State C melden kann. #}
         {% if car_raw == 1 %}
           Kein Auto angesteckt
+        {% elif car_raw == 5 or ocpp_raw == 4 %}
+          Fehler an der Wallbox
         {% elif car_raw in [2, 3, 4] and ocpp_raw == 9 %}
           Auto angesteckt, laden beendet
         {% elif ocpp_raw == 7 %}
           Laden pausiert, durch HA
         {% elif ocpp_raw == 8 %}
           Laden pausiert, durch Auto
-        {% elif car_raw == 2 and ocpp_raw in [0, 1, 5] %}
-          Auto angesteckt, noch nicht gestartet
-        {% elif ocpp_raw == 6 %}
+        {% elif ocpp_raw == 6 or car_raw in [3, 4] %}
           Auto lädt aktiv
-          
+        {% elif car_raw == 2 %}
+          Auto angesteckt, noch nicht gestartet
+
         {# 2. Fallback: Bei Fehlern (-1) oder unklaren Registerwerten den gepufferten Text mit "Alt:" senden #}
         {% else %}
           {{ alt_text }}
