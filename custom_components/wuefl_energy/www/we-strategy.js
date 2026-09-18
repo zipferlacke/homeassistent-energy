@@ -1,4 +1,8 @@
-import { rawConfig } from './we-shared.js';
+// Bewusst ohne statische Imports: Home Assistant wartet nur wenige Sekunden
+// darauf, dass "ll-strategy-dashboard-we" registriert ist. Jeder statische
+// Import davor verzögert die Registrierung – und ein fehlerhafter Import
+// verhindert sie ganz ("Timeout waiting for strategy element"). Alles
+// Weitere wird erst in generate() nachgeladen, dort landen Fehler sichtbar.
 
 // =======================================================
 // Lazy Loader für Cards & Grid-Container
@@ -17,7 +21,11 @@ function ensureCards() {
       import('./wuefl-wallbox-card.js'),
       import('./we-settings-card.js'),
       import('./we-config-card.js'),
-    ]);
+    ]).catch((err) => {
+      // Beim nächsten Versuch neu laden statt den Fehler zu cachen.
+      cardsLoaded = null;
+      throw err;
+    });
   }
   return cardsLoaded;
 }
@@ -25,10 +33,10 @@ function ensureCards() {
 // =======================================================
 // Dashboard Strategy Class
 // =======================================================
-class WueflEnergyDashboardStrategy {
+class WueflEnergyDashboardStrategy extends HTMLElement {
   static async generate(g, hass) {
-    await ensureCards();
-    
+    const [{ rawConfig }] = await Promise.all([import('./we-shared.js'), ensureCards()]);
+
     // Direktes Laden der neuen Speicher-Struktur
     const config = (await rawConfig(hass, true)) ?? {};
     const views = [];
@@ -299,7 +307,9 @@ class WueflEnergyDashboardStrategy {
   }
 }
 
-customElements.define('ll-strategy-dashboard-we', WueflEnergyDashboardStrategy);
+if (!customElements.get('ll-strategy-dashboard-we')) {
+  customElements.define('ll-strategy-dashboard-we', WueflEnergyDashboardStrategy);
+}
 
 window.customStrategies = window.customStrategies || [];
 if (!window.customStrategies.some((s) => s.type === 'we')) {

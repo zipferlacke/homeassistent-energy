@@ -12,7 +12,8 @@ import {
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
 } from './we-shared.js';
 
-const SVG_URL = '/we_files/energieflow.svg';
+// Relativ zum Modul, damit die Grafik aus demselben versionierten Pfad kommt.
+const SVG_URL = new URL('./energieflow.svg', import.meta.url).href;
 
 const PARTS = {
   solar: { label: 'label-solar', cable: '#kabel-solar', device: '#solar' },

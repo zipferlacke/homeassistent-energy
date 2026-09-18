@@ -1,6 +1,7 @@
 """W-Energie Dashboard – zentrale Zuordnung der Entitäten."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -34,12 +35,26 @@ CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Any(dict, None)}, extra=vol.ALLOW_EXTRA)
 
 
 async def _integration_version(hass: HomeAssistant) -> str:
+    """Versionskennung für den Cache der Frontend-Dateien.
+
+    Nur die Manifest-Version reicht nicht: sie wird nicht bei jeder Änderung
+    hochgezählt, und die Karten importieren sich gegenseitig ohne ?v=. Ein
+    Browser (vor allem die Companion-App) mischt dann alte und neue Module,
+    der Import scheitert und die Strategy wird nie registriert. Deshalb fließt
+    zusätzlich ein Fingerabdruck aller Dateien in www/ mit ein.
+    """
     def _read() -> str:
+        base = Path(__file__).parent
         try:
-            path = Path(__file__).parent / "manifest.json"
-            return json.loads(path.read_text(encoding="utf-8")).get("version", "0")
+            version = json.loads((base / "manifest.json").read_text(encoding="utf-8")).get("version", "0")
         except Exception:
-            return "0"
+            version = "0"
+        digest = hashlib.sha1()
+        for file in sorted((base / "www").rglob("*")):
+            if file.is_file():
+                stat = file.stat()
+                digest.update(f"{file.name}:{stat.st_size}:{stat.st_mtime_ns}".encode())
+        return f"{version}-{digest.hexdigest()[:8]}"
 
     return await hass.async_add_executor_job(_read)
 
@@ -62,12 +77,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     web_path = str(Path(__file__).parent / "www")
+    version = await _integration_version(hass)
+    # Versionierter Pfad: relative Imports zwischen den Modulen erben die
+    # Version automatisch, alte Dateien können so nicht mehr aus dem Cache
+    # nachrutschen. Der unversionierte Pfad bleibt für eigene Verweise.
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(URL_BASE, web_path, cache_headers=False)]
+        [
+            StaticPathConfig(URL_BASE, web_path, cache_headers=False),
+            StaticPathConfig(f"{URL_BASE}/{version}", web_path, cache_headers=True),
+        ]
     )
 
-    version = await _integration_version(hass)
-    add_extra_js_url(hass, f"{URL_BASE}/{STRATEGY_FILE}?v={version}")
+    add_extra_js_url(hass, f"{URL_BASE}/{version}/{STRATEGY_FILE}")
 
     websocket_api.async_register_command(hass, websocket_get_config)
     websocket_api.async_register_command(hass, websocket_save_config)
