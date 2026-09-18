@@ -23,7 +23,7 @@ DOMAIN = "we"
 STORAGE_KEY = "we.config"
 STORAGE_VERSION = 1
 EVENT_UPDATED = "we_updated"
-PLATFORMS = ("switch", "number", "select")
+PLATFORMS = ("switch", "number", "select", "sensor")
 
 # Zentraler Lese-Sensor für Jinja-Templates & Automatisierungen
 CONFIG_SENSOR_ENTITY_ID = "sensor.we_config"
@@ -142,6 +142,9 @@ def _build_entity(platform: str, spec: dict):
     if platform == "select":
         from .select import WueflSelect
         return WueflSelect(spec)
+    if platform == "sensor":
+        from .sensor import WueflBaseLoadSensor
+        return WueflBaseLoadSensor(spec)
     return None
 
 

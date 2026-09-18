@@ -397,7 +397,7 @@ const HELPERS = {
   systemdata: {
     system_cost_value: 'Gesamte Anschaffungskosten der Anlage in Euro (€).',
     commissioned_value: 'Inbetriebnahmedatum im Format YYYY-MM-DD.',
-    house_base_load: 'Durchschnittliche Haus-Grundlast in Watt (W).',
+    house_base_load: 'Leer = automatisch: Hausverbrauch (ohne Wallbox) der letzten 7 Tage ÷ Tage (sensor.we_house_base_load). Nur füllen, wenn du einen eigenen Sensor in Watt hast.',
     weather_entity: 'Wetter-Entität für Außentemperatur und Vorhersage.',
     temperatures: 'Liste weiterer Temperatursensoren.',
     extra_entities: 'Weitere Sensoren für das Dashboard.',

@@ -78,6 +78,17 @@ GLOBAL_SELECT = [
     }
 ]
 
+GLOBAL_SENSOR = [
+    {
+        "unique_id": "we_house_base_load",
+        "entity_id": "sensor.we_house_base_load",
+        "name": "Grundlast (Ø 7 Tage)",
+        "icon": "mdi:home-lightning-bolt-outline",
+        # Vorgabe für die Grundlast; ein eigener Sensor in der Zuordnung gewinnt
+        "config_path": ("systemdata", "house_base_load"),
+    }
+]
+
 WALLBOX_MODE_OPTIONS = ["Aus", "Solar", "Solar + günstig", "Schnell"]
 
 
@@ -99,6 +110,7 @@ def required_specs(config: dict) -> dict[str, list[dict]]:
     switches: list[dict] = list(GLOBAL_SWITCH)
     numbers: list[dict] = list(GLOBAL_NUMBERS)
     selects: list[dict] = list(GLOBAL_SELECT)
+    sensors: list[dict] = list(GLOBAL_SENSOR)
 
     used_slugs: set[str] = set()
     for i, wallbox in enumerate(wallboxes):
@@ -170,7 +182,7 @@ def required_specs(config: dict) -> dict[str, list[dict]]:
             "wallbox_field": "ignore_percent_limit",
         })
 
-    return {"switch": switches, "number": numbers, "select": selects}
+    return {"switch": switches, "number": numbers, "select": selects, "sensor": sensors}
 
 
 def _get(config: dict, path: tuple[str, ...]):
