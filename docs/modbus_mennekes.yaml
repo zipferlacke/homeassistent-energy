@@ -229,8 +229,8 @@ template:
         {% set mapper = {
           0: 'Verfügbar (Frei)',
           1: 'Belegt durch Auto',
-          2: 'Reserviert (komisch)',
-          3: 'Nicht verfügbar (komisch)',
+          2: 'Reserviert',
+          3: 'Nicht verfügbar',
           4: 'Fehler',
           5: 'Vorbereitung',
           6: 'Laden aktiv',
@@ -280,46 +280,9 @@ template:
           1: 'Betriebsbereit'
         } %}
         {{ mapper.get(states('sensor.mennekes_cp_verfuegbarkeit_raw')|int(-1), 'Unbekannt') }}
-    
-    # Zusammengestzer System Status puffert alten Wertzwischen
-    - name: "Mennekes Status"
-      unique_id: mennekes_status
-      icon: mdi:ev-station
-      state: >
-        {% set car_raw = states('sensor.mennekes_fahrzeugstatus_raw') | int(-1) %}
-        {% set ocpp_raw = states('sensor.mennekes_ocpp_status_raw') | int(-1) %}
-        
-        {# Hilfsvariable für den alten Zustand holen #}
-        {% set old = this.state if this.state is defined and this.state not in ['unknown', 'unavailable', 'None'] else 'Status unklar (Initialisierung)' %}
-        {# Verhindert "Alt: Alt:" indem es ein bestehendes "Alt: " erkennt #}
-        {% set old_clean = old if not old.startswith('Alt: ') else old[5:] %}
-        {% set alt_text = 'Alt: ' ~ old_clean %}
 
-        {# 1. Die bekannten, klaren Zustände abfragen.
-              Reihenfolge wichtig: Pausen und "beendet" vor "lädt", weil das
-              Fahrzeugregister auch in der Pause noch State C melden kann. #}
-        {% if car_raw == 1 %}
-          Kein Auto angesteckt
-        {% elif car_raw == 5 or ocpp_raw == 4 %}
-          Fehler an der Wallbox
-        {% elif car_raw in [2, 3, 4] and ocpp_raw == 9 %}
-          Auto angesteckt, laden beendet
-        {% elif ocpp_raw == 7 %}
-          Laden pausiert, durch HA
-        {% elif ocpp_raw == 8 %}
-          Laden pausiert, durch Auto
-        {% elif ocpp_raw == 6 or car_raw in [3, 4] %}
-          Auto lädt
-        {% elif car_raw == 2 %}
-          Auto angesteckt, noch nicht gestartet
-
-        {# 2. Fallback: Bei Fehlern (-1) oder unklaren Registerwerten den gepufferten Text mit "Alt:" senden #}
-        {% else %}
-          {{ alt_text }}
-        {% endif %}
-
-    # --- OPTIMIERTER BOOLEAN-SENSOR (Puffert seinen letzten Zustand bei Fehlern) ---
   - binary_sensor:
+    # Bereit zum Laden; bei Modbus-Ausfall bleibt der alte Zustand
     - name: "Mennekes Ready for Charge"
       unique_id: mennekes_ready_for_charge
       device_class: plug
@@ -327,20 +290,56 @@ template:
       state: >
         {% set car_raw = states('sensor.mennekes_fahrzeugstatus_raw') | int(-1) %}
         {% set ocpp_raw = states('sensor.mennekes_ocpp_status_raw') | int(-1) %}
-        
-        {# Alten Zustand sichern (True oder False) #}
         {% set old_bool = is_state('binary_sensor.mennekes_ready_for_charge', 'on') %}
-
-        {# 1. Gültige Werte verarbeiten #}
         {% if car_raw != -1 and ocpp_raw != -1 %}
-          {% set noch_nicht_gestartet = (car_raw == 2 and ocpp_raw in [0, 1, 5]) %}
-          {% set geladen_aber_pausiert = (car_raw in [2, 3, 4] and ocpp_raw in [7, 8]) %}
-          {{ noch_nicht_gestartet or geladen_aber_pausiert }}
-          
-        {# 2. Fallback: Bei Modbus-Ausfall (-1) den alten Zustand beibehalten #}
+          {{ (car_raw == 2 and ocpp_raw in [0, 1, 5]) or (car_raw in [2, 3, 4] and ocpp_raw in [7, 8]) }}
         {% else %}
           {{ old_bool }}
         {% endif %}
+
+  # ---------------------------------------------------------------------------
+  # Mennekes Status – der Text, mit dem das W-Energie Dashboard arbeitet.
+  # Als einziger Sensor gepuffert: trigger-basiert, damit HA den letzten
+  # Zustand nach einem Neustart wiederherstellt; sind die Register gerade
+  # nicht lesbar, bleibt der letzte gültige Text stehen.
+  # ---------------------------------------------------------------------------
+  - trigger:
+      - trigger: state
+        entity_id:
+          - sensor.mennekes_ocpp_status_raw
+          - sensor.mennekes_fahrzeugstatus_raw
+      - trigger: homeassistant
+        event: start
+    sensor:
+      - name: "Mennekes Status"
+        unique_id: mennekes_status
+        icon: mdi:ev-station
+        state: >
+          {% set car_raw = states('sensor.mennekes_fahrzeugstatus_raw') | int(-1) %}
+          {% set ocpp_raw = states('sensor.mennekes_ocpp_status_raw') | int(-1) %}
+          {% set old = this.state if this is defined and this.state not in ['unknown', 'unavailable', None] else 'Status unklar (Initialisierung)' %}
+
+          {# Reihenfolge wichtig: Pausen und "beendet" vor "lädt", weil das
+             Fahrzeugregister auch in der Pause noch State C melden kann. #}
+          {% if car_raw == -1 or ocpp_raw == -1 %}
+            {{ old }}
+          {% elif car_raw == 1 %}
+            Kein Auto angesteckt
+          {% elif car_raw == 5 or ocpp_raw == 4 %}
+            Fehler an der Wallbox
+          {% elif car_raw in [2, 3, 4] and ocpp_raw == 9 %}
+            Auto angesteckt, laden beendet
+          {% elif ocpp_raw == 7 %}
+            Laden pausiert, durch HA
+          {% elif ocpp_raw == 8 %}
+            Laden pausiert, durch Auto
+          {% elif ocpp_raw == 6 or car_raw in [3, 4] %}
+            Auto lädt
+          {% elif car_raw == 2 %}
+            Auto angesteckt, noch nicht gestartet
+          {% else %}
+            {{ old }}
+          {% endif %}
 
     # --- W-ENERGIE: Sollstrom aus der Zuordnung --------------------------------
     # Rechnet die Soll-Ladeleistung (W) der W-Energie-Automation in die
