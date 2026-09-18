@@ -205,21 +205,48 @@ modbus:
         state_class: total
         scan_interval: *scan_medium
 
-    # --- STEUERUNG ---
-    numbers:
-      - name: "Mennekes HEMS Stromvorgabe"
-        unique_id: mennekes_hems_stromvorgabe
+    # --- STEUERUNG (Rückmeldung) ---
+      # HEMS-Stromvorgabe lesen. Geschrieben wird über die Template-Zahl
+      # "Mennekes HEMS Stromvorgabe" weiter unten – die Modbus-Integration von
+      # HA kennt keine Zahlen-Entitäten (kein "numbers:").
+      - name: "Mennekes HEMS Stromvorgabe Raw"
+        unique_id: mennekes_hems_stromvorgabe_raw
+        address: 1000 # HEMS_CURRENT_LIMIT
         device_address: !secret mennekes_modbus_device_address
-        address: 1000 # HEMS_CURRENT_LIMIT 
-        write_type: holding
+        input_type: holding
         data_type: uint16
-        min_value: 0      # 0 A = Pause / Ladefreigabe AUS
-        max_value: 16     # Auf 16A limitiert (falls du eine 11kW Wallbox hast, ansonsten 32A eintragen)
-        step: 1
         unit_of_measurement: "A"
+        scan_interval: *scan_fast
 
 
 template:
+  # ---------------------------------------------------------------------------
+  # HEMS-Stromvorgabe als einstellbare Zahl: 0 A = Pause, 6–16 A = Ladestrom.
+  # Liest Register 1000 über den Raw-Sensor und schreibt per modbus.write_register.
+  # ---------------------------------------------------------------------------
+  - number:
+    - name: "Mennekes HEMS Stromvorgabe"
+      unique_id: mennekes_hems_stromvorgabe
+      icon: mdi:current-ac
+      unit_of_measurement: "A"
+      min: 0
+      max: 16   # 11-kW-Wallbox; bei 22 kW auf 32 erhöhen
+      step: 1
+      state: "{{ states('sensor.mennekes_hems_stromvorgabe_raw') | int(0) }}"
+      availability: "{{ states('sensor.mennekes_hems_stromvorgabe_raw') | is_number }}"
+      set_value:
+        - action: modbus.write_register
+          data:
+            hub: mennekes_wallbox
+            slave: !secret mennekes_modbus_device_address
+            address: 1000
+            value: "{{ value | int }}"
+        - delay:
+            milliseconds: 200
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.mennekes_hems_stromvorgabe_raw
+
   - sensor:
     # Übersetzung für Register 104
     - name: "Mennekes OCCP Status"
