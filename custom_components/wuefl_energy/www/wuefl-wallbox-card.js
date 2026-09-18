@@ -624,8 +624,8 @@ class WueflWallboxCard extends HTMLElement {
   }
 
   /**
-   * Verlauf: am Tag die Ladeleistung als Kurve, in Woche/Monat die geladene
-   * Energie je Tag, im Jahr je Monat – aus dem Gesamtzähler der Wallbox.
+   * Verlauf: an Tag und Woche die Ladeleistung als Kurve, im Monat die
+   * geladene Energie je Tag, im Jahr je Monat – aus dem Gesamtzähler.
    * Der Chip zeigt die Summe im Zeitraum. Nur neu konfigurieren, wenn sich
    * Zeitraum oder Entitäten ändern; die Daten lädt we-chart selbst nach.
    */
@@ -647,7 +647,8 @@ class WueflWallboxCard extends HTMLElement {
     const key = [this.#period, live, total, color, start.getTime()].join('|');
     if (key !== this.#historyKey) {
       this.#historyKey = key;
-      const power = (this.#period === 'day' && live) || !total;
+      // Tag und Woche: Ladeleistung als Linie, Monat und Jahr: kWh als Balken
+      const power = (['day', 'week'].includes(this.#period) && live) || !total;
       const chartCfg = power
         ? {
             series: [{ entity: live, name: 'Ladeleistung', color, stat_type: 'mean', fill: 'gradient', type: 'line' }],
