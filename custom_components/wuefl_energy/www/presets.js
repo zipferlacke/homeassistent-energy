@@ -7,6 +7,11 @@ export const PRESETS = {
     sungrow: {
         label: 'Sungrow Wechselrichter (SHx, mkaiser)',
         hint: 'Entitäten aus docs/modbus_sungrow.yaml. Netzleistung braucht den direkt angeschlossenen Smart Meter.',
+        // Fehlzuordnungen älterer Vorlagen, die überschrieben werden dürfen
+        replaces: {
+            'grid.live': ['sensor.load_power'],
+            'consumers.live': ['sensor.total_active_power'],
+        },
         solar: [
             {
                 name: 'PV-Anlage',
@@ -50,6 +55,9 @@ export const PRESETS = {
     mennekes_amtron_charge_control: {
         label: 'MENNEKES AMTRON CHARGE CONTROL',
         hint: 'Entitäten aus docs/modbus_mennekes.yaml. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
+        replaces: {
+            'wallboxes.total': ['sensor.mennekes_wallbox_gesamtzahlerstand'],
+        },
         wallboxes: [
             {
                 name: 'Mennekes',

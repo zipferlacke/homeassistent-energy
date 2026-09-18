@@ -774,11 +774,29 @@ class WueflEnergyConfigCard extends HTMLElement {
      * (control, more) und Listen von Objekten (strings) rekursiv befüllt.
      * `current` sind vorhandene Werte – die werden nie überschrieben.
      */
+    const replaces = preset.replaces ?? {};
+    /**
+     * Ist der vorhandene Wert brauchbar? Leer, eine Entität, die es in HA
+     * nicht gibt, oder eine bekannte Fehlzuordnung älterer Vorlagen zählen
+     * als "nicht brauchbar" und werden von der Vorlage ersetzt.
+     */
+    const usable = (value, fieldPath) => {
+      const list = asList(value);
+      if (!list.length || value === '') return false;
+      if (list.some((v) => (replaces[fieldPath] ?? []).includes(v))) return false;
+      return !list.every((v) => isPattern(v) && !states?.[v]);
+    };
+
     const fill = (template, current, path) => {
       const out = { ...(current ?? {}) };
       for (const [field, spec] of Object.entries(template)) {
         const have = out[field];
-        if (Array.isArray(have) ? have.length : have !== undefined && have !== '') continue;
+        if (have && typeof have === 'object' && !Array.isArray(have) && spec && typeof spec === 'object' && !Array.isArray(spec)) {
+          // Unterobjekt (control, more): Feld für Feld ergänzen
+          out[field] = fill(spec, have, `${path}.${field}`);
+          continue;
+        }
+        if (usable(have, `${path}.${field}`)) continue;
 
         if (Array.isArray(spec) && spec.some((x) => x && typeof x === 'object')) {
           const rows = spec
@@ -806,12 +824,16 @@ class WueflEnergyConfigCard extends HTMLElement {
     for (const [key, spec] of Object.entries(preset)) {
       if (key === 'label' || key === 'hint') continue;
 
+      if (key === 'replaces') continue;
       if (Array.isArray(spec)) {
-        if (asList(next[key]).length) continue;
+        // Vorhandene Einträge ergänzen (Vorlage 1 → Eintrag 1 …), fehlende anlegen
+        const existing = asList(next[key]);
         const rows = spec
-          .map((t, i) => ({ id: `${key}_${Date.now().toString(36)}_${i}`, ...fill(t, {}, key) }))
+          .map((t, i) => (existing[i]
+            ? fill(t, existing[i], key)
+            : { id: `${key}_${Date.now().toString(36)}_${i}`, ...fill(t, {}, key) }))
           .filter((r) => Object.keys(r).some((k) => isPattern(r[k])));
-        if (rows.length) next[key] = rows;
+        if (rows.length) next[key] = [...rows, ...existing.slice(spec.length)];
         continue;
       }
       next[key] = fill(spec, next[key], key);
@@ -822,7 +844,7 @@ class WueflEnergyConfigCard extends HTMLElement {
     await this.#persist(next);
 
     this.#els.report.innerHTML = filled
-      ? `<strong>${filled} Felder gefüllt.</strong>` +
+      ? `<strong>${filled} Felder gefüllt oder korrigiert.</strong> Eigene, gültige Zuordnungen bleiben unverändert.` +
         (missing.length ? ` Nicht gefunden: ${esc(missing.join(', '))}.` : '') +
         (preset.hint ? `<br>${esc(preset.hint)}` : '')
       : 'Keine passenden Sensoren gefunden. Sind die Geräte-Pakete eingebunden und HA neu gestartet?';
