@@ -41,18 +41,16 @@ export const TOKENS_CSS = `
   --w-fs-md:       1rem;
   --w-fs-lg:       1.2rem;
 
-  /* Energiefarben. HA setzt diese im Energie-Dashboard, damit passen die
-     Karten ohne Zutun zum eingebauten Dashboard. */
-  --w-solar:       var(--energy-solar-color, #ff9800);
-  --w-grid-in:     var(--energy-grid-consumption-color, #488fc2);
-  --w-grid-out:    var(--energy-grid-return-color, #8353d1);
-  --w-batt-out:    var(--energy-battery-out-color, #4db0a2);
-  --w-batt-in:     var(--energy-battery-in-color, #f6c34c);
-
-  /* Dafür hat HA nichts Eigenes — hier gelten unsere Werte. */
-  --w-house:       var(--wuefl-house-color, #e57373);
-  --w-wallbox:     var(--wuefl-wallbox-color, #ba68c8);
-  --w-heatpump:    var(--wuefl-heatpump-color, #d85a30);
+  /* Energiefarben – gleiche Vorgaben wie DEFAULT_COLORS, per Theme
+     (--wuefl-*-color) oder je Objekt in der Zuordnung änderbar. */
+  --w-solar:       var(--wuefl-solar-color, #F5A623);
+  --w-grid-in:     var(--wuefl-grid-import-color, #3B82F6);
+  --w-grid-out:    var(--wuefl-grid-export-color, #A78BFA);
+  --w-batt-out:    var(--wuefl-battery-out-color, #2BB673);
+  --w-batt-in:     var(--wuefl-battery-in-color, #86E0AE);
+  --w-house:       var(--wuefl-house-color, #EF6461);
+  --w-wallbox:     var(--wuefl-wallbox-color, #22C3D6);
+  --w-heatpump:    var(--wuefl-heatpump-color, #EC4899);
   --w-price:       var(--wuefl-price-color, #fbaa00);
 }
 `;
@@ -192,17 +190,24 @@ export const COLORS = {
  * damit sie auch in Karten ohne TOKENS_CSS (z. B. we-chart) auflösen.
  * ------------------------------------------------------------------ */
 
-const PALETTE = ['#488fc2', '#ba68c8', '#4db0a2', '#d85a30', '#f6c34c', '#8353d1', '#e57373', '#7cb342'];
+const PALETTE = ['#3B82F6', '#EC4899', '#22C3D6', '#F5A623', '#A78BFA', '#2BB673', '#EF6461', '#A3E635'];
 
+/**
+ * Abgestimmte Vorgaben: jede Art hat einen eigenen Farbton, Paare (Akku
+ * entladen/laden, Netz Bezug/Einspeisung) sind hell/dunkel desselben Tons.
+ * Bewusst eigene --wuefl-*-Variablen statt --energy-*: manche Themes setzen
+ * die HA-Energiefarben so, dass sich Arten gleichen (z. B. Akku und Haus rot).
+ * Im Theme lassen sich alle --wuefl-*-color überschreiben.
+ */
 const DEFAULT_COLORS = {
-  grid:        { color: 'var(--energy-grid-consumption-color, #488fc2)', color_export: 'var(--energy-grid-return-color, #8353d1)' },
-  solar:       { color: 'var(--energy-solar-color, #ff9800)', palette: ['#ffb74d', '#f57c00', '#ffd54f', '#e65100'] },
-  strings:     { color: PALETTE[0], palette: PALETTE.slice(1) },
-  battery:     { color: 'var(--energy-battery-out-color, #4db0a2)', color_in: 'var(--energy-battery-in-color, #f6c34c)', palette: ['#26a69a', '#80cbc4'] },
-  consumers:   { color: 'var(--wuefl-house-color, #e57373)' },
-  heatpump:    { color: 'var(--wuefl-heatpump-color, #d85a30)', palette: ['#ff8a65', '#bf360c'] },
-  wallboxes:   { color: 'var(--wuefl-wallbox-color, #ba68c8)', palette: ['#9575cd', '#f06292', '#7986cb'] },
-  water:       { color: 'var(--wuefl-water-color, #26c6da)', palette: ['#4dd0e1', '#00838f'] },
+  grid:        { color: 'var(--wuefl-grid-import-color, #3B82F6)', color_export: 'var(--wuefl-grid-export-color, #A78BFA)' },
+  solar:       { color: 'var(--wuefl-solar-color, #F5A623)', palette: ['#FACC15', '#FB923C', '#EAB308', '#F97316'] },
+  strings:     { color: '#FB7185', palette: ['#38BDF8', '#A3E635', '#C084FC', '#FBBF24', '#2DD4BF'] },
+  battery:     { color: 'var(--wuefl-battery-out-color, #2BB673)', color_in: 'var(--wuefl-battery-in-color, #86E0AE)', palette: ['#059669', '#34D399'] },
+  consumers:   { color: 'var(--wuefl-house-color, #EF6461)' },
+  heatpump:    { color: 'var(--wuefl-heatpump-color, #EC4899)', palette: ['#DB2777', '#F472B6'] },
+  wallboxes:   { color: 'var(--wuefl-wallbox-color, #22C3D6)', palette: ['#0EA5E9', '#06B6D4', '#67E8F9'] },
+  water:       { color: 'var(--wuefl-water-color, #38BDF8)', palette: ['#0284C7', '#7DD3FC'] },
 };
 
 /** Farbwert aus der Zuordnung als CSS-Farbe: [r,g,b] vom Farbwähler oder Text. */

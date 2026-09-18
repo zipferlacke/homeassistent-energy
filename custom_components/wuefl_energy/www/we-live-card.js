@@ -739,7 +739,7 @@ class WueflEnergyLiveCard extends HTMLElement {
     if (earned !== null || paid !== null) {
       const balance = (earned ?? 0) - (paid ?? 0);
       const subtitle = `
-        ${earned !== null ? `<span class="sub-item" style="color: var(--energy-battery-out-color, #4db0a2)">${esc(fmtEuro(earned))} eingespeist</span>` : ''}
+        ${earned !== null ? `<span class="sub-item" style="color: var(--w-batt-out)">${esc(fmtEuro(earned))} eingespeist</span>` : ''}
         ${paid !== null ? `<span class="sub-item" style="color: var(--error-color, #db4437)">${esc(fmtEuro(-paid))} bezogen</span>` : ''}
       `;
       tiles.push(tileHtml({
@@ -760,7 +760,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       const today = (saved ?? 0) + (earned ?? 0);
       const percent = `${((today / cost) * 100).toFixed(3).replace('.', ',')} % der Anlage`;
       tiles.push(tileHtml({
-        icon: 'mdi:cash-clock', color: cssColor(this, '--energy-battery-out-color', '#4db0a2'),
+        icon: 'mdi:cash-clock', color: cssColor(this, '--w-batt-out', '#2BB673'),
         title: 'Zur Amortisation', value: fmtEuro(today, { signed: false }),
         subtitle: `<span class="sub-item">${esc(percent)}</span>`, click: 'payback',
       }));

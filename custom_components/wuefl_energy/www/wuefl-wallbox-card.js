@@ -647,7 +647,7 @@ class WueflWallboxCard extends HTMLElement {
       });
     }
     const batt = batteryEntities.length ? sum(h, batteryEntities, num) : null;
-    if (batt !== null) items.push({ e: batteryEntities[0], icon: 'mdi:home-battery', color: cssColor(this, '--energy-battery-out-color', '#4db0a2'), k: 'Hausakku', v: fmtPercent(batt / batteryEntities.length) });
+    if (batt !== null) items.push({ e: batteryEntities[0], icon: 'mdi:home-battery', color: cssColor(this, '--w-batt-out', '#2BB673'), k: 'Hausakku', v: fmtPercent(batt / batteryEntities.length) });
 
     const price = priceInfo(h, c, 'import').now;
     if (price !== null) items.push({ e: c.price_entity, icon: 'mdi:currency-eur', color: cssColor(this, '--w-price', '#fbaa00'), k: 'Strompreis', v: `${fmtPrice(price)}/kWh` });
