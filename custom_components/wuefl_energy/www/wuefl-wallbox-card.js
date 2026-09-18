@@ -10,7 +10,7 @@ import {
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
-  applyColorVars, colorOf, navigateToView, TOGGLE_CSS,
+  applyColorVars, colorOf, navigateToView, TOGGLE_CSS, isReadOnly, applyReadOnly,
 } from './we-shared.js';
 import './we-chart.js';
 
@@ -254,6 +254,7 @@ class WueflWallboxCard extends HTMLElement {
       ignore_percent_limit_entity: ignore_limit,
     };
     this.#watch = entityIds(this.#config);
+    applyReadOnly(this);
     this.#built = false;
     if (this.shadowRoot) this.shadowRoot.replaceChildren();
     this.#build();
@@ -324,6 +325,11 @@ class WueflWallboxCard extends HTMLElement {
       </details>
 
       <div class="stats"></div>
+
+      <div class="info ro-only">
+        ${icon('mdi:lock-outline')}
+        <div class="txt">Nur-Lese-Modus: Lademodus und Ladeziel lassen sich hier gerade nicht ändern.</div>
+      </div>
 
       <div class="info">
         ${icon('mdi:information-outline')}
@@ -400,16 +406,19 @@ class WueflWallboxCard extends HTMLElement {
   #domain(e) { return e ? e.split('.')[0] : null; }
 
   #setOption(id, option) {
+    if (isReadOnly()) return;
     const d = this.#domain(id);
     if (d) this.#hass.callService(d, 'select_option', { entity_id: id, option });
   }
 
   #setNumber(id, value) {
+    if (isReadOnly()) return;
     const d = this.#domain(id);
     if (d) this.#hass.callService(d, 'set_value', { entity_id: id, value });
   }
 
   #toggle(id, on) {
+    if (isReadOnly()) return;
     const d = this.#domain(id);
     if (d) this.#hass.callService(d, on ? 'turn_on' : 'turn_off', { entity_id: id });
   }

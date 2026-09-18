@@ -145,6 +145,13 @@ dialog {
   & .actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: .9rem; }
 }
 
+/* Nur-Lesen-Modus: alles Bedienbare sichtbar, aber gesperrt. */
+:host([read-only]) :is(.modes, .target, .slider, .control, .choice, .switch:not(.switch-ro), .writable) {
+  opacity: .55;
+  pointer-events: none;
+}
+:host(:not([read-only])) .ro-only { display: none !important; }
+
 /* Hinweis: getönte Fläche mit Info-Icon statt grauem Kasten mit Randstrich. */
 .info {
   align-items: flex-start;
@@ -705,8 +712,33 @@ export function fireEvent(node, type, detail = {}) {
   node.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
 }
 
+/**
+ * Detail-Dialog von HA öffnen. Im Nur-Lesen-Modus nur für reine Anzeige-
+ * Entitäten – bei Reglern, Schaltern & Co. ließe sich dort sonst etwas ändern.
+ */
 export function moreInfo(node, entityId) {
-  if (entityId) fireEvent(node, 'hass-more-info', { entityId });
+  if (!entityId) return;
+  if (readOnlyMode && !/^(sensor|binary_sensor|weather|sun)\./.test(entityId)) return;
+  fireEvent(node, 'hass-more-info', { entityId });
+}
+
+/* ------------------------------------------------------------------ *
+ * Nur-Lesen-Modus
+ *
+ * Liegt in der Zuordnung unter settings.read_only (nur Admins können die
+ * Zuordnung speichern). Ist er an, sperren alle Karten ihre Bedienelemente
+ * und schicken keine Service-Aufrufe mehr. Die Automation läuft weiter.
+ * ------------------------------------------------------------------ */
+let readOnlyMode = false;
+
+/** Ist das Dashboard gerade auf "nur lesen" gestellt? */
+export function isReadOnly() {
+  return readOnlyMode;
+}
+
+/** Setzt das Attribut read-only an der Karte – BASE_CSS sperrt damit die Bedienung. */
+export function applyReadOnly(el) {
+  el.toggleAttribute('read-only', readOnlyMode);
 }
 
 export function registerCard(entry) {
@@ -943,6 +975,7 @@ export async function centralConfig(hass) {
     });
   }
   const config = (await centralPromise) ?? {};
+  readOnlyMode = !!config?.settings?.read_only;
 
   if (!centralSubscribed && hass.connection) {
     centralSubscribed = true;

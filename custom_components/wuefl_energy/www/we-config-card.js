@@ -415,6 +415,7 @@ class WueflEnergyConfigCard extends HTMLElement {
   #editing = null; // { block, index, parentId }
   #draft = {};
   #els = {};
+  #onChanged = null;
 
   set hass(hass) {
     const first = !this.#hass;
@@ -433,6 +434,7 @@ class WueflEnergyConfigCard extends HTMLElement {
 
   async #load() {
     this.#config = normalizeConfig(await rawConfig(this.#hass));
+    this.toggleAttribute('read-only', !!this.#config.settings?.read_only);
     if (this.#built) this.#render();
   }
 
@@ -441,6 +443,16 @@ class WueflEnergyConfigCard extends HTMLElement {
       this.#build();
       this.#render();
     }
+    // Nur-Lesen-Modus oder Zuordnung woanders geändert → neu laden
+    if (!this.#onChanged) {
+      this.#onChanged = () => { if (!this.#editing) this.#load(); };
+      window.addEventListener('we-config-changed', this.#onChanged);
+    }
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('we-config-changed', this.#onChanged);
+    this.#onChanged = null;
   }
 
   #build() {
@@ -654,6 +666,19 @@ class WueflEnergyConfigCard extends HTMLElement {
           justify-content: flex-end;
           gap: 8px;
         }
+        /* Nur-Lesen-Modus: Bearbeiten ausblenden */
+        :host([read-only]) :is(.preset-bar-wrapper, .act, .btn.add) { display: none !important; }
+        .ro-banner {
+          align-items: center;
+          background: color-mix(in srgb, var(--primary-color, #03a9f4) 10%, transparent);
+          border-radius: 12px;
+          display: none;
+          font-size: 0.85rem;
+          gap: 10px;
+          padding: 10px 14px;
+        }
+        .ro-banner ha-icon { color: var(--primary-color, #03a9f4); --mdc-icon-size: 18px; }
+        :host([read-only]) .ro-banner { display: flex; }
         .btn.secondary {
           background: transparent;
           color: var(--primary-text-color);
@@ -662,6 +687,7 @@ class WueflEnergyConfigCard extends HTMLElement {
       </style>
 
       <div class="container">
+        <div class="ro-banner">${icon('mdi:lock-outline')}<span>Nur-Lese-Modus: Die Zuordnung kann nicht bearbeitet werden. Ausschalten unter Einstellungen → Zugriff.</span></div>
         <!-- Schlanke Preset-Leiste oben -->
         <div class="preset-bar-wrapper">
           <div class="preset-bar">
@@ -1040,6 +1066,7 @@ class WueflEnergyConfigCard extends HTMLElement {
   }
 
   async #persist(config) {
+    if (config.settings?.read_only) return;
     // Nur über die Integration speichern. Früher ging die Zuordnung zusätzlich
     // als "config-changed" raus – im Karteneditor landete sie so als
     // Kartenoption im Dashboard und von dort wieder im Speicher.
