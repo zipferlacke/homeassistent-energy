@@ -69,6 +69,8 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
 
     return {
       aggregation: this._aggregation(range),
+      // Feiner geht nicht als die Zähler zählen – gröber schon, siehe we-chart
+      adaptive: true,
       y_axes: [{ unit: 'kWh' }],
       legend: [{ hidden: false, position: 'bottom-center' }],
       series,
