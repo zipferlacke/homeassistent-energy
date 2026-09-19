@@ -214,7 +214,14 @@ def enrich_config(config: dict) -> dict:
     (z. B. ein echter Strompreis-Sensor statt des Festpreises), gilt die.
     """
     enriched = copy.deepcopy(config or {})
-    wallboxes = {wb.get("id"): wb for wb in enriched.get("wallboxes") or [] if isinstance(wb, dict)}
+    # Gleicher Schlüssel wie in required_specs – auch für Einträge ohne id
+    # (sonst fehlten Lademodus, Soll-Leistung & Co. und die Automation hielte
+    # die Wallbox für nicht eingerichtet)
+    wallboxes = {
+        wb.get("id") or f"wallbox_{i}": wb
+        for i, wb in enumerate(enriched.get("wallboxes") or [])
+        if isinstance(wb, dict)
+    }
 
     for spec in _all_specs(enriched):
         if "wallbox_id" in spec:

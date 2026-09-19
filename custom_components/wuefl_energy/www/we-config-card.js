@@ -110,6 +110,18 @@ function normalizeConfig(cfg) {
   c.grid = c.grid || {};
   c.consumers = c.consumers || {};
   c.systemdata = c.systemdata || {};
+  // Jeder Listeneintrag braucht eine id – die Integration ordnet darüber
+  // z. B. Lademodus und Soll-Leistung der richtigen Wallbox zu
+  for (const key of ['solar', 'battery', 'heatpump', 'wallboxes', 'water']) {
+    const used = new Set(c[key].map((e) => e?.id).filter(Boolean));
+    c[key] = c[key].map((e, i) => {
+      if (!e || typeof e !== 'object' || e.id) return e;
+      let id = `${key}_${i}`;
+      for (let n = 2; used.has(id); n += 1) id = `${key}_${i}_${n}`;
+      used.add(id);
+      return { id, ...e };
+    });
+  }
   return c;
 }
 
