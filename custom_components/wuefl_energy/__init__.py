@@ -64,10 +64,27 @@ async def _integration_version(hass: HomeAssistant) -> str:
         except Exception:
             version = "0"
         digest = hashlib.sha1()
+        stale: list[str] = []
         for file in sorted(base.rglob("*")):
-            if file.is_file() and "__pycache__" not in file.parts:
-                digest.update(str(file.relative_to(base)).encode())
-                digest.update(file.read_bytes())
+            if not file.is_file() or "__pycache__" in file.parts:
+                continue
+            # Vorkomprimierte Kopien zählen nicht zum Stand – sie werden
+            # nebenher erzeugt und wären sonst in der Kennung sichtbar
+            if file.suffix in (".gz", ".br"):
+                source = file.with_suffix("")
+                if source.is_file() and source.stat().st_mtime > file.stat().st_mtime:
+                    stale.append(file.name)
+                continue
+            digest.update(str(file.relative_to(base)).encode())
+            digest.update(file.read_bytes())
+        if stale:
+            # aiohttp liefert die .gz-Kopie aus, wenn es sie gibt – eine alte
+            # Kopie überdeckt damit das Update
+            _LOGGER.warning(
+                "W-Energie: veraltete komprimierte Kopien in www/ (%s) – bitte löschen "
+                "oder neu erzeugen, sonst wird der alte Stand ausgeliefert",
+                ", ".join(stale),
+            )
         return f"{version}-{digest.hexdigest()[:8]}"
 
     return await hass.async_add_executor_job(_read)
