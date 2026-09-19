@@ -15,6 +15,7 @@
   "requirements": [],
   "config_flow": true,
   "after_dependencies": [
-    "recorder"
+    "recorder",
+    "lovelace"
   ]
 }

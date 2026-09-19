@@ -1,4 +1,4 @@
-import { saveConfig, rawConfig, colorOf } from './we-shared.js';
+import { saveConfig, rawConfig, colorOf, readOnlyFor } from './we-shared.js';
 import { PRESETS } from './presets.js';
 
 /* ------------------------------------------------------------------ *
@@ -532,7 +532,7 @@ class WueflEnergyConfigCard extends HTMLElement {
 
   async #load() {
     this.#config = normalizeConfig(await rawConfig(this.#hass));
-    this.toggleAttribute('read-only', !!this.#config.settings?.read_only);
+    this.toggleAttribute('read-only', readOnlyFor(this.#config, this.#hass?.user));
     if (this.#built) this.#render();
   }
 
@@ -706,6 +706,20 @@ class WueflEnergyConfigCard extends HTMLElement {
         }
         .colors-done ha-icon { --mdc-icon-size: 18px; }
         .ro-cell { display: flex; justify-content: flex-end; }
+        .ro-users-box { display: grid; gap: 8px; }
+        .user-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 28px; }
+        .user-chips .hint { color: var(--secondary-text-color, #666); font-size: 0.82rem; }
+        .user-chip {
+          align-items: center; background: transparent; border: 1px solid var(--divider-color, #ccc);
+          border-radius: 999px; color: var(--primary-text-color); cursor: pointer; display: inline-flex;
+          font: inherit; font-size: 0.85rem; gap: 4px; padding: 4px 12px 4px 8px;
+        }
+        .user-chip ha-icon { --mdc-icon-size: 16px; color: var(--secondary-text-color, #666); }
+        .user-chip[aria-pressed="true"] {
+          background: color-mix(in srgb, var(--primary-color, #03a9f4) 14%, transparent);
+          border-color: var(--primary-color, #03a9f4);
+        }
+        .user-chip[aria-pressed="true"] ha-icon { color: var(--primary-color, #03a9f4); }
         .switch {
           background: var(--divider-color, #ccc); border: 0; border-radius: 999px; cursor: pointer;
           flex: 0 0 auto; height: 26px; padding: 3px; width: 46px;
@@ -939,8 +953,12 @@ class WueflEnergyConfigCard extends HTMLElement {
           <div class="colors-done edit-only" id="colors-done" hidden>${icon('mdi:check-circle-outline')}<span></span></div>
 
           <div class="tool-row ro sep" id="ro-row">
-            <span class="tool-info">${icon('mdi:lock-outline')}<span><b>Nur lesen</b> – sperrt Regler, Schalter und die Zuordnung, zum Weitergeben an andere. Pausiert auch die Automation – solange es an ist, wird nichts geschrieben.</span></span>
-            <span class="ro-cell"><button class="switch" id="ro-switch" role="switch" aria-checked="false" aria-label="Nur lesen" type="button"><span></span></button></span>
+            <span class="tool-info">${icon('mdi:lock-outline')}<span><b>Nur lesen für alle</b> – sperrt Regler, Schalter und die Zuordnung. Pausiert auch die Automation – solange es an ist, wird nichts geschrieben.</span></span>
+            <span class="ro-cell"><button class="switch" id="ro-switch" role="switch" aria-checked="false" aria-label="Nur lesen für alle" type="button"><span></span></button></span>
+          </div>
+          <div class="ro-users-box" id="ro-users-row">
+            <span class="tool-info">${icon('mdi:account-eye-outline')}<span><b>Nur ansehen</b> – diese Personen sehen das Dashboard, können aber nichts bedienen oder ändern. Die Automation regelt weiter.</span></span>
+            <div class="user-chips" id="ro-users" role="group" aria-label="Nur ansehen"></div>
           </div>
         </div>
 
@@ -999,6 +1017,12 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.roRow = $('#ro-row');
     this.#els.roSwitch = $('#ro-switch');
     this.#els.roSwitch.addEventListener('click', () => this.#setReadOnly(!this.#config?.settings?.read_only));
+    this.#els.roUsersRow = $('#ro-users-row');
+    this.#els.roUsers = $('#ro-users');
+    this.#els.roUsers.addEventListener('click', (e) => {
+      const chip = e.target.closest('.user-chip');
+      if (chip) this.#toggleViewer(chip.dataset.user);
+    });
     this.#els.btnClose.addEventListener('click', () => this.#closeDialog());
     this.#els.btnCancel.addEventListener('click', () => this.#closeDialog());
     this.#els.btnSave.addEventListener('click', () => this.#commit());
@@ -1159,6 +1183,8 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.roSwitch.setAttribute('aria-checked', String(ro));
     this.#els.roRow.hidden = !admin;
     this.#els.roRow.classList.toggle('sep', !ro);
+    this.#els.roUsersRow.hidden = !admin;
+    if (admin) this.#renderViewers();
     this.#els.tools.hidden = ro && !admin;
 
     const colors = countColors(this.#config);
@@ -1439,7 +1465,7 @@ class WueflEnergyConfigCard extends HTMLElement {
     if (!this.#hass?.user?.is_admin) return;
     const next = { ...this.#config, settings: { ...(this.#config.settings ?? {}), read_only: on } };
     this.#config = next;
-    this.toggleAttribute('read-only', on);
+    this.toggleAttribute('read-only', readOnlyFor(next, this.#hass.user));
     this.#render();
     try {
       await saveConfig(this.#hass, next);
@@ -1449,8 +1475,54 @@ class WueflEnergyConfigCard extends HTMLElement {
     }
   }
 
+  /** HA-Benutzer für "Nur ansehen" (die Liste dürfen nur Admins abrufen). */
+  #users = null;
+  async #loadUsers() {
+    if (this.#users || !this.#hass?.user?.is_admin) return;
+    this.#users = [];
+    try {
+      const all = await this.#hass.callWS({ type: 'config/auth/list' });
+      this.#users = (all ?? [])
+        .filter((u) => !u.system_generated && u.is_active && u.id !== this.#hass.user.id)
+        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'de'));
+    } catch (err) {
+      console.error('Benutzer konnten nicht geladen werden:', err);
+    }
+    this.#renderViewers();
+  }
+
+  #renderViewers() {
+    const box = this.#els.roUsers;
+    if (!box) return;
+    if (!this.#users) { this.#loadUsers(); return; }
+    const chosen = new Set(this.#config?.settings?.read_only_users ?? []);
+    box.innerHTML = this.#users.length
+      ? this.#users.map((u) => {
+        const on = chosen.has(u.id);
+        return `<button type="button" class="user-chip" data-user="${esc(u.id)}" aria-pressed="${on}">
+          ${icon(on ? 'mdi:eye-outline' : 'mdi:account-outline')}${esc(u.name || u.username || 'Unbenannt')}</button>`;
+      }).join('')
+      : '<span class="hint">Keine weiteren Personen in Home Assistant angelegt (Einstellungen → Personen).</span>';
+  }
+
+  /** Person auf "nur ansehen" setzen oder wieder freigeben – sofort speichern. */
+  async #toggleViewer(id) {
+    if (!this.#hass?.user?.is_admin || !id) return;
+    const list = new Set(this.#config.settings?.read_only_users ?? []);
+    if (list.has(id)) list.delete(id); else list.add(id);
+    const next = { ...this.#config, settings: { ...(this.#config.settings ?? {}), read_only_users: [...list] } };
+    this.#config = next;
+    this.#renderViewers();
+    try {
+      await saveConfig(this.#hass, next);
+    } catch (err) {
+      console.error('Nur ansehen konnte nicht gespeichert werden:', err);
+      this.#load();
+    }
+  }
+
   async #persist(config) {
-    if (config.settings?.read_only) return;
+    if (readOnlyFor(config, this.#hass?.user)) return;
     // Nur über die Integration speichern. Früher ging die Zuordnung zusätzlich
     // als "config-changed" raus – im Karteneditor landete sie so als
     // Kartenoption im Dashboard und von dort wieder im Speicher.

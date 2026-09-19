@@ -857,11 +857,19 @@ export function moreInfo(node, entityId) {
 /* ------------------------------------------------------------------ *
  * Nur-Lesen-Modus
  *
- * Liegt in der Zuordnung unter settings.read_only (nur Admins können die
- * Zuordnung speichern). Ist er an, sperren alle Karten ihre Bedienelemente
- * und schicken keine Service-Aufrufe mehr. Die Automation läuft weiter.
+ * settings.read_only gilt für alle und pausiert zusätzlich die Automation.
+ * settings.read_only_users sind HA-Benutzer (id), die nur ansehen dürfen –
+ * für sie sperren die Karten die Bedienung, die Automation regelt weiter.
+ * Ist der Modus an, sperren alle Karten ihre Bedienelemente und schicken
+ * keine Service-Aufrufe mehr. Speichern können ohnehin nur Admins.
  * ------------------------------------------------------------------ */
 let readOnlyMode = false;
+
+/** Gilt "nur lesen" für diesen Benutzer? */
+export function readOnlyFor(config, user) {
+  const s = config?.settings ?? {};
+  return !!s.read_only || (!!user?.id && Array.isArray(s.read_only_users) && s.read_only_users.includes(user.id));
+}
 
 /** Ist das Dashboard gerade auf "nur lesen" gestellt? */
 export function isReadOnly() {
@@ -1108,7 +1116,7 @@ export async function centralConfig(hass) {
     });
   }
   const config = (await centralPromise) ?? {};
-  readOnlyMode = !!config?.settings?.read_only;
+  readOnlyMode = readOnlyFor(config, hass.user);
 
   if (!centralSubscribed && hass.connection) {
     centralSubscribed = true;

@@ -18,6 +18,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .automation_install import async_install_automation
+from .dashboard_install import async_create_dashboard
 from .specs import enrich_config, required_specs, strip_generated
 
 
@@ -129,9 +130,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Die Automation gehört zur Integration – nach dem Start von HA eintragen
     # bzw. aktualisieren (erst dann ist die Automations-Integration geladen)
+    # Beim ersten Einrichten auch das Dashboard "Energie" anlegen (nur einmal)
     async def _install_automation(_=None) -> None:
         if DOMAIN in hass.data:
             hass.data[DOMAIN]["automation"] = await async_install_automation(hass)
+            await async_create_dashboard(hass, entry)
 
     if hass.is_running:
         hass.async_create_task(_install_automation())

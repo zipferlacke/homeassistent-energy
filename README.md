@@ -1,6 +1,14 @@
 # W-Energie Dashboard für Home Assistant
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zipferlacke&repository=homeassistent-energy&category=integration)
+**Installation in drei Klicks:**
+
+1. [![In HACS öffnen](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zipferlacke&repository=homeassistent-energy&category=integration) → **Herunterladen**
+2. Home Assistant neu starten
+3. [![Integration hinzufügen](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=we) → **Absenden**
+
+Danach steht in der Seitenleiste das Dashboard **Energie** (Symbol Rakete) –
+dort unter *Zuordnung* die eigenen Entitäten eintragen. Name und Symbol
+lassen sich unter Einstellungen → Dashboards ändern.
 
 Drei Karten (Live-Energiefluss, Energiebilanz, Wallbox) plus eine kleine
 Integration, die alle Entitäten an einer zentralen Stelle zuordnet.
@@ -17,7 +25,7 @@ einzutragen.**
 
 | Aus dem Paket | Ziel in Home Assistant |
 |---|---|
-| `custom_components/we/` | `config/custom_components/we/` |
+| `custom_components/wuefl_energy/` | `config/custom_components/wuefl_energy/` |
 | `custom_components/wuefl_energy/www/packages/*.yaml` | Geräte-Pakete (Sungrow, Mennekes) nach `config/packages/`, in der Ansicht *Zuordnung* per Klick herunterladbar; die Automation installiert die Integration selbst |
 | `preview.html` | nirgendwo, nur zum Anschauen im Browser |
 
@@ -33,40 +41,38 @@ Wenn dieses Paket in einem eigenen GitHub-Repository liegt, laesst es sich als
 Wurzelverzeichnis macht das moeglich. Danach ist eine neue Version nur noch
 ein Klick auf "Neu herunterladen" statt Dateien von Hand zu kopieren.
 
-**1. Repository eintragen**
+**1. Herunterladen**
 
-Auf den Button ganz oben in diesem README klicken — oeffnet HACS direkt mit
-dem Repository vorausgefuellt. Oder von Hand: HACS → drei Punkte oben rechts
-→ **Benutzerdefinierte Repositories** → URL eintragen, Kategorie
-**Integration**.
+Auf den ersten Knopf ganz oben in diesem README klicken – öffnet HACS direkt
+mit dem Repository. Dort **Herunterladen**. Oder von Hand: HACS → drei Punkte
+oben rechts → **Benutzerdefinierte Repositories** → URL eintragen, Kategorie
+**Integration**, dann "W-Energie Dashboard" suchen und herunterladen.
 
-**2. Installieren**
+Da alles — Integration und Karten — in `custom_components/wuefl_energy/`
+liegt, reicht die Kategorie *Integration* fuer beides.
 
-"W-Energie Dashboard" in HACS suchen, installieren, Home Assistant neu starten.
-Da alles — Integration und Karten — in `custom_components/we/`
-liegt, reicht die Kategorie *Integration* fuer beides; es ist kein separater
-HACS-Eintrag fuer die Karten noetig.
+**2. Home Assistant neu starten**
+
+Erst danach kennt Home Assistant die Integration; vorher meldet der Knopf aus
+Schritt 3, dass es sie nicht gibt.
 
 **3. Integration hinzufuegen**
 
-HACS installiert nur die Dateien — aktiv wird die Integration erst, wenn du
-sie einrichtest:
+Auf den zweiten Knopf oben klicken und **Absenden**. Oder von Hand:
+Einstellungen → Geraete & Dienste → **+ Integration hinzufuegen** →
+**"W-Energie Dashboard"**. Es gibt nichts einzustellen.
 
-Einstellungen → Geraete & Dienste → **+ Integration hinzufuegen** (unten
-rechts) → nach **"W-Energie Dashboard"** suchen → auswaehlen → Dialog bestaetigen.
+**4. Dashboard – entsteht von selbst**
 
-Es gibt dabei nichts einzustellen, der Dialog zeigt nur einen
-Bestaetigungsschritt. Das legt den Eintrag an, der die Helfer-Entitaeten
-(Laderegler, Lademodus je Wallbox) zuverlaessig laedt und die Karten unter
-`/we_files/` ausliefert. Ohne diesen Schritt bleibt die
-Integration installiert, aber inaktiv.
+Beim ersten Einrichten legt die Integration das Dashboard **Energie** mit
+einer Rakete als Symbol in der Seitenleiste an und installiert die
+Ladeautomatik. Name, Symbol, Sichtbarkeit in der Seitenleiste und "nur fuer
+Admins" lassen sich wie bei jedem Dashboard unter Einstellungen → Dashboards
+aendern. Wer es loescht, bekommt es nicht ungefragt zurueck.
 
-**4. Dashboard anlegen**
-
-Einstellungen → Dashboards → Dashboard hinzufuegen → **W-Energie Dashboard**
-auswaehlen. Erscheint es nicht in der Liste, die Seite einmal neu laden.
-
-Alternativ von Hand, im Raw-Konfigurationseditor eines leeren Dashboards:
+Von Hand (falls es fehlt): Einstellungen → Dashboards → Dashboard hinzufuegen
+→ **W-Energie Dashboard**, oder im Raw-Konfigurationseditor eines leeren
+Dashboards:
 
 ```yaml
 strategy:
@@ -85,8 +91,14 @@ selbst: Sie traegt sie nach dem Start in `automations.yaml` ein und haelt sie
 bei jedem Update aktuell – dafuer ist nichts zu tun. Eine alte Kopie unter
 `config/packages/wuefl_automation.yaml` benennt sie in
 `wuefl_automation.yaml.alt` um, damit nicht doppelt geregelt wird.
-*Nur lesen* in der Zuordnung pausiert die Automation: Solange es an ist, wird
-nichts geschrieben; danach regelt sie sofort wieder.
+*Nur lesen für alle* in der Zuordnung pausiert die Automation: Solange es an
+ist, wird nichts geschrieben; danach regelt sie sofort wieder.
+
+**Nur ansehen fuer einzelne Personen:** In der Zuordnung oben lassen sich
+HA-Benutzer auswaehlen, die das Dashboard nur ansehen duerfen – fuer sie sind
+Regler, Schalter und die Zuordnung gesperrt, die Automation regelt weiter.
+Zum Weitergeben am besten zusaetzlich als normalen Benutzer (kein Admin)
+anlegen: dann kann die Person auch sonst in HA nichts einrichten.
 
 ## Wie die Ansichten entstehen
 
@@ -393,20 +405,20 @@ Maße und Schriftgrößen hängen an `--w-radius`, `--w-pad`, `--w-input-h` und
 
 | Datei | Zweck |
 |---|---|
-| `custom_components/we/www/we-shared.js` | Tokens, Grundgerüst-CSS, Farben, Icons, Formatierung, Editor-Basis |
-| `custom_components/we/www/we-live-card.js` | Energiefluss-Grafik mit laufenden Kabeln |
-| `custom_components/we/www/we-history-card.js` | Energie-Ansicht, Balken oberhalb/unterhalb der Nulllinie |
-| `custom_components/we/www/wuefl-wallbox-card.js` | Lademodus, Ladeziel, Zeitprognose je Fahrzeug |
-| `custom_components/we/www/we-settings-card.js` | Laderegeln, die fuer alle Wallboxen gelten |
-| `custom_components/we/www/we-config-card.js` | Die Zuordnung — Bloecke mit Hinzufuegen-Dialogen |
-| `custom_components/we/www/we-strategy.js` | Baut die Ansichten, wird automatisch angemeldet |
-| `custom_components/we/www/energieflow.svg` | Die Grafik der Live-Karte |
-| `custom_components/we/__init__.py` | Batteriet die Zuordnung, liefert die Karten aus, zwei WebSocket-Befehle |
-| `custom_components/we/specs.py` | Soll-Liste der selbst verwalteten Helfer |
-| `custom_components/we/config_flow.py` | Legt automatisch den Config Entry an |
-| `custom_components/we/switch.py` | Hausakku-Freigabe als eigene Plattform |
-| `custom_components/we/number.py` | Batteriereserve, Preisgrenze, Ladestrom, Ladeziel |
-| `custom_components/we/select.py` | Prioritaet, Lademodus je Wallbox |
+| `custom_components/wuefl_energy/www/we-shared.js` | Tokens, Grundgerüst-CSS, Farben, Icons, Formatierung, Editor-Basis |
+| `custom_components/wuefl_energy/www/we-live-card.js` | Energiefluss-Grafik mit laufenden Kabeln |
+| `custom_components/wuefl_energy/www/we-history-card.js` | Energie-Ansicht, Balken oberhalb/unterhalb der Nulllinie |
+| `custom_components/wuefl_energy/www/wuefl-wallbox-card.js` | Lademodus, Ladeziel, Zeitprognose je Fahrzeug |
+| `custom_components/wuefl_energy/www/we-settings-card.js` | Laderegeln, die fuer alle Wallboxen gelten |
+| `custom_components/wuefl_energy/www/we-config-card.js` | Die Zuordnung — Bloecke mit Hinzufuegen-Dialogen |
+| `custom_components/wuefl_energy/www/we-strategy.js` | Baut die Ansichten, wird automatisch angemeldet |
+| `custom_components/wuefl_energy/www/energieflow.svg` | Die Grafik der Live-Karte |
+| `custom_components/wuefl_energy/__init__.py` | Batteriet die Zuordnung, liefert die Karten aus, zwei WebSocket-Befehle |
+| `custom_components/wuefl_energy/specs.py` | Soll-Liste der selbst verwalteten Helfer |
+| `custom_components/wuefl_energy/config_flow.py` | Legt automatisch den Config Entry an |
+| `custom_components/wuefl_energy/switch.py` | Hausakku-Freigabe als eigene Plattform |
+| `custom_components/wuefl_energy/number.py` | Batteriereserve, Preisgrenze, Ladestrom, Ladeziel |
+| `custom_components/wuefl_energy/select.py` | Prioritaet, Lademodus je Wallbox |
 | `custom_components/wuefl_energy/www/packages/` | Ladeautomatik und Geräte-Pakete (Sungrow, Mennekes) zum Herunterladen |
 | `hacs.json` | Macht das Repository als HACS-Quelle nutzbar |
 | `tools/make-preview.py` | Baut `preview.html` aus den Quelldateien (nur zur Entwicklung) |
@@ -433,7 +445,7 @@ Gleicher Ablauf wie oben, nur ohne HACS-Verwaltung:
 
 **1. Integration kopieren**
 
-`custom_components/we/` nach `config/custom_components/` kopieren.
+`custom_components/wuefl_energy/` nach `config/custom_components/` kopieren.
 Danach entweder über Einstellungen → Geraete & Dienste → Integration
 hinzufuegen (wie oben, Schritt 3) einrichten, oder klassisch per YAML — in
 `configuration.yaml` auf oberster Ebene ergaenzen, nicht in einem Package:
