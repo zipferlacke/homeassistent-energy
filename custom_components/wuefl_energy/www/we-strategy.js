@@ -316,8 +316,35 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
   }
 }
 
-if (!customElements.get('ll-strategy-dashboard-we')) {
-  customElements.define('ll-strategy-dashboard-we', WueflEnergyDashboardStrategy);
+// =======================================================
+// Registrierung
+// =======================================================
+// Browser ohne eigene "Scoped Custom Element Registries" (z. B. Firefox)
+// bekommen von HA beim Start einen Polyfill, der window.customElements durch
+// eine neue Registry ERSETZT. Lädt dieses Modul schneller als HA selbst, landet
+// die Strategy in der alten Registry – HA sieht sie nie und meldet
+// "Timeout waiting for strategy element". Deshalb sofort registrieren und
+// noch einmal, sobald HA sein Hauptelement angelegt hat (dann ist der Polyfill
+// aktiv). Je Registry eine eigene Unterklasse: eine Klasse darf nur einmal
+// definiert werden.
+const TAG = 'll-strategy-dashboard-we';
+function register() {
+  const registry = window.customElements;
+  if (!registry.get(TAG)) registry.define(TAG, class extends WueflEnergyDashboardStrategy {});
+}
+register();
+customElements.whenDefined('home-assistant').then(register);
+// Absicherung: bis 30 s nach dem Laden auf einen Registry-Tausch achten
+{
+  let seen = window.customElements;
+  const until = Date.now() + 30000;
+  const timer = setInterval(() => {
+    if (window.customElements !== seen) {
+      seen = window.customElements;
+      register();
+    }
+    if (Date.now() > until) clearInterval(timer);
+  }, 100);
 }
 
 // =======================================================
