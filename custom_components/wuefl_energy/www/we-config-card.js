@@ -67,7 +67,12 @@ const isWildcard = (pattern) => /[*#]/.test(pattern);
 function findEntity(states, pattern) {
   if (!states) return null;
   if (states[pattern]) return pattern;
-  if (!isWildcard(pattern)) return null;
+  if (!isWildcard(pattern)) {
+    // HA hängt bei doppelten Namen _2, _3 … an (z. B. Paket zweimal eingebunden
+    // oder Entität einmal gelöscht und neu angelegt)
+    const reg = new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&')}_\\d+$`);
+    return Object.keys(states).filter((id) => reg.test(id)).sort()[0] || null;
+  }
   const reg = patternRegex(pattern);
   return Object.keys(states).find((id) => reg.test(id)) || null;
 }
@@ -1080,6 +1085,8 @@ class WueflEnergyConfigCard extends HTMLElement {
     const states = this.#hass?.states;
     const next = normalizeConfig(this.#config);
     let filled = 0;
+    // Schon gültig belegte Sensor-Felder – bleiben, zählen aber als "passt"
+    let kept = 0;
     const missing = [];
 
     const MULTI = ['import_total', 'export_total', 'forecast', 'temperatures', 'extra_entities'];
@@ -1114,7 +1121,10 @@ class WueflEnergyConfigCard extends HTMLElement {
           out[field] = fill(spec, have, `${path}.${field}`);
           continue;
         }
-        if (usable(have, `${path}.${field}`)) continue;
+        if (usable(have, `${path}.${field}`)) {
+          if (isPattern(spec) || (Array.isArray(spec) && spec.length && spec.every(isPattern))) kept += 1;
+          continue;
+        }
 
         if (Array.isArray(spec) && spec.some((x) => x && typeof x === 'object')) {
           const rows = spec
@@ -1176,10 +1186,17 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#render();
     await this.#persist(next);
 
-    this.#els.report.innerHTML = filled
-      ? `<strong>${filled} Felder gefüllt oder korrigiert.</strong> Eigene, gültige Zuordnungen bleiben unverändert.` +
-        (missing.length ? ` Nicht gefunden: ${esc(missing.join(', '))}.` : '')
-      : 'Keine passenden Sensoren gefunden. Sind die Geräte-Pakete eingebunden und HA neu gestartet?';
+    const notFound = missing.length ? ` Nicht gefunden: ${esc(missing.join(', '))}.` : '';
+    const felder = (n) => `${n} ${n === 1 ? 'Feld' : 'Felder'}`;
+    if (filled) {
+      this.#els.report.innerHTML = `<strong>${felder(filled)} gefüllt oder korrigiert.</strong>` +
+        (kept ? ` ${felder(kept)} waren schon zugeordnet und bleiben unverändert.` : ' Eigene, gültige Zuordnungen bleiben unverändert.') +
+        notFound;
+    } else if (kept) {
+      this.#els.report.innerHTML = `<strong>Schon eingerichtet</strong> – alle ${felder(kept)} sind bereits zugeordnet, nichts geändert.` + notFound;
+    } else {
+      this.#els.report.innerHTML = 'Keine passenden Sensoren gefunden. Sind die Geräte-Pakete eingebunden und HA neu gestartet?';
+    }
   }
 
   /* ------------------------------------------------------------------ *
