@@ -44,7 +44,9 @@ async def _integration_version(hass: HomeAssistant) -> str:
     hochgezählt, und die Karten importieren sich gegenseitig ohne ?v=. Ein
     Browser (vor allem die Companion-App) mischt dann alte und neue Module,
     der Import scheitert und die Strategy wird nie registriert. Deshalb fließt
-    zusätzlich ein Fingerabdruck aller Dateien in www/ mit ein.
+    zusätzlich ein Fingerabdruck aller Dateien in www/ mit ein. Er kommt aus
+    dem Inhalt, nicht aus dem Datum – gleicher Stand ergibt also überall
+    dieselbe Kennung, und sie steht als Attribut "version" an sensor.we_config.
     """
     def _read() -> str:
         base = Path(__file__).parent
@@ -55,8 +57,8 @@ async def _integration_version(hass: HomeAssistant) -> str:
         digest = hashlib.sha1()
         for file in sorted((base / "www").rglob("*")):
             if file.is_file():
-                stat = file.stat()
-                digest.update(f"{file.name}:{stat.st_size}:{stat.st_mtime_ns}".encode())
+                digest.update(file.name.encode())
+                digest.update(file.read_bytes())
         return f"{version}-{digest.hexdigest()[:8]}"
 
     return await hass.async_add_executor_job(_read)
@@ -67,6 +69,9 @@ def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
 
     Alles steht unter dem Attribut "config", in Templates also:
     state_attr('sensor.we_config', 'config').grid.live
+
+    Das Attribut "version" zeigt, welcher Stand der Integration gerade läuft –
+    Manifest-Version plus Fingerabdruck der ausgelieferten Dateien.
     """
     hass.states.async_set(
         CONFIG_SENSOR_ENTITY_ID,
@@ -74,6 +79,7 @@ def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
         attributes={
             "friendly_name": "W-Energie Zuordnung",
             "icon": "mdi:format-list-checks",
+            "version": hass.data.get(DOMAIN, {}).get("version", "?"),
             "config": enrich_config(config),
         },
     )
@@ -89,6 +95,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     web_path = str(Path(__file__).parent / "www")
     version = await _integration_version(hass)
+    hass.data.setdefault(DOMAIN, {})["version"] = version
     # Versionierter Pfad: relative Imports zwischen den Modulen erben die
     # Version automatisch, alte Dateien können so nicht mehr aus dem Cache
     # nachrutschen. Der unversionierte Pfad bleibt für eigene Verweise.
