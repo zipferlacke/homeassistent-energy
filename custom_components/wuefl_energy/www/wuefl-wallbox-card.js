@@ -674,7 +674,7 @@ class WueflWallboxCard extends HTMLElement {
             aggregation: mode.aggregation,
           }
         : {
-            series: [{ entity: total, name: 'Geladen', color, stat_type: 'change', type: 'bar' }],
+            series: [{ entity: total, name: 'Geladen', color, stat_type: 'change', only_positive: true, type: 'bar' }],
             y_axes: [{ unit: 'kWh', min: 0 }],
             aggregation: mode.aggregation,
           };

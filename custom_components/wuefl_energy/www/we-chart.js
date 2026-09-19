@@ -368,7 +368,7 @@ class WueflEnergyChart extends HTMLElement {
      * Buckets, die noch in der Zukunft liegen, entstehen gar nicht erst:
      * das Diagramm endet bei "jetzt", statt eine Null-Linie weiterzuziehen.
      */
-    #bucketize(rows, bucketInfo, statType = 'change', start = null, end = null) {
+    #bucketize(rows, bucketInfo, statType = 'change', start = null, end = null, onlyPositive = false) {
         const buckets = new Map();
         const origin = start ?? new Date(0);
         const now = Date.now();
@@ -385,8 +385,12 @@ class WueflEnergyChart extends HTMLElement {
             const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
             if (Number.isNaN(t) || t > now) continue;
 
-            const value = Number(isMean ? (row.mean ?? row.state) : row.change);
+            let value = Number(isMean ? (row.mean ?? row.state) : row.change);
             if (!Number.isFinite(value)) continue;
+            // Zähler laufen nur vorwärts. Ein Minus kommt von einer Korrektur
+            // oder einem kurz falsch gerechneten Template-Zähler und würde
+            // als Ausschlag auf der falschen Seite der Nulllinie landen.
+            if (onlyPositive && !isMean && value < 0) value = 0;
 
             const key = this.#bucketKey(t, bucketInfo, origin);
             const b = buckets.get(key) ?? { sum: 0, count: 0 };
@@ -566,7 +570,7 @@ class WueflEnergyChart extends HTMLElement {
                     };
                 }
                 const raw = dbStats[s.entity] || [];
-                const bucketed = this.#bucketize(raw, bucketInfo, s.stat_type || 'change', start, end);
+                const bucketed = this.#bucketize(raw, bucketInfo, s.stat_type || 'change', start, end, !!s.only_positive);
 
                 const nativeUnit = this.#hass.states[s.entity]?.attributes?.unit_of_measurement || '';
                 const axisIdx = s.y_axis || 0;

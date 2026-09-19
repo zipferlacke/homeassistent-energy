@@ -52,6 +52,8 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
           legend_group: name,
           color,
           stat_type: 'change',
+          // Zählerstände laufen nur vorwärts – ein Minus ist eine Korrektur
+          only_positive: true,
           sign: def.sign,
           fill: 'gradient',
           // Ein gemeinsamer Stapel: ECharts stapelt positive Werte nach oben
