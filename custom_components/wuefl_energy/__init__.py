@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 import voluptuous as vol
@@ -27,6 +28,8 @@ STORAGE_KEY = "we.config"
 STORAGE_VERSION = 1
 EVENT_UPDATED = "we_updated"
 PLATFORMS = ("switch", "number", "select", "sensor")
+
+_LOGGER = logging.getLogger(__name__)
 
 # Zentraler Lese-Sensor für Jinja-Templates & Automatisierungen
 CONFIG_SENSOR_ENTITY_ID = "sensor.we_config"
@@ -64,6 +67,37 @@ async def _integration_version(hass: HomeAssistant) -> str:
     return await hass.async_add_executor_job(_read)
 
 @callback
+def _log_wallboxes(hass: HomeAssistant, enriched: dict) -> None:
+    """Kurzer Überblick im Protokoll: Was die Automation je Wallbox vorfindet.
+
+    Damit lässt sich ohne Template-Editor sehen, warum die Regelung eine
+    Wallbox nicht steuert (has_wallbox). Suchbegriff im Protokoll: W-Energie.
+    """
+    wallboxes = enriched.get("wallboxes") or []
+    if not wallboxes:
+        _LOGGER.info("W-Energie: keine Wallbox in der Zuordnung")
+        return
+    for i, wb in enumerate(wallboxes, 1):
+        if not isinstance(wb, dict):
+            continue
+        felder = {
+            "Lademodus": wb.get("charge_type"),
+            "Soll-Leistung": wb.get("send_power"),
+            "Freigabe": wb.get("activate_station"),
+        }
+        teile = [
+            f"{label}={value or 'nicht zugeordnet'}"
+            + ("" if not value else " (Entität fehlt)" if hass.states.get(value) is None else "")
+            for label, value in felder.items()
+        ]
+        steuert = all(v and hass.states.get(v) is not None for v in felder.values())
+        _LOGGER.info(
+            "W-Energie: Wallbox %s %r – Automation steuert: %s – %s",
+            i, wb.get("name") or "ohne Namen", "ja" if steuert else "nein", ", ".join(teile),
+        )
+
+
+@callback
 def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
     """Schreibt die vollständige Konfiguration inkl. Helfer-Entitäten in den Lese-Sensor.
 
@@ -73,6 +107,7 @@ def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
     Das Attribut "version" zeigt, welcher Stand der Integration gerade läuft –
     Manifest-Version plus Fingerabdruck der ausgelieferten Dateien.
     """
+    enriched = enrich_config(config)
     hass.states.async_set(
         CONFIG_SENSOR_ENTITY_ID,
         "configured",
@@ -80,9 +115,10 @@ def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
             "friendly_name": "W-Energie Zuordnung",
             "icon": "mdi:format-list-checks",
             "version": hass.data.get(DOMAIN, {}).get("version", "?"),
-            "config": enrich_config(config),
+            "config": enriched,
         },
     )
+    _log_wallboxes(hass, enriched)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
