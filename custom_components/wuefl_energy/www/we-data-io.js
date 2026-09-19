@@ -29,6 +29,21 @@ export const KINDS = {
   heatpump: 'Wärmepumpe',
 };
 
+/** Einträge der Zuordnung ohne Gesamtzähler – für die gibt es nichts zu importieren. */
+export function missingCounters(cfg) {
+  const out = [];
+  const miss = (label, ...vals) => { if (!vals.some((v) => asList(v).map(entityOf).some(Boolean))) out.push(label); };
+  asList(cfg?.solar).forEach((s, i) => miss(`PV ${s?.name || i + 1}`, s?.total));
+  if (cfg?.grid && Object.keys(cfg.grid).length) {
+    miss('Netzbezug', cfg.grid.import_total);
+    miss('Einspeisung', cfg.grid.export_total);
+  }
+  asList(cfg?.battery).forEach((b, i) => miss(`Akku ${b?.name || i + 1}`, b?.in_total, b?.out_total));
+  asList(cfg?.wallboxes).forEach((w, i) => miss(`Wallbox ${w?.name || i + 1}`, w?.total));
+  asList(cfg?.heatpump).forEach((h, i) => miss(`Wärmepumpe ${h?.name || i + 1}`, h?.total));
+  return out;
+}
+
 export function energyTargets(cfg) {
   const out = [];
   const add = (kind, label, value) => {
@@ -204,15 +219,29 @@ const GUESS = [
   ['consumers', /verbrauch|consum|haus|load|bedarf/i],
 ];
 
-/** Ziel für eine Spalte raten – erst exakt nach Beschriftung, dann nach Stichworten. */
-export function guessTarget(header, targets) {
-  const h = String(header ?? '').replace(/\s*\((k|m)?wh\)\s*$/i, '').trim().toLowerCase();
-  const exact = targets.find((t) => t.label.toLowerCase() === h);
-  if (exact) return exact.entity;
-  for (const [kind, re] of GUESS) {
-    if (re.test(header)) return targets.find((t) => t.kind === kind)?.entity ?? '';
+/**
+ * Für jeden Zähler der Zuordnung die passende Spalte der Datei raten.
+ * Erst exakt nach Beschriftung (eigener Export), dann nach Stichworten;
+ * jede Spalte wird höchstens einmal vergeben – bei zwei PV-Anlagen
+ * bekommt die zweite die zweite passende Spalte.
+ */
+export function guessColumns(targets, headers, columns) {
+  const used = new Set();
+  const clean = (h) => String(h ?? '').replace(/\s*[([]?(k|m)?wh[)\]]?\s*$/i, '').trim().toLowerCase();
+  const pick = (test) => columns.find((c) => !used.has(c) && test(headers[c]));
+  const out = new Map();
+  for (const t of targets) {
+    const c = pick((h) => clean(h) === t.label.toLowerCase());
+    if (c !== undefined) { used.add(c); out.set(t.entity, c); }
   }
-  return '';
+  for (const t of targets) {
+    if (out.has(t.entity)) continue;
+    const re = GUESS.find(([kind]) => kind === t.kind)?.[1];
+    // Spalte gehört zu dieser Art, wenn keine vorher geprüfte Art besser passt
+    const c = re && pick((h) => GUESS.find(([, r]) => r.test(h))?.[0] === t.kind);
+    if (c !== undefined && c !== false) { used.add(c); out.set(t.entity, c); }
+  }
+  return out;
 }
 
 /** Zählerstand (steigt immer) oder Energie je Zeitraum? */
@@ -356,6 +385,8 @@ table { border-collapse: collapse; font-size: var(--w-fs-sm); margin: .6rem 0; w
 th, td { border-bottom: 1px solid var(--w-line); padding: .35rem .3rem; text-align: left; vertical-align: middle; }
 th { color: var(--w-text-soft); font-weight: 600; }
 td select { height: 2rem; max-width: 100%; }
+td .ent { color: var(--w-text-soft); font-size: .75rem; }
+tr.off td:not(:first-child):not(:nth-child(2)) { opacity: .4; }
 td.ex { color: var(--w-text-soft); font-variant-numeric: tabular-nums; max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table-wrap { overflow-x: auto; }
 .msg { font-size: var(--w-fs-sm); line-height: 1.5; margin-top: .4rem; }
@@ -385,6 +416,7 @@ class WueflDataIo extends HTMLElement {
   #cfg = null;
   #targets = [];
   #csv = null;       // { headers, rows, timeCol }
+  #cols = new Map(); // Zahlenspalten der Datei: Spalte → { name, example, factor, mode }
   #plan = null;      // [{ entity, label, stats, … }]
   #els = {};
 
@@ -444,8 +476,8 @@ class WueflDataIo extends HTMLElement {
           dem Wechselrichter-Portal oder aus dem Export oben.</span>
         <ol class="steps">
           <li><b>Datei wählen</b> – jede CSV mit einer Datums-Spalte geht.</li>
-          <li><b>Spalten zuordnen</b> – jede Zahlenspalte bekommt ein Ziel: einen Zähler aus der Zuordnung (PV, Netzbezug, Einspeisung, Akku, Wallbox …).
-            Meist ist das schon richtig vorausgewählt; Einheit und „Zählerstand / Energie je Zeitraum“ ebenso. Spalten ohne Ziel werden ignoriert.</li>
+          <li><b>Spalten wählen</b> – für jeden deiner Zähler aus der Zuordnung (PV, Netzbezug, Einspeisung, Akku, Wallbox …) die passende Spalte der Datei.
+            Meist ist sie schon vorausgewählt, Einheit und „Zählerstand / Energie je Zeitraum“ ebenso. Zähler ohne Spalte bleiben unverändert.</li>
           <li><b>Prüfen</b> – zeigt je Zähler, wie viel aus welchem Zeitraum ergänzt wird.</li>
           <li><b>Importieren</b> – landet in der Langzeitstatistik dieser Zähler; Diagramme, Kacheln und das Energie-Dashboard von HA zeigen es dann mit an.
             Ergänzt wird nur die Zeit vor dem ersten eigenen Wert in Home Assistant – vorhandene Daten bleiben unangetastet.</li>
@@ -456,9 +488,10 @@ class WueflDataIo extends HTMLElement {
           <span class="note file-name"></span>
         </div>
         <div class="mapping" hidden>
-          <div class="line"><span>Zeit-Spalte</span><select class="time-col"></select></div>
+          <div class="line"><span>Datum/Zeit steht in</span><select class="time-col"></select></div>
+          <span class="note missing" hidden></span>
           <div class="table-wrap"><table>
-            <thead><tr><th>Spalte</th><th>Beispiel</th><th>Übernehmen als</th><th>Einheit</th><th>Art</th></tr></thead>
+            <thead><tr><th>Zähler aus der Zuordnung</th><th>Spalte der Datei</th><th>Beispiel</th><th>Einheit</th><th>Art</th></tr></thead>
             <tbody></tbody>
           </table></div>
           <button type="button" class="btn check">${icon('mdi:magnify')}<span>Prüfen</span></button>
@@ -481,6 +514,7 @@ class WueflDataIo extends HTMLElement {
       mapping: q('.mapping'), timeCol: q('.time-col'), tbody: q('tbody'),
       check: q('.check'), summary: q('.summary'), go: q('.go'), confirm: q('.confirm'),
       importMsg: q('.import-msg'),
+      missing: q('.missing'),
     };
     this.#els.exportBtn.addEventListener('click', () => this.#export());
     this.#els.file.addEventListener('change', () => this.#readFile());
@@ -542,31 +576,61 @@ class WueflDataIo extends HTMLElement {
     this.#els.confirm.hidden = true;
     this.#els.timeCol.innerHTML = headers.map((h, i) =>
       `<option value="${i}" ${i === timeCol ? 'selected' : ''}>${esc(h || `Spalte ${i + 1}`)}</option>`).join('');
-    const targetOpts = (sel) => `<option value="">– nicht übernehmen –</option>${this.#targets.map((t) =>
-      `<option value="${esc(t.entity)}" ${t.entity === sel ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}`;
-    this.#els.tbody.innerHTML = headers.map((h, c) => {
-      if (c === timeCol) return '';
+
+    // Zahlenspalten der Datei mit Beispiel, Einheit und Art
+    this.#cols = new Map();
+    headers.forEach((h, c) => {
+      if (c === timeCol) return;
       const values = rows.map((r) => r[c] ?? '');
-      const parse = numberParser(values);
-      const nums = values.map(parse);
-      if (!nums.some(Number.isFinite)) return '';
-      const f = unitFactor(h);
-      const mode = guessMode(nums);
-      return `<tr data-col="${c}">
-        <td>${esc(h || `Spalte ${c + 1}`)}</td>
-        <td class="ex">${esc(values.find((v) => v !== '') ?? '')}</td>
-        <td><select class="target">${targetOpts(guessTarget(h, this.#targets))}</select></td>
+      const nums = values.map(numberParser(values));
+      if (!nums.some(Number.isFinite)) return;
+      this.#cols.set(c, {
+        name: h || `Spalte ${c + 1}`,
+        example: values.find((v) => v !== '') ?? '',
+        factor: unitFactor(h),
+        mode: guessMode(nums),
+      });
+    });
+    const guess = guessColumns(this.#targets, headers, [...this.#cols.keys()]);
+
+    const missing = missingCounters(this.#cfg);
+    this.#els.missing.hidden = !missing.length;
+    this.#els.missing.textContent = missing.length
+      ? `Ohne Gesamtzähler in der Zuordnung (dafür ist kein Import möglich): ${missing.join(', ')}.`
+      : '';
+
+    const colOpts = (sel) => `<option value="">– nicht importieren –</option>${[...this.#cols].map(([c, info]) =>
+      `<option value="${c}" ${c === sel ? 'selected' : ''}>${esc(info.name)}</option>`).join('')}`;
+    this.#els.tbody.innerHTML = this.#targets.map((t) => `<tr data-entity="${esc(t.entity)}">
+        <td><b>${esc(t.label)}</b><br><span class="ent">${esc(t.entity)}</span></td>
+        <td><select class="col">${colOpts(guess.get(t.entity))}</select></td>
+        <td class="ex"></td>
         <td><select class="unit">
-          <option value="0.001" ${f === 0.001 ? 'selected' : ''}>Wh</option>
-          <option value="1" ${f === 1 ? 'selected' : ''}>kWh</option>
-          <option value="1000" ${f === 1000 ? 'selected' : ''}>MWh</option>
+          <option value="0.001">Wh</option><option value="1">kWh</option><option value="1000">MWh</option>
         </select></td>
         <td><select class="mode">
-          <option value="interval" ${mode === 'interval' ? 'selected' : ''}>Energie je Zeitraum</option>
-          <option value="meter" ${mode === 'meter' ? 'selected' : ''}>Zählerstand</option>
+          <option value="interval">Energie je Zeitraum</option><option value="meter">Zählerstand</option>
         </select></td>
-      </tr>`;
-    }).join('');
+      </tr>`).join('');
+    for (const tr of this.#els.tbody.querySelectorAll('tr')) {
+      const sel = tr.querySelector('.col');
+      sel.addEventListener('change', () => this.#syncRow(tr));
+      this.#syncRow(tr);
+    }
+  }
+
+  /** Beispiel, Einheit und Art zur gewählten Spalte vorbelegen. */
+  #syncRow(tr) {
+    const info = this.#cols.get(Number(tr.querySelector('.col').value));
+    const on = tr.querySelector('.col').value !== '' && !!info;
+    tr.classList.toggle('off', !on);
+    tr.querySelector('.ex').textContent = on ? info.example : '';
+    tr.querySelector('.unit').disabled = !on;
+    tr.querySelector('.mode').disabled = !on;
+    if (on) {
+      tr.querySelector('.unit').value = String(info.factor);
+      tr.querySelector('.mode').value = info.mode;
+    }
   }
 
   async #check() {
@@ -575,19 +639,19 @@ class WueflDataIo extends HTMLElement {
     const { rows, timeCol } = this.#csv;
     const byEntity = new Map();
     for (const tr of this.#els.tbody.querySelectorAll('tr')) {
-      const entity = tr.querySelector('.target').value;
-      if (!entity) continue;
-      const hourly = toHourly(rows, timeCol, Number(tr.dataset.col), {
+      const entity = tr.dataset.entity;
+      const col = tr.querySelector('.col').value;
+      if (!entity || col === '') continue;
+      const hourly = toHourly(rows, timeCol, Number(col), {
         mode: tr.querySelector('.mode').value,
         factor: Number(tr.querySelector('.unit').value),
       });
-      // Mehrere Spalten auf dasselbe Ziel (z. B. HT/NT) werden addiert
       const acc = byEntity.get(entity) ?? new Map();
       for (const h of hourly) acc.set(h.start, (acc.get(h.start) ?? 0) + h.kwh);
       byEntity.set(entity, acc);
     }
     if (!byEntity.size) {
-      setMsg(msg, 'err'); msg.textContent = 'Bitte mindestens einer Spalte ein Ziel zuweisen.';
+      setMsg(msg, 'err'); msg.textContent = 'Bitte mindestens einem Zähler eine Spalte der Datei zuweisen.';
       return;
     }
     const plan = [];
