@@ -79,20 +79,29 @@ function matchesPattern(value, spec) {
     && values.some((v) => v === p || (isWildcard(p) && patternRegex(p).test(v))));
 }
 
-/** Vorlagen fürs Auswahlmenü, nach Gerätetyp gruppiert, mit Quelle. */
-function presetOptions() {
-  const groups = new Map();
-  for (const [key, p] of Object.entries(PRESETS)) {
-    const g = p.group ?? 'Allgemein';
-    if (!groups.has(g)) groups.set(g, []);
-    const text = p.source ? `${p.label} · ${p.source}` : p.label;
-    groups.get(g).push(`<option value="${key}">${esc(text)}</option>`);
-  }
-  return [...groups].map(([g, opts]) => `<optgroup label="${esc(g)}">${opts.join('')}</optgroup>`).join('');
+// Felder einer Vorlage, die sie beschreiben und nicht in die Zuordnung gehören
+const PRESET_META = ['label', 'hint', 'replaces', 'group', 'source', 'links'];
+
+// Reiter der Vorlagen – in dieser Reihenfolge, leere werden ausgelassen
+const PRESET_GROUPS = [
+  { id: 'Wechselrichter', icon: 'mdi:solar-power-variant' },
+  { id: 'Batterie', icon: 'mdi:home-battery-outline' },
+  { id: 'Ladesäule', icon: 'mdi:ev-station' },
+  { id: 'Allgemein', icon: 'mdi:home-lightning-bolt-outline' },
+].filter((g) => Object.values(PRESETS).some((p) => (p.group ?? 'Allgemein') === g.id));
+
+/** Vorlagen eines Reiters fürs Auswahlmenü, mit Quelle der Sensoren. */
+function presetOptions(group) {
+  return Object.entries(PRESETS)
+    .filter(([, p]) => (p.group ?? 'Allgemein') === group)
+    .map(([key, p]) => `<option value="${key}">${esc(p.source ? `${p.label} · ${p.source}` : p.label)}</option>`)
+    .join('');
 }
 
 function normalizeConfig(cfg) {
   const c = { ...(cfg || {}) };
+  // Reste älterer Vorlagen-Versionen, die ihre Beschreibung mitgespeichert haben
+  for (const key of ['group', 'source', 'links']) delete c[key];
   c.solar = asList(c.solar);
   c.battery = asList(c.battery);
   c.heatpump = asList(c.heatpump);
@@ -622,6 +631,37 @@ class WueflEnergyConfigCard extends HTMLElement {
           line-height: 1.4;
         }
         .preset-report:empty { display: none; }
+        .preset-tabs {
+          background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, #ccc);
+          border-radius: 10px;
+          display: grid;
+          gap: 2px;
+          grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+          padding: 3px;
+        }
+        .preset-tab {
+          align-items: center;
+          background: transparent;
+          border: 0;
+          border-radius: 8px;
+          color: var(--secondary-text-color);
+          cursor: pointer;
+          display: inline-flex;
+          font: inherit;
+          font-size: 0.85rem;
+          font-weight: 500;
+          gap: 6px;
+          height: 34px;
+          justify-content: center;
+          padding: 0 10px;
+        }
+        .preset-tab ha-icon { --mdc-icon-size: 18px; }
+        .preset-tab:hover { color: var(--primary-text-color); }
+        .preset-tab[aria-selected="true"] {
+          background: var(--primary-color, #03a9f4);
+          color: var(--text-primary-color, #fff);
+        }
         .preset-info { color: var(--secondary-text-color); display: flex; flex-direction: column; font-size: 0.82rem; gap: 6px; line-height: 1.4; }
         .chips { display: flex; flex-wrap: wrap; gap: 6px; }
         .chip {
@@ -864,11 +904,12 @@ class WueflEnergyConfigCard extends HTMLElement {
         <div class="ro-banner">${icon('mdi:lock-outline')}<span>Nur-Lese-Modus: Die Zuordnung kann nicht bearbeitet werden.</span></div>
 
         <div class="tools">
+          <div class="preset-tabs edit-only" role="tablist" aria-label="Art der Vorlage">
+            ${PRESET_GROUPS.map((g, i) => `<button type="button" class="preset-tab" role="tab" data-group="${esc(g.id)}"
+              aria-selected="${i === 0}">${icon(g.icon)}<span>${esc(g.id)}</span></button>`).join('')}
+          </div>
           <div class="tool-row edit-only">
-            <select id="preset" class="preset-select ctl" aria-label="Vorlage">
-              <option value="">Vorlage / Schnelleinrichtung wählen …</option>
-              ${presetOptions()}
-            </select>
+            <select id="preset" class="preset-select ctl" aria-label="Vorlage"></select>
             <button type="button" class="btn ctl" id="btn-apply-preset">
               ${icon('mdi:magic-staff')} Anwenden
             </button>
@@ -937,6 +978,10 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.btnApplyPreset.addEventListener('click', () => this.#applyPreset());
     this.#els.presetInfo = this.shadowRoot.querySelector('#preset-info');
     this.#els.preset.addEventListener('change', () => this.#showPresetInfo());
+    for (const tab of this.shadowRoot.querySelectorAll('.preset-tab')) {
+      tab.addEventListener('click', () => this.#selectPresetGroup(tab.dataset.group));
+    }
+    this.#selectPresetGroup(PRESET_GROUPS[0]?.id);
 
     const $ = (id) => this.shadowRoot.querySelector(id);
     this.#els.colorsCount = $('#colors-count');
@@ -963,6 +1008,18 @@ class WueflEnergyConfigCard extends HTMLElement {
   /* ------------------------------------------------------------------ *
    * Vorlage anwenden (Preset-Logik)
    * ------------------------------------------------------------------ */
+
+  /** Reiter wechseln: Menü nur mit den Vorlagen dieser Art. */
+  #selectPresetGroup(group) {
+    for (const tab of this.shadowRoot.querySelectorAll('.preset-tab')) {
+      tab.setAttribute('aria-selected', String(tab.dataset.group === group));
+    }
+    const noun = { Wechselrichter: 'Wechselrichter', Batterie: 'Batterie', 'Ladesäule': 'Ladesäule' }[group];
+    this.#els.preset.innerHTML =
+      `<option value="">${noun ? `${noun} wählen …` : 'Vorlage wählen …'}</option>${presetOptions(group)}`;
+    this.#els.report.textContent = '';
+    this.#showPresetInfo();
+  }
 
   /** Was die gewählte Vorlage braucht: Hinweis, Download, Links. */
   #showPresetInfo() {
@@ -1044,9 +1101,8 @@ class WueflEnergyConfigCard extends HTMLElement {
     };
 
     for (const [key, spec] of Object.entries(preset)) {
-      if (key === 'label' || key === 'hint') continue;
-
-      if (key === 'replaces') continue;
+      // Beschreibung der Vorlage, keine Zuordnung
+      if (PRESET_META.includes(key)) continue;
       if (Array.isArray(spec)) {
         // Vorhandene Einträge ergänzen (Vorlage 1 → Eintrag 1 …), fehlende anlegen
         // Je Vorlagen-Eintrag den passenden vorhandenen Eintrag suchen:

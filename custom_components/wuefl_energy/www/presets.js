@@ -3,7 +3,7 @@
  * ------------------------------------------------------------------ *
  * label   Gerät, wie es im Auswahlmenü steht
  * source  woher die Sensoren kommen (Integration/Paket) – steht dahinter
- * group   Abschnitt im Auswahlmenü
+ * group   Reiter in der Zuordnung: Wechselrichter, Batterie, Ladesäule, Allgemein
  * links   Downloads (Paket liegt unter www/packages/) und Seiten zum Gerät
  * Entitäten sind feste IDs oder Muster: "*" = beliebig, "#" = ein
  * Namensteil ohne "_" (z. B. die Seriennummer). Listen = erster Treffer.
@@ -44,6 +44,26 @@ export const PRESETS = {
                 ],
             },
         ],
+        grid: {
+            live: 'sensor.meter_active_power',          // + Bezug, − Einspeisung
+            import_total: ['sensor.total_imported_energy'],
+            export_total: ['sensor.total_exported_energy'],
+        },
+        consumers: {
+            live: 'sensor.load_power',
+            total: 'sensor.total_consumed_energy',
+        },
+    },
+    // Akku am Sungrow-Hybrid (SBR u. a.), kommt aus demselben Modbus-Paket
+    sungrow_battery: {
+        label: 'Sungrow Batterie (SBR am SHx)',
+        group: 'Batterie',
+        source: 'Modbus-Paket von mkaiser',
+        hint: 'Kommt aus demselben Paket wie der Sungrow-Wechselrichter. Die Szenen zum Sperren und Netzladen legt das Paket mit an.',
+        links: [
+            { label: 'Paket herunterladen', download: 'modbus_sungrow.yaml' },
+            { label: 'Anleitung & neueste Version (mkaiser)', url: 'https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant' },
+        ],
         battery: [
             {
                 name: 'Hausspeicher',
@@ -59,20 +79,11 @@ export const PRESETS = {
                 },
             },
         ],
-        grid: {
-            live: 'sensor.meter_active_power',          // + Bezug, − Einspeisung
-            import_total: ['sensor.total_imported_energy'],
-            export_total: ['sensor.total_exported_energy'],
-        },
-        consumers: {
-            live: 'sensor.load_power',
-            total: 'sensor.total_consumed_energy',
-        },
     },
     // Passend zu packages/modbus_mennekes.yaml
     mennekes_amtron_charge_control: {
         label: 'MENNEKES AMTRON Charge Control',
-        group: 'Wallbox',
+        group: 'Ladesäule',
         source: 'Modbus-Paket',
         hint: 'Paket nach config/packages/ kopieren, Zugangsdaten in secrets.yaml eintragen, HA neu starten. In der Wallbox Modbus TCP/HEMS freischalten. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
         links: [
@@ -106,7 +117,7 @@ export const PRESETS = {
     // Entitäten: <domain>.goe_<seriennummer>_<api-key>, im Cloud-Modus goe_wan_…
     goe_charger: {
         label: 'go-e Charger (Gemini, Gemini flex, HOMEfix …)',
-        group: 'Wallbox',
+        group: 'Ladesäule',
         source: 'HACS: go-eCharger API v2 (marq24)',
         links: [
             { label: 'In HACS öffnen', url: hacs('marq24', 'ha-goecharger-api2') },
@@ -190,6 +201,15 @@ export const PRESETS = {
                 total: ['sensor.inverter_energy_total'],
             },
         ],
+    },
+    fronius_battery: {
+        label: 'Fronius Speicher (BYD u. a. am Gen24)',
+        group: 'Batterie',
+        source: 'Fronius-Integration von HA',
+        links: [
+            { label: 'Integration einrichten', url: setup('fronius') },
+        ],
+        hint: 'Sucht nach typischen Fronius-Speicher-Sensoren.',
         battery: [
             {
                 name: 'Fronius Speicher',
