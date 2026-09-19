@@ -6,9 +6,9 @@
 
 import {
   adoptSheet, asList, power, energy, num, breakdown,
-  fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtEuro, esc, icon, registerCard,
+  fmtPower, fmtEnergy, fmtPercent, fmtEuro, esc, icon, registerCard,
   weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
-  statesChanged, pvForecast, todayTotals, todaySum,
+  statesChanged, todayTotals, todaySum,
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, applyColorVars,
   loadSolarForecast, forecastFactor, surplusWindow, roundQuarter, fmtClock,
 } from './we-shared.js';
@@ -157,19 +157,6 @@ ${TILE_CSS}
   & .sub { color: var(--w-text-soft); }
 }
 
-.forecast {
-  background: var(--w-bg-soft);
-  border-radius: var(--w-radius);
-  margin-top: .6rem;
-  padding: .6rem .75rem;
-
-  & .fhead {
-    align-items: baseline; color: var(--w-text-soft);
-    display: flex; flex-wrap: wrap; font-size: var(--w-fs-sm);
-    gap: .5rem; justify-content: space-between;
-  }
-}
-
 dialog.fc {
   max-width: min(28rem, 92vw);
 
@@ -199,8 +186,6 @@ class WueflEnergyLiveCard extends HTMLElement {
   #els = {};
   #forecast = null;
   #watch = [];
-  #watchPlot = [];
-  #plotDirty = true;
   #explain = null;
   #today = {};
   #todayTimer = null;
@@ -251,7 +236,6 @@ class WueflEnergyLiveCard extends HTMLElement {
       this.#seeded = true;
       await this.#seedSamples();
     }
-    this.#plotDirty = true;
     this.#render();
     this.#pvTimer = setTimeout(() => this.#loadPv(), 15 * 60_000);
   }
@@ -352,11 +336,7 @@ class WueflEnergyLiveCard extends HTMLElement {
     // Farben der Zuordnung → --w-solar, --w-house, … (Grafik, Flüsse, Kacheln)
     applyColorVars(this, this.#config);
 
-    const priceEnts = [this.#config.grid?.price_import, this.#config.grid?.price_import_forecast].map(getEntity);
-    const pvForecastEnts = this.#getForecastEntities();
-    this.#watchPlot = [...priceEnts, ...pvForecastEnts].filter(Boolean);
 
-    this.#plotDirty = true;
     this.#built = false;
     this.#svgReady = false;
     if (this.shadowRoot) this.shadowRoot.replaceChildren();
@@ -381,10 +361,6 @@ class WueflEnergyLiveCard extends HTMLElement {
       <div class="surplus" hidden></div>
       <div class="money"></div>
       <div class="explain info" hidden></div>
-      <div class="forecast" hidden>
-        <div class="fhead"><span>Heute: Strompreis und PV-Prognose</span><span class="legend"></span></div>
-        <div class="plot plotbox"></div>
-      </div>
       <dialog class="fc">
         <header><h3>Wettervorhersage</h3>
           <button class="close" type="button" aria-label="Schließen">${icon('mdi:close')}</button>
@@ -406,9 +382,6 @@ class WueflEnergyLiveCard extends HTMLElement {
       money: card.querySelector('.money'),
       explainBox: card.querySelector('.explain'),
       surplus: card.querySelector('.surplus'),
-      forecast: card.querySelector('.forecast'),
-      plot: card.querySelector('.plot'),
-      legend: card.querySelector('.legend'),
     };
 
     this.#els.weather.addEventListener('click', () => {
@@ -551,10 +524,6 @@ class WueflEnergyLiveCard extends HTMLElement {
     this.#els.title.textContent = this.#config.title ?? '';
     this.#renderWeather();
     this.#renderMoney();
-    if (this.#plotDirty || statesChanged(this.#prevHass, this.#hass, this.#watchPlot)) {
-      this.#renderPlot();
-      this.#plotDirty = false;
-    }
     this.#renderSurplus();
     if (!this.#svgReady) return;
 
@@ -977,100 +946,6 @@ class WueflEnergyLiveCard extends HTMLElement {
     const hint = factor < 0.85 ? ' · Prognose wegen weniger Sonne nach unten korrigiert'
       : factor > 1.15 ? ' · Prognose wegen mehr Sonne nach oben korrigiert' : '';
     box.innerHTML = `${icon(ico)}<div>${html}${hint ? `<span class="sub">${hint}</span>` : ''}</div>`;
-  }
-
-  /* --------------------- Preis und Prognose in einem ---------------- */
-
-  #pvCurve() {
-    const today = new Date().toDateString();
-    const byHour = new Map();
-    let total = 0;
-
-    // Bevorzugt die geladene Prognose (Sensor-Attribute oder Energie-Dashboard)
-    if (this.#pv?.rows?.length) {
-      for (const r of this.#pv.rows) {
-        if (r.time.toDateString() !== today) continue;
-        const h = r.time.getHours();
-        byHour.set(h, (byHour.get(h) ?? 0) + r.kwh);
-        total += r.kwh;
-      }
-      if (byHour.size) return { byHour, total };
-    }
-
-    for (const id of this.#getForecastEntities()) {
-      const st = this.#hass.states[id];
-      if (!st) continue;
-      const v = energy(this.#hass, id);
-      if (v !== null) total += v;
-      for (const e of pvForecast(st)) {
-        if (e.time.toDateString() !== today) continue;
-        const h = e.time.getHours();
-        byHour.set(h, (byHour.get(h) ?? 0) + e.kwh);
-      }
-    }
-    return { byHour, total };
-  }
-
-  #renderPlot() {
-    const c = this.#config;
-    const price = priceInfo(this.#hass, c, 'import');
-    const { byHour, total } = this.#pvCurve();
-    const hasPrice = price.forecast.length > 0;
-    const hasPv = byHour.size > 0;
-
-    if (!hasPrice && !hasPv) {
-      this.#els.forecast.hidden = true;
-      return;
-    }
-    this.#els.forecast.hidden = false;
-
-    const W = 1000, H = 190, L = 52, R = 54, T = 10, B = 26;
-    const pw = W - L - R, ph = H - T - B;
-    const X = (i) => L + (i / 23) * pw;
-    const pvVals = Array.from({ length: 24 }, (_, i) => byHour.get(i) ?? 0);
-    const pvMax = Math.max(...pvVals, 0.1);
-    const today = new Date().toDateString();
-    const prVals = Array.from({ length: 24 }, (_, i) => {
-      const e = price.forecast.find(
-        (f) => f.time.getHours() === i && f.time.toDateString() === today,
-      );
-      return e ? e.value : null;
-    });
-    const known = prVals.filter((v) => v !== null);
-    const cMin = known.length ? Math.min(...known) : 0;
-    const cMax = known.length ? Math.max(...known) : 1;
-
-    const out = [`<defs><linearGradient id="pvg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" style="stop-color: ${COLORS.pv}; stop-opacity: .6"/>
-      <stop offset="1" style="stop-color: ${COLORS.pv}; stop-opacity: 0"/></linearGradient></defs>`];
-
-    if (hasPv) {
-      const pts = pvVals.map((v, i) => `${X(i).toFixed(1)} ${(T + ph - (v / pvMax) * ph).toFixed(1)}`);
-      out.push(`<path d="M${pts.join(' L')} L${X(23).toFixed(1)} ${T + ph} L${L} ${T + ph} Z" fill="url(#pvg)"/>`);
-      out.push(`<path d="M${pts.join(' L')}" fill="none" stroke-width="2.5" style="stroke: ${COLORS.pv}"/>`);
-      out.push(`<text class="axis" x="${L - 8}" y="${T + 12}" text-anchor="end">${pvMax.toFixed(1).replace('.', ',')}</text>`);
-    }
-    if (hasPrice) {
-      const seg = [];
-      prVals.forEach((v, i) => {
-        if (v === null) return;
-        seg.push(`${X(i).toFixed(1)} ${(T + ph - ((v - cMin) / (cMax - cMin || 1)) * ph).toFixed(1)}`);
-      });
-      out.push(`<path d="M${seg.join(' L')}" fill="none" stroke-width="2.5" stroke-dasharray="6 4" style="stroke: ${COLORS.price}"/>`);
-      out.push(`<text class="axis" x="${W - R + 8}" y="${T + 12}">${Math.round(cMax)}</text>`);
-      out.push(`<text class="axis" x="${W - R + 8}" y="${T + ph}">${Math.round(cMin)}</text>`);
-    }
-    for (const i of [0, 6, 12, 18, 23]) {
-      out.push(`<text class="axis" x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${String(i).padStart(2, '0')}</text>`);
-    }
-
-    this.#els.plot.innerHTML =
-      `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Strompreis und PV-Prognose">${out.join('')}</svg>`;
-    this.#els.legend.innerHTML =
-      (hasPv ? `<span style="color:${COLORS.pv}">▬</span> Erzeugung kW${total ? ` (${fmtEnergy(total)})` : ''}` : '') +
-      (hasPrice
-        ? ` <span style="color:${COLORS.price}">▭</span> Preis ct/kWh`
-        : price.now !== null ? ` Preis ${fmtPrice(price.now)}` : '');
   }
 
   /* ------------------------------ Wetter ---------------------------- */

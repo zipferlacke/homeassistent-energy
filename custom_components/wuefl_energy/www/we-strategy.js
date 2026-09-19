@@ -18,6 +18,7 @@ function ensureCards() {
       import('./we-tiles-card.js'),
       import('./we-battery-chart-card.js'),
       import('./we-solar-chart-card.js'),
+      import('./we-price-chart-card.js'),
       import('./wuefl-wallbox-card.js'),
       import('./we-settings-card.js'),
       import('./we-config-card.js'),
@@ -57,6 +58,9 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
 
     if (hasLive) {
       const liveCards = [{ type: 'custom:we-live-card', slot: 'live' }];
+      // Börsenpreis nur zeigen, wenn es überhaupt einen Preissensor gibt
+      const hasPrice = !!(config.grid?.price_import || config.grid?.price_import_forecast);
+      if (hasPrice) liveCards.push({ type: 'custom:we-price-chart-card', slot: 'price' });
       const hasSideCards = temps.length > 0 || extra.length > 0;
 
       if (temps.length) {
@@ -66,8 +70,9 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
         liveCards.push({ type: 'entities', title: 'Weitere Werte', entities: extra, slot: 'extra' });
       }
 
-      const liveAreasMobile = ['"live"', temps.length ? '"temps"' : '', extra.length ? '"extra"' : ''].filter(Boolean).join('\n');
-      
+      const liveAreasMobile = ['"live"', temps.length ? '"temps"' : '', extra.length ? '"extra"' : '',
+        hasPrice ? '"price"' : ''].filter(Boolean).join('\n');
+
       let desktopAreas = '"live"';
       if (temps.length && extra.length) {
         desktopAreas = `"live temps"\n"live extra"`;
@@ -75,6 +80,10 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
         desktopAreas = `"live temps"`;
       } else if (extra.length) {
         desktopAreas = `"live extra"`;
+      }
+      // Preis über die volle Breite unter die Grafik
+      if (hasPrice) {
+        desktopAreas += hasSideCards ? '\n"price price"' : '\n"price"';
       }
 
       views.push({
@@ -104,7 +113,7 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
               }] : [{
                 min: '800px',
                 columns: '1fr',
-                areas: `"live"`
+                areas: desktopAreas
               }])
             ],
             cards: liveCards

@@ -141,6 +141,13 @@ const BLOCKS = [
     title: 'Stromnetz',
     icon: 'mdi:transmission-tower',
     intro: 'Netzanschluss, Zählerstände sowie Strom- und Einspeisepreise.',
+    note: 'Fester Preis? Dann einfach die Zahl beim Helfer der Integration eintragen. Für einen dynamischen Tarif liefert der Anbieter einen Sensor mit den Stundenpreisen – der gehört in „Preisprognose Bezug“ und erscheint dann als Diagramm in der Live-Ansicht und beim Preisladen der Wallbox.',
+    links: [
+      { label: 'Tibber (eingebaut)', url: myHa('config_flow_start/?domain=tibber') },
+      { label: 'Nord Pool (eingebaut)', url: myHa('config_flow_start/?domain=nordpool') },
+      { label: 'EPEX Spot in HACS', url: myHa('hacs_repository/?owner=mampfes&repository=ha_epex_spot&category=integration') },
+      { label: 'aWATTar/Tibber-Preise in HACS', url: myHa('hacs_repository/?owner=custom-components&repository=awattar&category=integration') },
+    ],
     empty: 'Netzanschluss einrichten',
     summary: (e) => e.live?.entity || e.live,
     schema: [

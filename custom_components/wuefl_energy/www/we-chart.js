@@ -560,6 +560,8 @@ class WueflEnergyChart extends HTMLElement {
                         ...s,
                         color: s.color || '#999999',
                         resolvedColor: this.#resolveColor(s.color),
+                        // Einheit für den Tooltip: eigene Angabe, sonst die der Achse
+                        chartTargetUnit: s.unit ?? yAxesConfig[s.y_axis || 0]?.unit ?? '',
                         chartData: s.data.filter(([t]) => t >= start.getTime() && t <= end.getTime()),
                     };
                 }
@@ -587,7 +589,14 @@ class WueflEnergyChart extends HTMLElement {
                 };
             });
 
-            if (this.#config.chip) {
+            if (this.#config.chip?.value !== undefined) {
+                // Fester Wert, z. B. der aktuelle Strompreis
+                const c = this.#config.chip;
+                this.#els.chip.style.display = 'flex';
+                this.#els.chip.textContent =
+                    `${Number(c.value).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ${c.unit || ''}`.trim();
+                if (c.color) this.#els.chip.style.setProperty('--chip-color', c.color);
+            } else if (this.#config.chip) {
                 const spanDays = (end - start) / 86400000;
                 // 5-Minuten-Werte hält der Recorder nur ~10 Tage – ältere Tage stündlich
                 const recent = Date.now() - start < 9 * 86400000;
@@ -677,7 +686,9 @@ class WueflEnergyChart extends HTMLElement {
                 stack: s.stack, 
                 yAxisIndex: s.y_axis || 0,
                 data: isHidden ? [] : s.chartData,
-                smooth: chartType === 'line' ? (s.smooth ?? true) : undefined, 
+                smooth: chartType === 'line' ? (s.smooth ?? true) : undefined,
+                // Treppenstufen, z. B. beim Strompreis je Stunde
+                ...(chartType === 'line' && s.step ? { step: s.step } : {}),
                 symbol: 'none',
                 z: s.background ? 1 : s.stack ? totalSeries + 1 - index : 2,
                 itemStyle: { color: s.resolvedColor }, 
