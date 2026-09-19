@@ -100,6 +100,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     websocket_api.async_register_command(hass, websocket_get_config)
     websocket_api.async_register_command(hass, websocket_save_config)
+    websocket_api.async_register_command(hass, websocket_reload_dashboard)
     return True
 
 
@@ -193,6 +194,24 @@ async def async_sync_entities(hass: HomeAssistant) -> None:
 def websocket_get_config(hass: HomeAssistant, connection, msg: dict) -> None:
     config = hass.data.get(DOMAIN, {}).get("config", {})
     connection.send_result(msg["id"], config if msg["raw"] else enrich_config(config))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/reload_dashboard",
+        vol.Optional("url_path"): vol.Any(str, None),
+    }
+)
+@callback
+def websocket_reload_dashboard(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Dashboard im Browser neu erzeugen lassen.
+
+    Kam die Strategy zu spät (HA wartet nur 5 s), bleibt das Dashboard sonst
+    bis zum manuellen Neuladen auf dem Fehler stehen. Das Frontend lädt bei
+    "lovelace_updated" für seinen url_path die Konfiguration neu.
+    """
+    hass.bus.async_fire("lovelace_updated", {"url_path": msg.get("url_path")})
+    connection.send_result(msg["id"], {"fired": True})
 
 
 @websocket_api.require_admin

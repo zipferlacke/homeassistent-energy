@@ -33,8 +33,11 @@ function ensureCards() {
 // =======================================================
 // Dashboard Strategy Class
 // =======================================================
+let generated = false;
+
 class WueflEnergyDashboardStrategy extends HTMLElement {
   static async generate(g, hass) {
+    generated = true;
     const [{ rawConfig }] = await Promise.all([import('./we-shared.js'), ensureCards()]);
 
     // Direktes Laden der neuen Speicher-Struktur
@@ -315,6 +318,33 @@ class WueflEnergyDashboardStrategy extends HTMLElement {
 
 if (!customElements.get('ll-strategy-dashboard-we')) {
   customElements.define('ll-strategy-dashboard-we', WueflEnergyDashboardStrategy);
+}
+
+// =======================================================
+// Selbstheilung nach "Timeout waiting for strategy element"
+// =======================================================
+// HA wartet nur 5 s auf dieses Element und versucht es danach nie wieder –
+// auch nicht, wenn das Modul eine Sekunde später doch ankommt (HA startet
+// noch, langsames Netz am Handy, Modul erst nachträglich über
+// frontend/subscribe_extra_js geladen). Kommt das Modul spät und hat das
+// Dashboard noch nichts erzeugt, lassen wir es einmal neu laden.
+const LATE_MS = 4000;
+if (performance.now() > LATE_MS) {
+  setTimeout(async () => {
+    if (generated) return;
+    try {
+      const hass = document.querySelector('home-assistant')?.hass;
+      const seg = decodeURIComponent(location.pathname.split('/')[1] || '');
+      if (!hass || hass.panels?.[seg]?.component_name !== 'lovelace') return;
+      // Das Standard-Dashboard hat im Frontend url_path null
+      const urlPath = seg === 'lovelace' ? null : seg;
+      const conf = await hass.callWS({ type: 'lovelace/config', url_path: urlPath });
+      if (conf?.strategy?.type !== 'custom:we' || generated) return;
+      await hass.callWS({ type: 'we/reload_dashboard', url_path: urlPath });
+    } catch (err) {
+      console.warn('W-Energie: Dashboard konnte nicht neu geladen werden', err);
+    }
+  }, 1000);
 }
 
 window.customStrategies = window.customStrategies || [];
