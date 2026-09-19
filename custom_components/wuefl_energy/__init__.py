@@ -31,6 +31,10 @@ PLATFORMS = ("switch", "number", "select", "sensor")
 
 _LOGGER = logging.getLogger(__name__)
 
+# Einmal beim Start ermittelt; überlebt das Neuladen des Eintrags, bei dem
+# hass.data[DOMAIN] verworfen wird
+_VERSION = "?"
+
 # Zentraler Lese-Sensor für Jinja-Templates & Automatisierungen
 CONFIG_SENSOR_ENTITY_ID = "sensor.we_config"
 
@@ -116,7 +120,7 @@ def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
         attributes={
             "friendly_name": "W-Energie Zuordnung",
             "icon": "mdi:format-list-checks",
-            "version": hass.data.get(DOMAIN, {}).get("version", "?"),
+            "version": _VERSION,
             "config": enriched,
         },
     )
@@ -133,7 +137,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     web_path = str(Path(__file__).parent / "www")
     version = await _integration_version(hass)
-    hass.data.setdefault(DOMAIN, {})["version"] = version
+    global _VERSION
+    _VERSION = version
     # Versionierter Pfad: relative Imports zwischen den Modulen erben die
     # Version automatisch, alte Dateien können so nicht mehr aus dem Cache
     # nachrutschen. Der unversionierte Pfad bleibt für eigene Verweise.
