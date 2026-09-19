@@ -2,6 +2,11 @@
 # wuefl_automation.yaml
 # Dynamic Wallbox & Energy Management Automation
 #
+# Wird von der Integration automatisch in automations.yaml eingetragen und
+# bei jedem Update aktualisiert – nicht mehr von Hand kopieren. Liegt diese
+# Datei noch unter config/packages/, bitte dort löschen (sonst läuft die
+# Regelung doppelt; die Integration trägt dann nichts ein).
+#
 # Alle Entitäten kommen aus der Zuordnung (sensor.we_config, Attribut
 # "config"). Dort steht je Pfad entweder der Helfer der Integration
 # (z. B. select.we_charge_type_carport) oder die eigene Entität, die du in

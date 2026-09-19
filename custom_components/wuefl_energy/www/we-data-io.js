@@ -363,6 +363,9 @@ td.ex { color: var(--w-text-soft); font-variant-numeric: tabular-nums; max-width
 .msg.err { color: var(--error-color, #db4437); }
 .summary { font-size: var(--w-fs-sm); line-height: 1.6; margin: .4rem 0; }
 .summary b { font-weight: 600; }
+.steps { color: var(--w-text-soft); font-size: var(--w-fs-sm); line-height: 1.5; margin: .5rem 0 0; padding-left: 1.2rem; }
+.steps b { color: var(--w-text); font-weight: 600; }
+.steps li + li { margin-top: .2rem; }
 .confirm {
   align-items: center; background: color-mix(in srgb, var(--warning-color, #ffa600) 12%, transparent);
   border-radius: var(--w-radius); display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; padding: .6rem .75rem;
@@ -438,8 +441,15 @@ class WueflDataIo extends HTMLElement {
       <div class="part import-part">
         <div class="sub">Import</div>
         <span class="note">Alte Daten beim Umstieg übernehmen – als CSV aus clever-PV, 1KOMMA5°, SMA, Fronius Solar.web,
-          dem Wechselrichter-Portal oder aus dem Export oben. Ergänzt wird nur der Zeitraum vor dem ersten eigenen Wert
-          in Home Assistant; vorhandene Daten bleiben unangetastet.</span>
+          dem Wechselrichter-Portal oder aus dem Export oben.</span>
+        <ol class="steps">
+          <li><b>Datei wählen</b> – jede CSV mit einer Datums-Spalte geht.</li>
+          <li><b>Spalten zuordnen</b> – jede Zahlenspalte bekommt ein Ziel: einen Zähler aus der Zuordnung (PV, Netzbezug, Einspeisung, Akku, Wallbox …).
+            Meist ist das schon richtig vorausgewählt; Einheit und „Zählerstand / Energie je Zeitraum“ ebenso. Spalten ohne Ziel werden ignoriert.</li>
+          <li><b>Prüfen</b> – zeigt je Zähler, wie viel aus welchem Zeitraum ergänzt wird.</li>
+          <li><b>Importieren</b> – landet in der Langzeitstatistik dieser Zähler; Diagramme, Kacheln und das Energie-Dashboard von HA zeigen es dann mit an.
+            Ergänzt wird nur die Zeit vor dem ersten eigenen Wert in Home Assistant – vorhandene Daten bleiben unangetastet.</li>
+        </ol>
         <div class="line">
           <label class="btn">${icon('mdi:file-upload-outline')}<span>CSV-Datei wählen</span>
             <input type="file" class="file" accept=".csv,.txt,text/csv" hidden></label>

@@ -18,7 +18,7 @@ einzutragen.**
 | Aus dem Paket | Ziel in Home Assistant |
 |---|---|
 | `custom_components/we/` | `config/custom_components/we/` |
-| `custom_components/wuefl_energy/www/packages/*.yaml` | `config/packages/` – Automation und Geräte-Pakete, auch in der Ansicht *Zuordnung* per Klick herunterladbar |
+| `custom_components/wuefl_energy/www/packages/*.yaml` | Geräte-Pakete (Sungrow, Mennekes) nach `config/packages/`, in der Ansicht *Zuordnung* per Klick herunterladbar; die Automation installiert die Integration selbst |
 | `preview.html` | nirgendwo, nur zum Anschauen im Browser |
 
 Kein separater `www/`-Ordner mehr, kein Dashboard-YAML — beides entsteht
@@ -78,17 +78,13 @@ strategy:
 Im neuen Dashboard die Ansicht **Zuordnung** oeffnen und die Entitaeten
 eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 
-**6. Helfer und Ladeautomatik (optional)**
+**6. Ladeautomatik**
 
-In der Ansicht *Zuordnung* "W-Energie Automation" herunterladen (liegt auch unter
-`custom_components/wuefl_energy/www/packages/wuefl_automation.yaml`) und nach
-`config/packages/` kopieren. Dafuer muss in
-`configuration.yaml` stehen:
-
-```yaml
-homeassistant:
-  packages: !include_dir_named packages
-```
+Die W-Energie Automation (Wallbox und Hausakku) installiert die Integration
+selbst: Sie traegt sie nach dem Start in `automations.yaml` ein und haelt sie
+bei jedem Update aktuell. Den Stand zeigt die Ansicht *Zuordnung* oben.
+Liegt noch eine alte Kopie unter `config/packages/wuefl_automation.yaml`,
+diese bitte loeschen – sonst wuerde doppelt geregelt.
 
 ## Wie die Ansichten entstehen
 

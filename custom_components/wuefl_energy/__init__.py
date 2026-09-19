@@ -11,11 +11,13 @@ from homeassistant.components import websocket_api
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
+from .automation_install import async_install_automation
 from .specs import enrich_config, required_specs, strip_generated
 
 
@@ -101,6 +103,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     websocket_api.async_register_command(hass, websocket_get_config)
     websocket_api.async_register_command(hass, websocket_save_config)
     websocket_api.async_register_command(hass, websocket_reload_dashboard)
+    websocket_api.async_register_command(hass, websocket_automation_status)
+    websocket_api.async_register_command(hass, websocket_automation_install)
     return True
 
 
@@ -122,6 +126,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Lese-Sensor initial mit gespeicherten Daten befüllen
     _update_config_sensor(hass, data)
+
+    # Die Automation gehört zur Integration – nach dem Start von HA eintragen
+    # bzw. aktualisieren (erst dann ist die Automations-Integration geladen)
+    async def _install_automation(_=None) -> None:
+        if DOMAIN in hass.data:
+            hass.data[DOMAIN]["automation"] = await async_install_automation(hass)
+
+    if hass.is_running:
+        hass.async_create_task(_install_automation())
+    else:
+        entry.async_on_unload(
+            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _install_automation)
+        )
 
     return True
 
@@ -212,6 +229,24 @@ def websocket_reload_dashboard(hass: HomeAssistant, connection, msg: dict) -> No
     """
     hass.bus.async_fire("lovelace_updated", {"url_path": msg.get("url_path")})
     connection.send_result(msg["id"], {"fired": True})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/automation"})
+@callback
+def websocket_automation_status(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Stand der mitgelieferten Automation (für die Zuordnung)."""
+    connection.send_result(msg["id"], hass.data.get(DOMAIN, {}).get("automation") or {"mode": "pending"})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/automation_install"})
+@websocket_api.async_response
+async def websocket_automation_install(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Automation erneut eintragen und prüfen – z. B. nach Löschen des alten Pakets."""
+    status = await async_install_automation(hass)
+    if DOMAIN in hass.data:
+        hass.data[DOMAIN]["automation"] = status
+    connection.send_result(msg["id"], status)
 
 
 @websocket_api.require_admin
