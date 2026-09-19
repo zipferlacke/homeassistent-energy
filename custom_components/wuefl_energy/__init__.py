@@ -72,18 +72,23 @@ async def _integration_version(hass: HomeAssistant) -> str:
             # nebenher erzeugt und wären sonst in der Kennung sichtbar
             if file.suffix in (".gz", ".br"):
                 source = file.with_suffix("")
+                # Veraltete Kopie entfernen: aiohttp liefert sie bevorzugt aus
+                # und überdeckt damit das Update. Sie ist reiner Zwischenstand
+                # und wird bei Bedarf neu erzeugt.
                 if source.is_file() and source.stat().st_mtime > file.stat().st_mtime:
-                    stale.append(file.name)
+                    try:
+                        file.unlink()
+                        stale.append(file.name)
+                    except OSError as err:
+                        _LOGGER.warning("W-Energie: %s ist veraltet, ließ sich aber nicht löschen: %s", file, err)
                 continue
             digest.update(str(file.relative_to(base)).encode())
             digest.update(file.read_bytes())
         if stale:
-            # aiohttp liefert die .gz-Kopie aus, wenn es sie gibt – eine alte
-            # Kopie überdeckt damit das Update
             _LOGGER.warning(
-                "W-Energie: veraltete komprimierte Kopien in www/ (%s) – bitte löschen "
-                "oder neu erzeugen, sonst wird der alte Stand ausgeliefert",
-                ", ".join(stale),
+                "W-Energie: %s veraltete komprimierte Kopien gelöscht (%s) – sie hätten "
+                "den alten Stand ausgeliefert",
+                len(stale), ", ".join(stale),
             )
         return f"{version}-{digest.hexdigest()[:8]}"
 
