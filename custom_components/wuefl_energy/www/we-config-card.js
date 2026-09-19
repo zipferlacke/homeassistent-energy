@@ -36,6 +36,18 @@ function toRgbArray(value) {
 
 const COLOR_FIELDS = ['color', 'color_in', 'color_export'];
 
+// Pakete liegen neben diesem Modul unter packages/ – so kommen sie mit HACS
+// mit und lassen sich direkt aus der Zuordnung herunterladen.
+const packageUrl = (file) => new URL(`./packages/${file}`, import.meta.url).href;
+const myHa = (path) => `https://my.home-assistant.io/redirect/${path}`;
+
+/** Links als kleine Chips: Download (Paket) oder externe Seite. */
+function linksHtml(links) {
+  return (links ?? []).map((l) => (l.download
+    ? `<a class="chip" href="${packageUrl(l.download)}" download="${esc(l.download)}">${icon('mdi:download')}${esc(l.label)}</a>`
+    : `<a class="chip" href="${esc(l.url)}" target="_blank" rel="noopener">${icon('mdi:open-in-new')}${esc(l.label)}</a>`)).join('');
+}
+
 /**
  * Muster aus Vorlagen in einen regulären Ausdruck übersetzen:
  * "*" = beliebige Zeichen, "#" = ein Namensteil ohne "_" (z. B. eine
@@ -123,6 +135,12 @@ const BLOCKS = [
     title: 'Photovoltaik',
     icon: 'mdi:solar-power-variant',
     intro: 'Deine PV-Anlagen. Bei mehreren Wechselrichtern/Dachflächen einfach weitere hinzufügen.',
+    note: 'PV-Prognose (für Prognose-Kurve, „genug Strom ab …“ und die Wallbox-Vorschau): Solcast (genauer, HACS) oder das eingebaute Forecast.Solar einrichten und unter Energie als Prognose der Solarproduktion eintragen – dann wird sie automatisch gefunden.',
+    links: [
+      { label: 'Solcast in HACS', url: myHa('hacs_repository/?owner=BJReplay&repository=ha-solcast-solar&category=integration') },
+      { label: 'Forecast.Solar einrichten', url: myHa('config_flow_start/?domain=forecast_solar') },
+      { label: 'Energie-Einstellungen', url: myHa('config_energy/') },
+    ],
     add: 'PV-Anlage hinzufügen',
     label: (e, i) => e.name || `PV-Anlage ${i + 1}`,
     summary: (e) => e.live?.entity || e.live,
@@ -284,6 +302,7 @@ const BLOCKS = [
       { name: 'system_cost_value', selector: number(0, 500000, 100) },
       { name: 'commissioned_value', selector: text() },
       { name: 'house_base_load', selector: watt() },
+      { name: 'surplus_threshold_value', selector: number(500, 10000, 100) },
       { name: 'weather_entity', selector: ({ entity: { filter: { domain: 'weather' } } }) },
       { name: 'temperatures', selector: temp(true) },
       { name: 'extra_entities', selector: ({ entity: { multiple: true } }) },
@@ -375,6 +394,7 @@ const LABELS = {
     system_cost_value: 'Anschaffungskosten (€)',
     commissioned_value: 'In Betrieb seit (YYYY-MM-DD)',
     house_base_load: 'Durchschnittliche Grundlast',
+    surplus_threshold_value: 'Größerer Verbraucher ab (W)',
     weather_entity: 'Wetterdienst',
     temperatures: 'Zusätzliche Temperaturen',
     extra_entities: 'Weitere Sensoren',
@@ -465,6 +485,7 @@ const HELPERS = {
     system_cost_value: 'Gesamte Anschaffungskosten der Anlage in Euro (€).',
     commissioned_value: 'Inbetriebnahmedatum im Format YYYY-MM-DD.',
     house_base_load: 'Leer = automatisch: Hausverbrauch (ohne Wallbox) der letzten 7 Tage ÷ Tage (sensor.we_house_base_load). Nur füllen, wenn du einen eigenen Sensor in Watt hast.',
+    surplus_threshold_value: 'Ab wie viel freier Leistung die Live-Ansicht „genug Strom für größere Verbraucher“ meldet (Waschmaschine, Trockner …). Leer = 2000 W.',
     weather_entity: 'Wetter-Entität für Außentemperatur und Vorhersage.',
     temperatures: 'Liste weiterer Temperatursensoren.',
     extra_entities: 'Weitere Sensoren für das Dashboard.',
@@ -601,6 +622,25 @@ class WueflEnergyConfigCard extends HTMLElement {
           line-height: 1.4;
         }
         .preset-report:empty { display: none; }
+        .preset-info { color: var(--secondary-text-color); display: flex; flex-direction: column; font-size: 0.82rem; gap: 6px; line-height: 1.4; }
+        .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .chip {
+          align-items: center;
+          background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, #ccc);
+          border-radius: 999px;
+          color: var(--primary-color, #03a9f4);
+          display: inline-flex;
+          font-size: 0.8rem;
+          font-weight: 500;
+          gap: 4px;
+          padding: 4px 10px;
+          text-decoration: none;
+        }
+        .chip:hover { border-color: var(--primary-color, #03a9f4); }
+        .chip ha-icon { --mdc-icon-size: 16px; }
+        .block-note { color: var(--secondary-text-color); display: flex; flex-direction: column; font-size: 0.8rem; gap: 6px; line-height: 1.4; margin: -4px 0 12px; }
+        a.btn { box-sizing: border-box; text-decoration: none; }
         .colors-confirm {
           align-items: center;
           background: color-mix(in srgb, var(--warning-color, #ffa600) 12%, transparent);
@@ -833,7 +873,13 @@ class WueflEnergyConfigCard extends HTMLElement {
               ${icon('mdi:magic-staff')} Anwenden
             </button>
           </div>
+          <div id="preset-info" class="preset-info edit-only" hidden></div>
           <div id="report" class="preset-report edit-only"></div>
+
+          <div class="tool-row edit-only">
+            <span class="tool-info">${icon('mdi:robot-outline')}<span><b>W-Energie Automation</b> – regelt Wallbox und Hausakku. Nach config/packages/ kopieren und HA neu starten.</span></span>
+            <a class="btn secondary ctl" href="${packageUrl('wuefl_automation.yaml')}" download="wuefl_automation.yaml">${icon('mdi:download')} Herunterladen</a>
+          </div>
 
           <div class="tool-row edit-only">
             <span class="tool-info">${icon('mdi:palette-outline')}<span id="colors-count"></span></span>
@@ -889,6 +935,8 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.btnSave = this.shadowRoot.querySelector('#btn-save');
 
     this.#els.btnApplyPreset.addEventListener('click', () => this.#applyPreset());
+    this.#els.presetInfo = this.shadowRoot.querySelector('#preset-info');
+    this.#els.preset.addEventListener('change', () => this.#showPresetInfo());
 
     const $ = (id) => this.shadowRoot.querySelector(id);
     this.#els.colorsCount = $('#colors-count');
@@ -915,6 +963,16 @@ class WueflEnergyConfigCard extends HTMLElement {
   /* ------------------------------------------------------------------ *
    * Vorlage anwenden (Preset-Logik)
    * ------------------------------------------------------------------ */
+
+  /** Was die gewählte Vorlage braucht: Hinweis, Download, Links. */
+  #showPresetInfo() {
+    const p = PRESETS[this.#els.preset.value];
+    const box = this.#els.presetInfo;
+    box.hidden = !p;
+    if (!p) return;
+    this.#els.report.textContent = '';
+    box.innerHTML = `${p.hint ? `<span>${esc(p.hint)}</span>` : ''}${p.links?.length ? `<div class="chips">${linksHtml(p.links)}</div>` : ''}`;
+  }
 
   async #applyPreset() {
     const preset = PRESETS[this.#els.preset.value];
@@ -1025,8 +1083,7 @@ class WueflEnergyConfigCard extends HTMLElement {
 
     this.#els.report.innerHTML = filled
       ? `<strong>${filled} Felder gefüllt oder korrigiert.</strong> Eigene, gültige Zuordnungen bleiben unverändert.` +
-        (missing.length ? ` Nicht gefunden: ${esc(missing.join(', '))}.` : '') +
-        (preset.hint ? `<br>${esc(preset.hint)}` : '')
+        (missing.length ? ` Nicht gefunden: ${esc(missing.join(', '))}.` : '')
       : 'Keine passenden Sensoren gefunden. Sind die Geräte-Pakete eingebunden und HA neu gestartet?';
   }
 
@@ -1113,6 +1170,7 @@ class WueflEnergyConfigCard extends HTMLElement {
         <div class="block">
           <h3>${icon(b.icon)}${b.title}</h3>
           <p class="intro-text">${b.intro}</p>
+          ${b.note || b.links ? `<div class="block-note">${b.note ? `<span>${esc(b.note)}</span>` : ''}<div class="chips">${linksHtml(b.links)}</div></div>` : ''}
           ${html}
           ${b.kind === 'list' ? `<button type="button" class="btn add" data-block="${b.key}" data-index="-1">${icon('mdi:plus')}${b.add}</button>` : ''}
         </div>

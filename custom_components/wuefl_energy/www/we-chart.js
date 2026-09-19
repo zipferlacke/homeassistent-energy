@@ -466,7 +466,8 @@ class WueflEnergyChart extends HTMLElement {
         const bucketMs = bucketInfo.ms;
         const period = bucketMs >= 86400000 ? 'day' : bucketMs >= 3600000 ? 'hour' : '5minute';
 
-        const idsToFetch = new Set(this.#config.series.map(s => s.entity));
+        // Reihen mit fertigen Daten (z. B. Prognose) brauchen keine Statistik
+        const idsToFetch = new Set(this.#config.series.filter(s => s.entity && !s.data).map(s => s.entity));
         if (this.#config.chip?.entity) idsToFetch.add(this.#config.chip.entity);
 
         const yAxesConfig = Array.isArray(this.#config.y_axes) ? this.#config.y_axes : [
@@ -482,6 +483,15 @@ class WueflEnergyChart extends HTMLElement {
             if (stale()) return;
 
             const processedSeries = this.#config.series.map(s => {
+                if (s.data) {
+                    // Fertige Punkte [ms, Wert] in der Einheit der Achse
+                    return {
+                        ...s,
+                        color: s.color || '#999999',
+                        resolvedColor: this.#resolveColor(s.color),
+                        chartData: s.data.filter(([t]) => t >= start.getTime() && t <= end.getTime()),
+                    };
+                }
                 const raw = dbStats[s.entity] || [];
                 const bucketed = this.#bucketize(raw, bucketInfo, s.stat_type || 'change', start, end);
 
@@ -581,6 +591,9 @@ class WueflEnergyChart extends HTMLElement {
                             ]
                         }
                     };
+                } else if (s.fill === 'soft') {
+                    // Hintergrund-Fläche, z. B. die PV-Prognose
+                    areaStyle = { color: this.#toRgba(s.resolvedColor, 0.12) };
                 } else if (s.fill !== false && s.fill !== undefined) {
                     areaStyle = { opacity: 0.25 };
                 }
@@ -595,10 +608,12 @@ class WueflEnergyChart extends HTMLElement {
                 data: isHidden ? [] : s.chartData,
                 smooth: chartType === 'line' ? (s.smooth ?? true) : undefined, 
                 symbol: 'none',
-                z: s.stack ? totalSeries + 1 - index : 2,
+                z: s.background ? 1 : s.stack ? totalSeries + 1 - index : 2,
                 itemStyle: { color: s.resolvedColor }, 
                 areaStyle, 
-                lineStyle: chartType === 'line' ? { width: 1.5 } : undefined,
+                lineStyle: chartType === 'line'
+                    ? { width: 1.5, ...(s.dashed ? { type: 'dashed', opacity: 0.8 } : {}) }
+                    : undefined,
                 ...(chartType === 'bar' ? { barCategoryGap: '25%', barMaxWidth: 48 } : {}),
             };
         });

@@ -18,7 +18,7 @@ einzutragen.**
 | Aus dem Paket | Ziel in Home Assistant |
 |---|---|
 | `custom_components/we/` | `config/custom_components/we/` |
-| `packages/wuefl_wallbox.yaml` | `config/packages/wuefl_wallbox.yaml` (optional) |
+| `custom_components/wuefl_energy/www/packages/*.yaml` | `config/packages/` – Automation und Geräte-Pakete, auch in der Ansicht *Zuordnung* per Klick herunterladbar |
 | `preview.html` | nirgendwo, nur zum Anschauen im Browser |
 
 Kein separater `www/`-Ordner mehr, kein Dashboard-YAML — beides entsteht
@@ -80,7 +80,9 @@ eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 
 **6. Helfer und Ladeautomatik (optional)**
 
-`packages/wuefl_wallbox.yaml` nach `config/packages/` kopieren. Dafuer muss in
+In der Ansicht *Zuordnung* "W-Energie Automation" herunterladen (liegt auch unter
+`custom_components/wuefl_energy/www/packages/wuefl_automation.yaml`) und nach
+`config/packages/` kopieren. Dafuer muss in
 `configuration.yaml` stehen:
 
 ```yaml
@@ -222,7 +224,7 @@ Entitäten, Suche "wuefl") oder sie in der Ansicht *Einstellungen* bedienst.
 Bedienen tust du sie über die Ansicht *Einstellungen* im Dashboard — dort
 musst du nichts zuordnen, nichts anwenden, nichts suchen.
 
-`packages/wuefl_wallbox.yaml` legt diese sieben nicht mehr an. Die
+`wuefl_automation.yaml` legt diese sieben nicht mehr an. Die
 mitgelieferte Automation liest sie über ihre neuen, festen Namen; bei
 mehreren Wallboxen findest du die tatsächlichen Namen unter Einstellungen →
 Geräte & Dienste → Entitäten.
@@ -346,7 +348,7 @@ Steuerbar ist die **Wallbox**, und dafuer gibt es die Wallbox-Karte:
 * *Prioritaet* — bei Ueberschuss zuerst der Hausakku oder zuerst das Auto
 * *Batterie nutzen bis … %* — darunter bleibt der Akku fuers Haus
 
-Die Automation in `packages/wuefl_wallbox.yaml` regelt daraus den Ladestrom
+Die Automation in `wuefl_automation.yaml` regelt daraus den Ladestrom
 nach. Manche Wechselrichter erlauben per Modbus zusaetzlich, den Hausakku
 gezielt aus dem Netz zu laden oder Zeitfenster zu setzen — das ist
 herstellerabhaengig und hier nicht enthalten.
@@ -407,7 +409,7 @@ Maße und Schriftgrößen hängen an `--w-radius`, `--w-pad`, `--w-input-h` und
 | `custom_components/we/switch.py` | Hausakku-Freigabe als eigene Plattform |
 | `custom_components/we/number.py` | Batteriereserve, Preisgrenze, Ladestrom, Ladeziel |
 | `custom_components/we/select.py` | Prioritaet, Lademodus je Wallbox |
-| `packages/wuefl_wallbox.yaml` | Preissensor-Beispiel und Ladeautomatik |
+| `custom_components/wuefl_energy/www/packages/` | Ladeautomatik und Geräte-Pakete (Sungrow, Mennekes) zum Herunterladen |
 | `hacs.json` | Macht das Repository als HACS-Quelle nutzbar |
 | `tools/make-preview.py` | Baut `preview.html` aus den Quelldateien (nur zur Entwicklung) |
 

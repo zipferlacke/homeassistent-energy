@@ -10,7 +10,16 @@ import {
   weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
   statesChanged, pvForecast, todayTotals, todaySum,
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, applyColorVars,
+  loadSolarForecast, forecastFactor, surplusWindow, roundQuarter, fmtClock,
 } from './we-shared.js';
+
+/*
+ * "Genug Strom für größere Verbraucher": Echtzeit zählt nur, wenn der
+ * Überschuss über SUSTAIN_MS anhält – kommt die Sonne für fünf Minuten
+ * durch, bleibt die Anzeige bei der Prognose.
+ */
+const SUSTAIN_MS = 10 * 60_000;
+const SAMPLE_KEEP_MS = 40 * 60_000;
 
 // Relativ zum Modul, damit die Grafik aus demselben versionierten Pfad kommt.
 const SVG_URL = new URL('./energieflow.svg', import.meta.url).href;
@@ -130,6 +139,24 @@ ${TILE_CSS}
 
 .explain { margin-top: .6rem; }
 
+.surplus {
+  align-items: center;
+  background: var(--w-bg-soft);
+  border-radius: var(--w-radius);
+  display: flex;
+  font-size: var(--w-fs-sm, .9rem);
+  gap: .6rem;
+  line-height: 1.4;
+  margin-top: .6rem;
+  padding: .55rem .75rem;
+
+  & ha-icon { --mdc-icon-size: 22px; color: var(--w-text-soft); flex: 0 0 auto; }
+  &.go { background: color-mix(in srgb, var(--w-solar, #F5A623) 16%, transparent); }
+  &.go ha-icon { color: var(--w-solar, #F5A623); }
+  & b { font-weight: 600; }
+  & .sub { color: var(--w-text-soft); }
+}
+
 .forecast {
   background: var(--w-bg-soft);
   border-radius: var(--w-radius);
@@ -177,6 +204,11 @@ class WueflEnergyLiveCard extends HTMLElement {
   #explain = null;
   #today = {};
   #todayTimer = null;
+  #pv = null;          // PV-Prognose { rows, stepH, source }
+  #pvTimer = null;
+  #samples = [];       // [{ t, pvKw, freeW }] – gemessene Werte der letzten Zeit
+  #seeded = false;
+  #surplusNow = false; // "Jetzt"-Zustand mit Hysterese
 
   static getConfigElement() { return document.createElement('we-live-card-editor'); }
   static getStubConfig() { return { show_totals: true }; }
@@ -207,6 +239,63 @@ class WueflEnergyLiveCard extends HTMLElement {
     this.#render();
     this.#loadForecast();
     this.#loadToday();
+    this.#loadPv();
+  }
+
+  /** PV-Prognose laden (alle 15 min) und einmalig die letzten Messwerte nachholen. */
+  async #loadPv() {
+    clearTimeout(this.#pvTimer);
+    if (!this.#hass) return;
+    this.#pv = await loadSolarForecast(this.#hass, this.#config);
+    if (!this.#seeded) {
+      this.#seeded = true;
+      await this.#seedSamples();
+    }
+    this.#plotDirty = true;
+    this.#render();
+    this.#pvTimer = setTimeout(() => this.#loadPv(), 15 * 60_000);
+  }
+
+  /**
+   * Beim Öffnen fehlen eigene Messwerte – die 5-Minuten-Mittel der letzten
+   * halben Stunde aus dem Recorder füllen die Lücke, damit "Jetzt" nicht
+   * erst nach zehn Minuten auf der Seite erscheinen kann.
+   */
+  async #seedSamples() {
+    const c = this.#config;
+    const grid = { id: getEntity(c.grid?.live), inv: c.grid?.live?.transform === -1 };
+    const batts = asList(c.battery).map((b) => ({ id: getEntity(b.live), inv: b.live?.transform === -1 })).filter((b) => b.id);
+    const pvs = asList(c.solar).map((x) => getEntity(x.live)).filter(Boolean);
+    const ids = [grid.id, ...batts.map((b) => b.id), ...pvs].filter(Boolean);
+    if (!grid.id || !ids.length) return;
+    const now = Date.now();
+    let stats;
+    try {
+      stats = await this.#hass.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: new Date(now - 35 * 60_000).toISOString(),
+        end_time: new Date(now).toISOString(),
+        statistic_ids: ids, period: '5minute', types: ['mean'],
+      });
+    } catch {
+      return;
+    }
+    const watt = (id) => ((this.#hass.states[id]?.attributes?.unit_of_measurement ?? '').toLowerCase() === 'kw' ? 1000 : 1);
+    const at = (id, t) => {
+      const row = (stats?.[id] ?? []).find((r) => +new Date(r.start) === t);
+      return row && Number.isFinite(row.mean) ? row.mean * watt(id) : null;
+    };
+    const starts = [...new Set((stats?.[grid.id] ?? []).map((r) => +new Date(r.start)))].sort();
+    const seeded = [];
+    for (const t of starts) {
+      const g = at(grid.id, t);
+      if (g === null) continue;
+      const gw = grid.inv ? -g : g;
+      const bw = batts.reduce((a, b) => { const v = at(b.id, t) ?? 0; return a + (b.inv ? -v : v); }, 0);
+      const pvW = pvs.reduce((a, id) => a + (at(id, t) ?? 0), 0);
+      seeded.push({ t: t + 150_000, pvKw: pvW / 1000, freeW: Math.max(0, -gw) + Math.max(0, -bw) });
+    }
+    this.#samples = [...seeded, ...this.#samples].sort((a, b) => a.t - b.t);
   }
 
   async #loadToday() {
@@ -230,6 +319,7 @@ class WueflEnergyLiveCard extends HTMLElement {
 
   disconnectedCallback() {
     clearTimeout(this.#todayTimer);
+    clearTimeout(this.#pvTimer);
   }
 
   #getWeatherEntity() {
@@ -288,6 +378,7 @@ class WueflEnergyLiveCard extends HTMLElement {
         </button>
       </div>
       <div class="scene"><div class="state">Grafik wird geladen …</div></div>
+      <div class="surplus" hidden></div>
       <div class="money"></div>
       <div class="explain info" hidden></div>
       <div class="forecast" hidden>
@@ -314,6 +405,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       scene: card.querySelector('.scene'),
       money: card.querySelector('.money'),
       explainBox: card.querySelector('.explain'),
+      surplus: card.querySelector('.surplus'),
       forecast: card.querySelector('.forecast'),
       plot: card.querySelector('.plot'),
       legend: card.querySelector('.legend'),
@@ -463,6 +555,7 @@ class WueflEnergyLiveCard extends HTMLElement {
       this.#renderPlot();
       this.#plotDirty = false;
     }
+    this.#renderSurplus();
     if (!this.#svgReady) return;
 
     const c = this.#config;
@@ -813,12 +906,96 @@ class WueflEnergyLiveCard extends HTMLElement {
       : '';
   }
 
+  /* ---------------- Überschuss für größere Verbraucher -------------- */
+
+  #renderSurplus() {
+    const box = this.#els.surplus;
+    if (!box) return;
+    const c = this.#config;
+    const now = Date.now();
+    const p = this.#readPowers();
+
+    // Messwert merken – nur echte Werte (Netzsensor da und lesbar), höchstens
+    // alle 20 s ein neuer Punkt; dazwischen gilt der jeweils neueste Wert.
+    if (power(this.#hass, getEntity(c.grid?.live)) !== null) {
+      const sample = { t: now, pvKw: p.pv / 1000, freeW: Math.max(0, -p.grid) + Math.max(0, -p.battery) };
+      const last = this.#samples[this.#samples.length - 1];
+      if (last && now - last.t < 20_000 && last.live) Object.assign(last, sample, { t: last.t });
+      else this.#samples.push({ ...sample, live: true });
+    }
+    this.#samples = this.#samples.filter((x) => now - x.t <= SAMPLE_KEEP_MS);
+
+    const thresholdW = Number(c.systemdata?.surplus_threshold_value) || 2000;
+    const baseEntity = getEntity(c.systemdata?.house_base_load) ?? 'sensor.we_house_base_load';
+    const baseW = power(this.#hass, baseEntity) ?? 400;
+
+    // Echtzeit: nur wenn der Überschuss seit SUSTAIN_MS anhält
+    // Der letzte Wert vor dem Fenster gilt bis in das Fenster hinein – ohne
+    // ihn ist nicht belegt, dass es schon zehn Minuten so geht.
+    const before = [...this.#samples].reverse().find((x) => now - x.t > SUSTAIN_MS);
+    const recent = [...(before ? [before] : []), ...this.#samples.filter((x) => now - x.t <= SUSTAIN_MS)];
+    const covered = !!before && recent.length >= 2;
+    const mean = recent.length ? recent.reduce((a, x) => a + x.freeW, 0) / recent.length : 0;
+    const minW = recent.length ? Math.min(...recent.map((x) => x.freeW)) : 0;
+    this.#surplusNow = covered && (this.#surplusNow
+      ? mean >= thresholdW * 0.8                          // hält, bis es spürbar weniger wird
+      : mean >= thresholdW && minW >= thresholdW * 0.6);   // startet erst, wenn es stabil ist
+
+    const fc = this.#pv;
+    const hasFc = !!fc?.rows?.length;
+    const factor = hasFc ? forecastFactor(fc, this.#samples.map((x) => ({ t: x.t, kw: x.pvKw }))) : 1;
+    const win = hasFc
+      ? surplusWindow(fc, { now: new Date(now), baseKw: baseW / 1000, thresholdKw: thresholdW / 1000, factor })
+      : null;
+
+    let html = '';
+    let go = false;
+    const kw = (w) => `${(w / 1000).toFixed(1).replace('.', ',')} kW`;
+    if (this.#surplusNow) {
+      go = true;
+      const until = win && +win.start <= now + 30 * 60_000 ? ` bis ca. ${fmtClock(roundQuarter(win.end))}` : '';
+      html = `<b>Jetzt</b> genug Strom für größere Verbraucher · <b>ca. ${kw(mean)}</b> frei${until}`;
+    } else if (win) {
+      const today = new Date(now).toDateString() === win.start.toDateString();
+      // Laut Prognose schon jetzt, aber noch nicht lange genug gemessen → "gleich"
+      const start = +win.start <= now ? roundQuarter(new Date(now + 10 * 60_000), true) : roundQuarter(win.start);
+      const range = `<b>ca. ${kw(win.kw * 1000)}</b> frei bis ca. ${fmtClock(roundQuarter(win.end))}`;
+      if (today) {
+        go = true;
+        html = `Ab <b>ca. ${fmtClock(start)}</b> genug Strom für größere Verbraucher · ${range}`;
+      } else {
+        html = `Heute kein größerer Überschuss mehr erwartet <span class="sub">· morgen ab ca. ${fmtClock(start)}</span>`;
+      }
+    } else if (hasFc) {
+      html = 'Heute und morgen kein größerer Überschuss erwartet';
+    }
+
+    box.hidden = !html;
+    if (!html) return;
+    box.classList.toggle('go', go);
+    const ico = go ? 'mdi:white-balance-sunny' : 'mdi:weather-cloudy';
+    const hint = factor < 0.85 ? ' · Prognose wegen weniger Sonne nach unten korrigiert'
+      : factor > 1.15 ? ' · Prognose wegen mehr Sonne nach oben korrigiert' : '';
+    box.innerHTML = `${icon(ico)}<div>${html}${hint ? `<span class="sub">${hint}</span>` : ''}</div>`;
+  }
+
   /* --------------------- Preis und Prognose in einem ---------------- */
 
   #pvCurve() {
     const today = new Date().toDateString();
     const byHour = new Map();
     let total = 0;
+
+    // Bevorzugt die geladene Prognose (Sensor-Attribute oder Energie-Dashboard)
+    if (this.#pv?.rows?.length) {
+      for (const r of this.#pv.rows) {
+        if (r.time.toDateString() !== today) continue;
+        const h = r.time.getHours();
+        byHour.set(h, (byHour.get(h) ?? 0) + r.kwh);
+        total += r.kwh;
+      }
+      if (byHour.size) return { byHour, total };
+    }
 
     for (const id of this.#getForecastEntities()) {
       const st = this.#hass.states[id];

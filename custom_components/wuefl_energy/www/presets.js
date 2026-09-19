@@ -4,17 +4,27 @@
  * label   Gerät, wie es im Auswahlmenü steht
  * source  woher die Sensoren kommen (Integration/Paket) – steht dahinter
  * group   Abschnitt im Auswahlmenü
+ * links   Downloads (Paket liegt unter www/packages/) und Seiten zum Gerät
  * Entitäten sind feste IDs oder Muster: "*" = beliebig, "#" = ein
  * Namensteil ohne "_" (z. B. die Seriennummer). Listen = erster Treffer.
  */
 
+// Öffnet die Seite direkt in der eigenen HA-Instanz (My Home Assistant)
+const hacs = (owner, repository) =>
+    `https://my.home-assistant.io/redirect/hacs_repository/?owner=${owner}&repository=${repository}&category=integration`;
+const setup = (domain) => `https://my.home-assistant.io/redirect/config_flow_start/?domain=${domain}`;
+
 export const PRESETS = {
-    // Passend zu docs/modbus_sungrow.yaml (mkaiser, Sungrow SHx)
+    // Passend zu packages/modbus_sungrow.yaml (mkaiser, Sungrow SHx)
     sungrow: {
         label: 'Sungrow Wechselrichter SHx',
         group: 'Wechselrichter',
-        source: 'Modbus-Paket von mkaiser (docs/modbus_sungrow.yaml)',
-        hint: 'Entitäten aus docs/modbus_sungrow.yaml. Netzleistung braucht den direkt angeschlossenen Smart Meter.',
+        source: 'Modbus-Paket von mkaiser',
+        hint: 'Paket nach config/packages/ kopieren, Zugangsdaten in secrets.yaml eintragen, HA neu starten. Netzleistung braucht den direkt angeschlossenen Smart Meter.',
+        links: [
+            { label: 'Paket herunterladen', download: 'modbus_sungrow.yaml' },
+            { label: 'Anleitung & neueste Version (mkaiser)', url: 'https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant' },
+        ],
         // Fehlzuordnungen älterer Vorlagen, die überschrieben werden dürfen
         replaces: {
             'grid.live': ['sensor.load_power'],
@@ -59,12 +69,16 @@ export const PRESETS = {
             total: 'sensor.total_consumed_energy',
         },
     },
-    // Passend zu docs/modbus_mennekes.yaml
+    // Passend zu packages/modbus_mennekes.yaml
     mennekes_amtron_charge_control: {
         label: 'MENNEKES AMTRON Charge Control',
         group: 'Wallbox',
-        source: 'Modbus-Paket (docs/modbus_mennekes.yaml)',
-        hint: 'Entitäten aus docs/modbus_mennekes.yaml. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
+        source: 'Modbus-Paket',
+        hint: 'Paket nach config/packages/ kopieren, Zugangsdaten in secrets.yaml eintragen, HA neu starten. In der Wallbox Modbus TCP/HEMS freischalten. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
+        links: [
+            { label: 'Paket herunterladen', download: 'modbus_mennekes.yaml' },
+            { label: 'Modbus-Spezifikation (Mennekes)', url: 'https://www.mennekes.de/fileadmin/MEN-Deutschland/emobility/01_documents/04_installer/ECU_modbus_tcp_server_spec_rev_1.07.pdf' },
+        ],
         replaces: {
             'wallboxes.total': ['sensor.mennekes_wallbox_gesamtzahlerstand'],
         },
@@ -94,6 +108,10 @@ export const PRESETS = {
         label: 'go-e Charger (Gemini, Gemini flex, HOMEfix …)',
         group: 'Wallbox',
         source: 'HACS: go-eCharger API v2 (marq24)',
+        links: [
+            { label: 'In HACS öffnen', url: hacs('marq24', 'ha-goecharger-api2') },
+            { label: 'GitHub', url: 'https://github.com/marq24/ha-goecharger-api2' },
+        ],
         hint: 'Braucht die HACS-Integration „go-eCharger API v2“ von marq24 (lokal; in der go-e App „HTTP API v2“ aktivieren). ' +
             'Maximale Ladeleistung unter „Hardware & Grenzen“ an deine Wallbox anpassen (11 oder 22 kW). ' +
             'Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
@@ -156,6 +174,9 @@ export const PRESETS = {
         label: 'Fronius Symo / Gen24',
         group: 'Wechselrichter',
         source: 'Fronius-Integration von HA',
+        links: [
+            { label: 'Integration einrichten', url: setup('fronius') },
+        ],
         hint: 'Sucht nach typischen Fronius Symo / Gen24 Sensoren.',
         grid: {
             live: ['sensor.solarnet_power_grid'],

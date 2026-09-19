@@ -11,7 +11,7 @@ import {
   chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
   applyColorVars, colorOf, navigateToView, TOGGLE_CSS, isReadOnly, applyReadOnly,
-  getPeriod, onPeriodChange,
+  getPeriod, onPeriodChange, loadSolarForecast,
 } from './we-shared.js';
 import './we-chart.js';
 
@@ -169,6 +169,8 @@ class WueflWallboxCard extends HTMLElement {
   #drag = null;
   #historyKey = '';
   #stopPeriod = null;
+  #fc = null;         // PV-Prognose (auch aus dem Energie-Dashboard)
+  #fcAt = 0;
 
   static getConfigElement() { return document.createElement('wuefl-wallbox-card-editor'); }
   static getStubConfig() { return { wallbox: 1 }; }
@@ -461,6 +463,7 @@ class WueflWallboxCard extends HTMLElement {
       this.#hass,
       this.#config.pv_forecast_entities,
       this.#config.pv_forecast_attribute,
+      this.#fc,
     );
   }
 
@@ -490,7 +493,7 @@ class WueflWallboxCard extends HTMLElement {
     const base = (baseW ?? 400) / 1000;
 
     const solar = () => solarEta(
-      this.#hass, c.pv_forecast_entities, c.pv_forecast_attribute, base, needed,
+      this.#hass, c.pv_forecast_entities, c.pv_forecast_attribute, base, needed, this.#fc,
     );
     const solarNote = 'Zeit ist eine Prognose aus Wetter und PV-Vorhersage';
 
@@ -530,8 +533,17 @@ class WueflWallboxCard extends HTMLElement {
 
   /* ------------------------------ Anzeige --------------------------- */
 
+  /** Prognose nachladen (höchstens alle 15 min), danach neu anzeigen. */
+  async #refreshForecast() {
+    if (Date.now() - this.#fcAt < 15 * 60_000) return;
+    this.#fcAt = Date.now();
+    this.#fc = await loadSolarForecast(this.#hass, { solar: [{ forecast: this.#config.pv_forecast_entities ?? [] }] });
+    this.#update();
+  }
+
   #update() {
     if (!this.#built || !this.#hass) return;
+    this.#refreshForecast();
     const c = this.#config;
     const h = this.#hass;
 

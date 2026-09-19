@@ -602,11 +602,21 @@ export function pvForecast(state, attrOverride) {
 }
 
 /** Erwarteter Restertrag ab jetzt bis Sonnenuntergang, plus verbleibende Stunden. */
-export function pvOutlook(hass, ids, attrOverride) {
+export function pvOutlook(hass, ids, attrOverride, fc = null) {
   const now = new Date();
   let rest = 0;
   let last = now.getHours();
   let any = false;
+
+  if (fc?.rows?.length) {
+    for (const e of fc.rows) {
+      if (e.time > now && e.time.toDateString() === now.toDateString()) {
+        rest += e.kwh;
+        last = Math.max(last, e.time.getHours());
+      }
+    }
+    return { rest, hours: Math.max(0, last - now.getHours()), detailed: true };
+  }
 
   for (const id of asList(ids)) {
     const series = pvForecast(hass?.states?.[id], attrOverride);
@@ -629,6 +639,124 @@ export function pvOutlook(hass, ids, attrOverride) {
 
 export const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
+/* ------------------------------------------------------------------ *
+ * PV-Prognose als Stundenreihe
+ * ------------------------------------------------------------------ *
+ * Quelle 1: Attribute der zugeordneten Prognose-Sensoren (Solcast
+ * "detailedForecast", Forecast.Solar-Attribute älterer Versionen …).
+ * Quelle 2: HAs Energie-Prognose (energy/solar_forecast) – das, was auch
+ * das Energie-Dashboard nutzt. Damit geht auch das eingebaute
+ * Forecast.Solar, sobald es unter Einstellungen → Dashboards → Energie
+ * als Prognose der Solarproduktion eingetragen ist.
+ */
+let forecastCache = { key: '', at: 0, value: null, pending: null };
+
+const entityOfValue = (v) => (typeof v === 'string' ? v : v?.entity ?? null);
+
+export async function loadSolarForecast(hass, config, maxAgeMs = 15 * 60_000) {
+  const ids = asList(config?.solar).flatMap((s) => asList(s?.forecast)).map(entityOfValue).filter(Boolean);
+  const key = ids.join('|');
+  if (forecastCache.key === key && forecastCache.value && Date.now() - forecastCache.at < maxAgeMs) {
+    return forecastCache.value;
+  }
+  if (forecastCache.key === key && forecastCache.pending) return forecastCache.pending;
+
+  const load = (async () => {
+    const merged = new Map();
+    const add = (time, kwh) => {
+      const t = +time;
+      if (Number.isFinite(t) && Number.isFinite(kwh)) merged.set(t, (merged.get(t) ?? 0) + kwh);
+    };
+    for (const id of ids) {
+      for (const e of pvForecast(hass?.states?.[id])) add(e.time, e.kwh);
+    }
+    let source = merged.size ? 'sensor' : null;
+    if (!merged.size && hass?.callWS) {
+      try {
+        const res = await hass.callWS({ type: 'energy/solar_forecast' });
+        for (const entry of Object.values(res ?? {})) {
+          for (const [t, wh] of Object.entries(entry?.wh_hours ?? {})) add(new Date(t), Number(wh) / 1000);
+        }
+        if (merged.size) source = 'energy';
+      } catch {
+        // Energie-Dashboard nicht eingerichtet – dann eben keine Prognose
+      }
+    }
+    const rows = [...merged.entries()].sort((a, b) => a[0] - b[0]).map(([t, kwh]) => ({ time: new Date(t), kwh }));
+    const stepH = rows.length > 1 ? Math.max(0.1, (rows[1].time - rows[0].time) / 3_600_000) : 1;
+    return { rows, stepH, source };
+  })();
+
+  forecastCache = { key, at: forecastCache.at, value: forecastCache.value, pending: load };
+  const value = await load;
+  forecastCache = { key, at: Date.now(), value, pending: null };
+  return value;
+}
+
+/** Erwartete PV-Leistung (kW) zum Zeitpunkt t laut Prognose. */
+export function forecastKwAt(fc, t) {
+  const ms = +t;
+  const stepMs = (fc?.stepH ?? 1) * 3_600_000;
+  const row = fc?.rows?.find((r) => ms >= +r.time && ms < +r.time + stepMs);
+  return row ? row.kwh / fc.stepH : null;
+}
+
+/** Prognose als Punkte [ms, kW] für Diagramme (Mitte jedes Zeitraums). */
+export function forecastPoints(fc) {
+  const half = (fc?.stepH ?? 1) * 1_800_000;
+  return (fc?.rows ?? []).map((r) => [+r.time + half, r.kwh / fc.stepH]);
+}
+
+/**
+ * Wie weit liegt die echte PV gerade neben der Prognose? Verhältnis aus
+ * gemessenen Werten [{t, kw}] der letzten Zeit, begrenzt auf 0,2–1,5.
+ * Ohne brauchbare Grundlage 1 (= Prognose unverändert).
+ */
+export function forecastFactor(fc, samples) {
+  let actual = 0, expected = 0, n = 0;
+  for (const s of samples ?? []) {
+    const f = forecastKwAt(fc, s.t);
+    if (f === null) continue;
+    actual += s.kw; expected += f; n += 1;
+  }
+  if (n < 3 || expected / n < 0.3) return 1;
+  return Math.min(1.5, Math.max(0.2, actual / expected));
+}
+
+/**
+ * Erstes Zeitfenster ab jetzt, in dem PV minus Grundlast mindestens
+ * thresholdKw übrig lässt. Die Abweichung von jetzt (factor) wirkt auf die
+ * nächsten Stunden und läuft danach zur reinen Prognose aus.
+ * Ergebnis: { start, end, kw } oder null.
+ */
+export function surplusWindow(fc, { now = new Date(), baseKw = 0.4, thresholdKw = 2, factor = 1, untilDays = 2 } = {}) {
+  const stepMs = (fc?.stepH ?? 1) * 3_600_000;
+  const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + untilDays);
+  let win = null;
+  for (const r of fc?.rows ?? []) {
+    const from = +r.time, to = from + stepMs;
+    if (to <= +now || from >= +limit) continue;
+    const hoursAhead = Math.max(0, (from + stepMs / 2 - +now) / 3_600_000);
+    const adj = 1 + (factor - 1) * Math.exp(-hoursAhead / 2);
+    const free = (r.kwh / fc.stepH) * adj - baseKw;
+    if (free >= thresholdKw) {
+      if (!win) win = { start: new Date(Math.max(from, +now)), end: new Date(to), sum: 0, n: 0 };
+      else if (+win.end !== from) break;
+      win.end = new Date(to);
+      win.sum += free; win.n += 1;
+    } else if (win) {
+      break;
+    }
+  }
+  return win ? { start: win.start, end: win.end, kw: win.sum / win.n } : null;
+}
+
+/** Auf die Viertelstunde runden – die Prognose ist ohnehin nur ungefähr. */
+export function roundQuarter(date, up = false) {
+  const q = 15 * 60_000;
+  return new Date((up ? Math.ceil : Math.round)(+date / q) * q);
+}
+
 /**
  * Wann ist genug Sonnenüberschuss zusammengekommen?
  *
@@ -637,15 +765,19 @@ export const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
  * ehrlichere Antwort als "heute nicht mehr erreichbar".
  * Ergebnis: Date oder null, wenn die Vorhersage nicht weit genug reicht.
  */
-export function solarEta(hass, ids, attrOverride, baseloadKw, neededKwh) {
+export function solarEta(hass, ids, attrOverride, baseloadKw, neededKwh, fc = null) {
   if (neededKwh <= 0) return new Date();
 
   const now = new Date();
   const merged = new Map();
-  for (const id of asList(ids)) {
-    for (const e of pvForecast(hass?.states?.[id], attrOverride)) {
-      const key = +e.time;
-      merged.set(key, (merged.get(key) ?? 0) + e.kwh);
+  if (fc?.rows?.length) {
+    for (const e of fc.rows) merged.set(+e.time, e.kwh);
+  } else {
+    for (const id of asList(ids)) {
+      for (const e of pvForecast(hass?.states?.[id], attrOverride)) {
+        const key = +e.time;
+        merged.set(key, (merged.get(key) ?? 0) + e.kwh);
+      }
     }
   }
   if (!merged.size) return null;

@@ -3,7 +3,7 @@
  * Solarproduktion (Gesamt sowie einzelne Anlagen / Strings).
  * Liest die Konfiguration direkt aus dem zentralen `solar`-Array der we-config-card.
  */
-import { registerCard, WueflFormEditor, sel, colorOf } from './we-shared.js';
+import { registerCard, WueflFormEditor, sel, colorOf, loadSolarForecast, forecastPoints } from './we-shared.js';
 import { WueflChartWrapper } from './we-chart-base.js';
 
 function getEntity(val) {
@@ -18,6 +18,33 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
   static getStubConfig() { return { title: 'Solarproduktion' }; }
 
   get defaultTitle() { return 'Solarproduktion'; }
+
+  _fc = null;
+  _fcTimer = null;
+
+  async _loadCentral() {
+    await super._loadCentral();
+    this._loadForecast();
+  }
+
+  /** PV-Prognose für die Hintergrund-Kurve, alle 15 min neu. */
+  async _loadForecast() {
+    clearTimeout(this._fcTimer);
+    if (!this._hass) return;
+    this._fc = await loadSolarForecast(this._hass, this._config);
+    this._refresh();
+    this._fcTimer = setTimeout(() => this._loadForecast(), 15 * 60_000);
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    if (this._hass) this._loadForecast();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    clearTimeout(this._fcTimer);
+  }
 
   buildChartConfig(range) {
     const solarPlants = this._config.solar ?? [];
@@ -66,6 +93,24 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
     });
 
     if (series.length === 0) return null;
+
+    // Prognose als blasse, gestrichelte Fläche hinter der echten Erzeugung –
+    // nur bis zu einer Woche, darüber gibt es keine Prognose mehr.
+    if (!range.overWeek && this._fc?.rows?.length) {
+      const from = +range.start, to = +range.end;
+      const data = forecastPoints(this._fc).filter(([t]) => t >= from && t <= to);
+      if (data.length) {
+        series.unshift({
+          name: 'Prognose',
+          data,
+          color: colorOf('solar', solarPlants[0]),
+          type: 'line',
+          fill: 'soft',
+          dashed: true,
+          background: true,
+        });
+      }
+    }
 
     return {
       aggregation: this._aggregation(range),
