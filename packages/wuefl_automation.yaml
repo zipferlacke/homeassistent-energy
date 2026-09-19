@@ -11,6 +11,13 @@
 # Akku-Modus), danach wird nur geschrieben, was sich wirklich ändert –
 # kein Dauerfeuer auf Modbus/Wechselrichter.
 #
+# Wallbox-Steuerung: Die Soll-Leistung landet immer in den Helfern der
+# Integration (send_power / activate_station). Ist unter "Steuerung durch
+# die Automation" eine Ladestrom-Vorgabe zugeordnet, schreibt die
+# Automation zusätzlich direkt dorthin – in Ampere, mit Pause und bei
+# Wallboxen mit Phasenumschaltung 1- oder 3-phasig. Damit braucht keine
+# Wallbox mehr ein eigenes Umrechnungs-Paket.
+#
 # Vorzeichen wie in der Zuordnung beschrieben:
 #   Netz     positiv = Bezug,     negativ = Einspeisung
 #   Batterie positiv = entladen,  negativ = laden
@@ -53,6 +60,7 @@ automation:
       batterien: "{{ cfg.get('battery') or [] }}"
       batt: "{{ (batterien + [{}])[0] }}"
       akku_steuerung: "{{ batt.get('control') or {} }}"
+      wb_ctrl: "{{ wb.get('control') or {} }}"
 
       # --- Entitäten (leer = nicht zugeordnet) ------------------------------
       mode_entity: "{{ wb.get('charge_type', '') }}"
@@ -73,6 +81,14 @@ automation:
       batt_stop_discharging: "{{ akku_steuerung.get('mode_stop_discharging', '') }}"
       batt_force_charge: "{{ akku_steuerung.get('mode_start_charging', '') }}"
       batt_normal_mode: "{{ akku_steuerung.get('normal_mode', '') }}"
+      # Direkte Steuerung der Wallbox (optional)
+      current_entity: "{{ wb_ctrl.get('current_set') or '' }}"
+      stop_entity: "{{ wb_ctrl.get('charge_stop') or '' }}"
+      stop_option: "{{ wb_ctrl.get('stop_option') | string if wb_ctrl.get('stop_option') is not none else '' }}"
+      start_option: "{{ wb_ctrl.get('start_option') | string if wb_ctrl.get('start_option') is not none else '' }}"
+      phase_entity: "{{ wb_ctrl.get('phase_switch') or '' }}"
+      phase1_option: "{{ wb_ctrl.get('phase1_option') | string if wb_ctrl.get('phase1_option') is not none else '' }}"
+      phase3_option: "{{ wb_ctrl.get('phase3_option') | string if wb_ctrl.get('phase3_option') is not none else '' }}"
 
       has_wallbox: "{{ mode_entity != '' and wallbox_power_set_entity != '' and wallbox_activate_entity != '' }}"
       has_battery: "{{ batterien | count > 0 }}"
@@ -120,10 +136,15 @@ automation:
       batt_soc: "{{ states(batt_soc_entity) | float(0) if has_battery else 0 }}"
 
       # --- Leistungsgrenzen -------------------------------------------------
-      phases: "{{ wb_more.get('phases_value') or 3 }}"
+      phases: "{{ (wb_more.get('phases_value') or 3) | int }}"
       max_power_cfg: "{{ wb_more.get('max_power_value') or 11000 }}"
-      # 6 A je Phase, auf volle 100 W aufgerundet (Schrittweite des Helfers)
-      min_charge_w: "{{ ((6 * 230 * phases / 100) | round(0, 'ceil') * 100) | int }}"
+      min_current: "{{ (wb_more.get('min_current_value') or 6) | int }}"
+      # Wallbox kann zwischen 1 und 3 Phasen umschalten?
+      kann_1phasig: "{{ phase_entity != '' and phase1_option != '' and phase3_option != '' and phases > 1 and states(phase_entity) not in ['unknown', 'unavailable'] }}"
+      # Kleinste Ladeleistung: Mindeststrom je Phase – mit Umschaltung 1-phasig.
+      # Auf volle 100 W aufgerundet (Schrittweite des Helfers).
+      min_charge_w: "{{ ((min_current * 230 * (1 if kann_1phasig else phases) / 100) | round(0, 'ceil') * 100) | int }}"
+      min_3ph_w: "{{ min_current * 230 * phases }}"
       battery_max_discharge_w: 3000
 
       # --- Solarüberschuss für die Wallbox ----------------------------------
@@ -156,6 +177,37 @@ automation:
           {% else %}{{ 0 }}{% endif %}
         {% endif %}
       wb_ziel_aktiv: "{{ 1 if wb_ziel_leistung | int > 0 else 0 }}"
+
+      # --- Umrechnung für die direkte Steuerung ----------------------------
+      phasen_aktuell: "{{ 1 if kann_1phasig and states(phase_entity) == phase1_option | string else phases }}"
+      # Hysterese, damit nicht ständig umgeschaltet wird (Schütz im Auto):
+      # auf 3 Phasen erst 200 W über, zurück auf 1 erst 300 W unter der
+      # 3-phasigen Mindestleistung.
+      phasen_ziel: >
+        {% set w = wb_ziel_leistung | int %}
+        {% if not kann_1phasig %}{{ phases }}
+        {% elif w == 0 %}{{ phasen_aktuell }}
+        {% elif phasen_aktuell | int == 1 %}{{ phases if w >= min_3ph_w + 200 else 1 }}
+        {% else %}{{ 1 if w < min_3ph_w - 300 else phases }}{% endif %}
+      ampere_max: >
+        {% set a = (max_power_cfg | float / (230 * phases)) | round(0) | int %}
+        {{ [a, state_attr(current_entity, 'max') | int(a)] | min if current_entity else a }}
+      ampere_ziel: >
+        {% set w = wb_ziel_leistung | int %}
+        {% if w == 0 %}0
+        {# volle Leistung = Höchststrom (11000 W / 690 wären abgerundet nur 15 A) #}
+        {% elif w >= max_power_cfg | int %}{{ ampere_max }}
+        {% else %}
+          {% set a = (w / (230 * phasen_ziel | int)) | round(0, 'floor') | int %}
+          {{ [[a, min_current] | max, ampere_max | int] | min }}
+        {% endif %}
+      # Pausiert? Auswahl: steht auf der Pause-Option; Schalter: aus
+      pausiert: >
+        {% if stop_entity == '' %}{{ false }}
+        {% elif stop_entity.split('.')[0] in ['select', 'input_select'] %}{{ states(stop_entity) == stop_option | string }}
+        {% else %}{{ is_state(stop_entity, 'off') }}{% endif %}
+      # Pause ohne eigenen Schalter geht nur, wenn die Vorgabe 0 A kann
+      pause_ueber_strom: "{{ stop_entity == '' and state_attr(current_entity, 'min') | float(0) <= 0 }}"
 
       # Akku: Netzladen bei schlechter Prognose + günstigem Strom (nur mit Schalter)
       prognose_kwh: >
@@ -221,6 +273,71 @@ automation:
               - action: number.set_value
                 target: { entity_id: "{{ wallbox_activate_entity }}" }
                 data: { value: 1 }
+
+          # -------------------------------------------------------------
+          # 1b. Direkte Steuerung (Ladestrom-Vorgabe in A, Pause, Phasen)
+          # -------------------------------------------------------------
+          - if:
+              - condition: template
+                value_template: "{{ current_entity != '' and states(current_entity) not in ['unknown', 'unavailable'] }}"
+            then:
+              - choose:
+                  # Pause
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ wb_ziel_aktiv == 0 }}"
+                    sequence:
+                      - if:
+                          - condition: template
+                            value_template: "{{ stop_entity != '' and not pausiert }}"
+                        then:
+                          - if:
+                              - condition: template
+                                value_template: "{{ stop_entity.split('.')[0] in ['select', 'input_select'] }}"
+                            then:
+                              - action: "{{ stop_entity.split('.')[0] }}.select_option"
+                                target: { entity_id: "{{ stop_entity }}" }
+                                data: { option: "{{ stop_option | string }}" }
+                            else:
+                              - action: homeassistant.turn_off
+                                target: { entity_id: "{{ stop_entity }}" }
+                      - if:
+                          - condition: template
+                            value_template: "{{ pause_ueber_strom and states(current_entity) | float(-1) != 0 }}"
+                        then:
+                          - action: "{{ current_entity.split('.')[0] }}.set_value"
+                            target: { entity_id: "{{ current_entity }}" }
+                            data: { value: 0 }
+                # Laden: erst Phasen, dann Strom, zuletzt freigeben
+                default:
+                  - if:
+                      - condition: template
+                        value_template: "{{ kann_1phasig and phasen_ziel | int != phasen_aktuell | int }}"
+                    then:
+                      - action: "{{ phase_entity.split('.')[0] }}.select_option"
+                        target: { entity_id: "{{ phase_entity }}" }
+                        data: { option: "{{ (phase1_option if phasen_ziel | int == 1 else phase3_option) | string }}" }
+                  - if:
+                      - condition: template
+                        value_template: "{{ states(current_entity) | float(-1) != ampere_ziel | float }}"
+                    then:
+                      - action: "{{ current_entity.split('.')[0] }}.set_value"
+                        target: { entity_id: "{{ current_entity }}" }
+                        data: { value: "{{ ampere_ziel }}" }
+                  - if:
+                      - condition: template
+                        value_template: "{{ stop_entity != '' and pausiert }}"
+                    then:
+                      - if:
+                          - condition: template
+                            value_template: "{{ stop_entity.split('.')[0] in ['select', 'input_select'] }}"
+                        then:
+                          - action: "{{ stop_entity.split('.')[0] }}.select_option"
+                            target: { entity_id: "{{ stop_entity }}" }
+                            data: { option: "{{ start_option | string }}" }
+                        else:
+                          - action: homeassistant.turn_on
+                            target: { entity_id: "{{ stop_entity }}" }
 
       # -----------------------------------------------------------------
       # 2. HAUSAKKU (Szene/Skript/Schalter nur bei Wechsel auslösen)

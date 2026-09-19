@@ -36,11 +36,47 @@ function toRgbArray(value) {
 
 const COLOR_FIELDS = ['color', 'color_in', 'color_export'];
 
+/**
+ * Muster aus Vorlagen in einen regulären Ausdruck übersetzen:
+ * "*" = beliebige Zeichen, "#" = ein Namensteil ohne "_" (z. B. eine
+ * Seriennummer), alles andere muss exakt passen – über die ganze ID.
+ */
+function patternRegex(pattern) {
+  const body = pattern.split(/([*#])/).map((part) => {
+    if (part === '*') return '.*';
+    if (part === '#') return '[^._]+';
+    return part.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  }).join('');
+  return new RegExp(`^${body}$`, 'i');
+}
+
+const isWildcard = (pattern) => /[*#]/.test(pattern);
+
 function findEntity(states, pattern) {
   if (!states) return null;
   if (states[pattern]) return pattern;
-  const reg = new RegExp(pattern.replace(/\*/g, '.*'), 'i');
+  if (!isWildcard(pattern)) return null;
+  const reg = patternRegex(pattern);
   return Object.keys(states).find((id) => reg.test(id)) || null;
+}
+
+/** Passt ein vorhandener Wert zu einem Vorlagen-Muster (oder einer Liste davon)? */
+function matchesPattern(value, spec) {
+  const values = asList(value).map((v) => (typeof v === 'object' ? v?.entity : v)).filter(Boolean);
+  return asList(spec).some((p) => typeof p === 'string'
+    && values.some((v) => v === p || (isWildcard(p) && patternRegex(p).test(v))));
+}
+
+/** Vorlagen fürs Auswahlmenü, nach Gerätetyp gruppiert, mit Quelle. */
+function presetOptions() {
+  const groups = new Map();
+  for (const [key, p] of Object.entries(PRESETS)) {
+    const g = p.group ?? 'Allgemein';
+    if (!groups.has(g)) groups.set(g, []);
+    const text = p.source ? `${p.label} · ${p.source}` : p.label;
+    groups.get(g).push(`<option value="${key}">${esc(text)}</option>`);
+  }
+  return [...groups].map(([g, opts]) => `<optgroup label="${esc(g)}">${opts.join('')}</optgroup>`).join('');
 }
 
 function normalizeConfig(cfg) {
@@ -201,6 +237,21 @@ const BLOCKS = [
         schema: [
           { name: 'phases_value', selector: number(1, 3, 1) },
           { name: 'max_power_value', selector: number(1000, 30000, 100) },
+          { name: 'min_current_value', selector: number(1, 16, 1) },
+        ],
+      },
+      {
+        type: 'expandable',
+        name: 'control',
+        title: 'Steuerung durch die Automation',
+        schema: [
+          { name: 'current_set', selector: { entity: { filter: [{ domain: 'number' }, { domain: 'input_number' }] } } },
+          { name: 'charge_stop', selector: { entity: { filter: [{ domain: 'select' }, { domain: 'input_select' }, { domain: 'switch' }, { domain: 'input_boolean' }] } } },
+          { name: 'stop_option', selector: text() },
+          { name: 'start_option', selector: text() },
+          { name: 'phase_switch', selector: { entity: { filter: [{ domain: 'select' }, { domain: 'input_select' }] } } },
+          { name: 'phase1_option', selector: text() },
+          { name: 'phase3_option', selector: text() },
         ],
       },
     ],
@@ -305,6 +356,14 @@ const LABELS = {
     color: 'Farbe',
     phases_value: 'Anzahl Phasen',
     max_power_value: 'Maximale Ladeleistung',
+    min_current_value: 'Minimaler Ladestrom (A)',
+    current_set: 'Ladestrom-Vorgabe (A)',
+    charge_stop: 'Laden pausieren',
+    stop_option: 'Option „Pause“',
+    start_option: 'Option „Laden erlaubt“',
+    phase_switch: 'Phasenumschaltung',
+    phase1_option: 'Option „1-phasig“',
+    phase3_option: 'Option „3-phasig“',
   },
   water: {
     name: 'Bezeichnung',
@@ -384,8 +443,16 @@ const HELPERS = {
     status: 'Sensor für Text-Status (z. B. "Fahrzeug verbunden").',
     ready_for_charge: 'Schalter/Sensor, ob Wallbox bereit zum laden ist.',
     car_percent: 'Batterie-Ladestand des verbundenen Autos in %.',
-    phases_value: 'Anzahl aktiv genutzter Phasen (1–3).',
+    phases_value: 'Anzahl Phasen beim Laden mit voller Leistung (1–3).',
     max_power_value: 'Maximal erreichbare Ladeleistung in Watt (W).',
+    min_current_value: 'Kleinster Strom je Phase, mit dem das Auto lädt – meist 6 A. Mit Phasenumschaltung beginnt Solarladen so schon ab 1-phasig 6 A (≈ 1,4 kW) statt 3-phasig (≈ 4,1 kW).',
+    current_set: 'Zahl-Entität, in die die Automation den Ladestrom in Ampere schreibt (z. B. go-e "Angeforderter Strom", Mennekes "HEMS Stromvorgabe"). Leer = die Wallbox liest nur die Soll-Leistung der Helfer.',
+    charge_stop: 'Optional. Schalter oder Auswahl zum Pausieren, falls der Ladestrom nicht auf 0 A gehen kann (go-e: "Manueller Lademodus"). Leer = Pause über 0 A.',
+    stop_option: 'Bei einer Auswahl: Option, die das Laden pausiert (go-e: 1). Bei Schaltern leer lassen – aus = Pause.',
+    start_option: 'Bei einer Auswahl: Option, die das Laden wieder erlaubt (go-e: 0).',
+    phase_switch: 'Optional. Auswahl für 1-/3-phasiges Laden (go-e: "Phasen Wechselmodus"). Die Automation lädt dann bei wenig Sonne 1-phasig.',
+    phase1_option: 'Option für 1-phasiges Laden (go-e: 1).',
+    phase3_option: 'Option für 3-phasiges Laden (go-e: 2).',
     color: 'Farbe der Wallbox in Grafik und Diagrammen. Leer = Vorgabe.',
   },
   water: {
@@ -473,57 +540,67 @@ class WueflEnergyConfigCard extends HTMLElement {
           gap: 16px;
         }
 
-        /* Kompakte Presets-Leiste */
-        .preset-bar-wrapper {
+        /* Werkzeugleiste oben: Vorlage, Farben, Nur lesen.
+           Jede Zeile: links Inhalt, rechts eine gleich breite Knopfspalte;
+           alle Bedienelemente gleich hoch. */
+        .tools {
           background: var(--secondary-background-color, #f5f5f5);
           border: 1px solid var(--divider-color, #e0e0e0);
-          border-radius: 8px;
-          padding: 8px 12px;
+          border-radius: 12px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 10px;
+          padding: 12px;
         }
-        .preset-bar {
-          display: flex;
+        .tool-row {
           align-items: center;
-          gap: 8px;
+          display: grid;
+          gap: 8px 10px;
+          grid-template-columns: minmax(0, 1fr) 12rem;
+        }
+        .tool-row + .tool-row, .tool-row.sep {
+          border-top: 1px solid var(--divider-color, #e0e0e0);
+          padding-top: 10px;
+        }
+        .tool-row[hidden], .tools [hidden] { display: none !important; }
+        .ctl {
+          box-sizing: border-box;
+          font: inherit;
+          font-size: 0.9rem;
+          height: 40px;
+          margin: 0;
+          width: 100%;
         }
         .preset-select {
-          flex: 1;
-          padding: 6px 10px;
-          border-radius: 6px;
-          border: 1px solid var(--divider-color, #ccc);
           background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, #ccc);
+          border-radius: 8px;
           color: var(--primary-text-color);
-          font-size: 0.85rem;
+          min-width: 0;
           outline: none;
+          padding: 0 10px;
         }
-        .preset-report {
-          font-size: 0.78rem;
-          color: var(--secondary-text-color);
-        }
-
-        /* Farben: Zurücksetzen mit Bestätigung direkt in der Leiste */
-        .colors-bar {
+        .preset-select:focus { border-color: var(--primary-color, #03a9f4); }
+        .tools .btn.ctl { border-radius: 8px; justify-content: center; padding: 0 12px; white-space: nowrap; }
+        .tools .btn.ctl ha-icon { --mdc-icon-size: 18px; }
+        .tools .btn:disabled { cursor: default; opacity: .45; }
+        .tool-info {
           align-items: center;
-          border-top: 1px solid var(--divider-color, #e0e0e0);
+          color: var(--secondary-text-color);
           display: flex;
-          flex-wrap: wrap;
+          font-size: 0.85rem;
           gap: 8px;
-          margin-top: 4px;
-          padding-top: 8px;
+          line-height: 1.35;
+          min-width: 0;
         }
-        .colors-info {
-          align-items: center;
+        .tool-info ha-icon { --mdc-icon-size: 20px; flex: 0 0 auto; }
+        .tool-info b { color: var(--primary-text-color); font-weight: 500; }
+        .preset-report {
           color: var(--secondary-text-color);
-          display: inline-flex;
-          flex: 1;
-          font-size: 0.82rem;
-          gap: 6px;
-          min-width: 12rem;
+          font-size: 0.8rem;
+          line-height: 1.4;
         }
-        .colors-info ha-icon { --mdc-icon-size: 18px; }
-        .colors-bar .btn:disabled { cursor: default; opacity: .45; }
+        .preset-report:empty { display: none; }
         .colors-confirm {
           align-items: center;
           background: color-mix(in srgb, var(--warning-color, #ffa600) 12%, transparent);
@@ -533,8 +610,8 @@ class WueflEnergyConfigCard extends HTMLElement {
           gap: 8px;
           padding: 8px 10px;
         }
-        .colors-confirm[hidden] { display: none; }
         .colors-confirm .txt { flex: 1; font-size: 0.85rem; min-width: 12rem; }
+        .colors-confirm .btn { height: 34px; }
         .btn.danger { background: var(--error-color, #db4437); }
         .colors-done {
           align-items: center;
@@ -543,8 +620,21 @@ class WueflEnergyConfigCard extends HTMLElement {
           font-size: 0.82rem;
           gap: 6px;
         }
-        .colors-done[hidden] { display: none; }
         .colors-done ha-icon { --mdc-icon-size: 18px; }
+        .ro-cell { display: flex; justify-content: flex-end; }
+        .switch {
+          background: var(--divider-color, #ccc); border: 0; border-radius: 999px; cursor: pointer;
+          flex: 0 0 auto; height: 26px; padding: 3px; width: 46px;
+        }
+        .switch span { background: #fff; border-radius: 50%; display: block; height: 20px;
+          transition: transform .2s ease; width: 20px; }
+        .switch:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 2px; }
+        .switch[aria-checked="true"] { background: var(--primary-color, #03a9f4); }
+        .switch[aria-checked="true"] span { transform: translateX(20px); }
+        @media (max-width: 560px) {
+          .tool-row { grid-template-columns: minmax(0, 1fr); }
+          .tool-row.ro { grid-template-columns: minmax(0, 1fr) auto; }
+        }
 
         .block {
           background: var(--card-background-color, #fff);
@@ -711,7 +801,7 @@ class WueflEnergyConfigCard extends HTMLElement {
           gap: 8px;
         }
         /* Nur-Lesen-Modus: Bearbeiten ausblenden */
-        :host([read-only]) :is(.preset-bar-wrapper, .act, .btn.add) { display: none !important; }
+        :host([read-only]) :is(.edit-only, .act, .btn.add) { display: none !important; }
         .ro-banner {
           align-items: center;
           background: color-mix(in srgb, var(--primary-color, #03a9f4) 10%, transparent);
@@ -731,34 +821,37 @@ class WueflEnergyConfigCard extends HTMLElement {
       </style>
 
       <div class="container">
-        <div class="ro-banner">${icon('mdi:lock-outline')}<span>Nur-Lese-Modus: Die Zuordnung kann nicht bearbeitet werden. Ausschalten unter Einstellungen → Zugriff.</span></div>
-        <!-- Schlanke Preset-Leiste oben -->
-        <div class="preset-bar-wrapper">
-          <div class="preset-bar">
-            <select id="preset" class="preset-select">
-              <option value="">-- Vorlage / Schnelleinrichtung wählen --</option>
-              ${Object.entries(PRESETS)
-                .map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`)
-                .join('')}
+        <div class="ro-banner">${icon('mdi:lock-outline')}<span>Nur-Lese-Modus: Die Zuordnung kann nicht bearbeitet werden.</span></div>
+
+        <div class="tools">
+          <div class="tool-row edit-only">
+            <select id="preset" class="preset-select ctl" aria-label="Vorlage">
+              <option value="">Vorlage / Schnelleinrichtung wählen …</option>
+              ${presetOptions()}
             </select>
-            <button type="button" class="btn small" id="btn-apply-preset">
+            <button type="button" class="btn ctl" id="btn-apply-preset">
               ${icon('mdi:magic-staff')} Anwenden
             </button>
           </div>
-          <div id="report" class="preset-report"></div>
+          <div id="report" class="preset-report edit-only"></div>
 
-          <div class="colors-bar">
-            <span class="colors-info">${icon('mdi:palette-outline')}<span id="colors-count"></span></span>
-            <button type="button" class="btn small secondary" id="btn-reset-colors">
-              ${icon('mdi:restore')} Standardfarben wiederherstellen
+          <div class="tool-row edit-only">
+            <span class="tool-info">${icon('mdi:palette-outline')}<span id="colors-count"></span></span>
+            <button type="button" class="btn secondary ctl" id="btn-reset-colors">
+              ${icon('mdi:restore')} Standardfarben
             </button>
           </div>
-          <div class="colors-confirm" id="colors-confirm" hidden>
+          <div class="colors-confirm edit-only" id="colors-confirm" hidden>
             <span class="txt" id="colors-confirm-txt"></span>
             <button type="button" class="btn small secondary" id="btn-colors-cancel">Abbrechen</button>
             <button type="button" class="btn small danger" id="btn-colors-ok">${icon('mdi:restore')} Zurücksetzen</button>
           </div>
-          <div class="colors-done" id="colors-done" hidden>${icon('mdi:check-circle-outline')}<span></span></div>
+          <div class="colors-done edit-only" id="colors-done" hidden>${icon('mdi:check-circle-outline')}<span></span></div>
+
+          <div class="tool-row ro sep" id="ro-row">
+            <span class="tool-info">${icon('mdi:lock-outline')}<span><b>Nur lesen</b> – sperrt Regler, Schalter und die Zuordnung, zum Weitergeben an andere. Die Automation regelt weiter.</span></span>
+            <span class="ro-cell"><button class="switch" id="ro-switch" role="switch" aria-checked="false" aria-label="Nur lesen" type="button"><span></span></button></span>
+          </div>
         </div>
 
         <div id="blocks"></div>
@@ -806,6 +899,10 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.btnResetColors.addEventListener('click', () => this.#askResetColors());
     $('#btn-colors-cancel').addEventListener('click', () => { this.#els.colorsConfirm.hidden = true; });
     $('#btn-colors-ok').addEventListener('click', () => this.#resetColors());
+    this.#els.tools = $('.tools');
+    this.#els.roRow = $('#ro-row');
+    this.#els.roSwitch = $('#ro-switch');
+    this.#els.roSwitch.addEventListener('click', () => this.#setReadOnly(!this.#config?.settings?.read_only));
     this.#els.btnClose.addEventListener('click', () => this.#closeDialog());
     this.#els.btnCancel.addEventListener('click', () => this.#closeDialog());
     this.#els.btnSave.addEventListener('click', () => this.#commit());
@@ -894,13 +991,29 @@ class WueflEnergyConfigCard extends HTMLElement {
       if (key === 'replaces') continue;
       if (Array.isArray(spec)) {
         // Vorhandene Einträge ergänzen (Vorlage 1 → Eintrag 1 …), fehlende anlegen
-        const existing = asList(next[key]);
-        const rows = spec
-          .map((t, i) => (existing[i]
-            ? fill(t, existing[i], key)
-            : { id: `${key}_${Date.now().toString(36)}_${i}`, ...fill(t, {}, key) }))
-          .filter((r) => Object.keys(r).some((k) => isPattern(r[k])));
-        if (rows.length) next[key] = [...rows, ...existing.slice(spec.length)];
+        // Je Vorlagen-Eintrag den passenden vorhandenen Eintrag suchen:
+        // erst einen vom selben Gerät (ein Feld passt schon zum Muster),
+        // dann einen noch leeren – sonst neu anlegen. So landet z. B. eine
+        // go-e-Vorlage nicht in einer schon eingerichteten Mennekes.
+        const rows = asList(next[key]).map((r) => ({ ...r }));
+        const taken = new Set();
+        const hasEntity = (r) => Object.entries(r).some(([k, v]) => k !== 'id' && usable(v, `${key}.${k}`) && asList(v).some(isPattern));
+        spec.forEach((t, i) => {
+          const same = rows.findIndex((r, j) => !taken.has(j)
+            && Object.entries(t).some(([f, p]) => isPattern(asList(p)[0]) && matchesPattern(r[f], p)));
+          const idx = same >= 0 ? same : rows.findIndex((r, j) => !taken.has(j) && !hasEntity(r));
+          if (idx >= 0) {
+            taken.add(idx);
+            rows[idx] = fill(t, rows[idx], key);
+          } else {
+            const row = { id: `${key}_${Date.now().toString(36)}_${i}`, ...fill(t, {}, key) };
+            if (Object.keys(row).some((k) => isPattern(row[k]))) {
+              taken.add(rows.length);
+              rows.push(row);
+            }
+          }
+        });
+        next[key] = rows;
         continue;
       }
       next[key] = fill(spec, next[key], key);
@@ -923,6 +1036,14 @@ class WueflEnergyConfigCard extends HTMLElement {
 
   #render() {
     if (!this.#built || !this.#config) return;
+
+    // Nur lesen: nur Admins dürfen umschalten (landet in der Zuordnung)
+    const admin = !!this.#hass?.user?.is_admin;
+    const ro = !!this.#config.settings?.read_only;
+    this.#els.roSwitch.setAttribute('aria-checked', String(ro));
+    this.#els.roRow.hidden = !admin;
+    this.#els.roRow.classList.toggle('sep', !ro);
+    this.#els.tools.hidden = ro && !admin;
 
     const colors = countColors(this.#config);
     this.#els.colorsCount.textContent = colors
@@ -1194,6 +1315,21 @@ class WueflEnergyConfigCard extends HTMLElement {
     done.hidden = false;
     clearTimeout(this.#doneTimer);
     this.#doneTimer = setTimeout(() => { done.hidden = true; }, 6000);
+  }
+
+  /** Nur-Lesen-Modus umschalten – direkt speichern, auch wenn er gerade an ist. */
+  async #setReadOnly(on) {
+    if (!this.#hass?.user?.is_admin) return;
+    const next = { ...this.#config, settings: { ...(this.#config.settings ?? {}), read_only: on } };
+    this.#config = next;
+    this.toggleAttribute('read-only', on);
+    this.#render();
+    try {
+      await saveConfig(this.#hass, next);
+    } catch (err) {
+      console.error('Nur-Lesen-Modus konnte nicht gespeichert werden:', err);
+      this.#load();
+    }
   }
 
   async #persist(config) {

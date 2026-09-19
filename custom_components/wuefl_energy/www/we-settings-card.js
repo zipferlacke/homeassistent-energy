@@ -6,7 +6,7 @@
 import {
   adoptSheet, num, icon, esc,
   registerCard, centralConfig, mergeConfig, entityIds, statesChanged,
-  isReadOnly, applyReadOnly, rawConfig, saveConfig,
+  isReadOnly, applyReadOnly,
   COLORS, WueflFormEditor, sel, GRID_CSS,
 } from './we-shared.js';
 
@@ -159,7 +159,6 @@ class WueflEnergySettingsCard extends HTMLElement {
         price_import_entity: adjustable(getEntity(all.grid?.price_import)),
         price_export_entity: adjustable(getEntity(all.grid?.price_export)),
         wallbox_count: (all.wallboxes ?? []).length,
-        read_only: !!all.settings?.read_only,
       };
 
       this.#apply();
@@ -250,17 +249,6 @@ class WueflEnergySettingsCard extends HTMLElement {
         </div>
       </div>
 
-      <div class="group access">
-        <h3>Zugriff</h3>
-        <div class="row">
-          <div class="head">
-            <span class="label">Nur lesen</span>
-            <button class="switch switch-ro" role="switch" aria-checked="false" type="button"><span></span></button>
-          </div>
-          <span class="note ro-note">Sperrt alle Regler, Schalter und die Zuordnung in diesem Dashboard – zum Weitergeben an andere. Die Automation regelt weiter.</span>
-        </div>
-      </div>
-
       <div class="group">
         <h3>Home Assistant Entitäten zuordnen</h3>
         <button type="button" class="btn open-config">
@@ -297,11 +285,6 @@ class WueflEnergySettingsCard extends HTMLElement {
       empty: q('.hint.empty'),
     };
 
-    this.#els.roSwitch = q('.switch-ro');
-    this.#els.roNote = q('.ro-note');
-    this.#els.roSwitch.addEventListener('click', () => {
-      this.#setReadOnly(this.#els.roSwitch.getAttribute('aria-checked') !== 'true');
-    });
 
     this.#els.useSwitch?.addEventListener('click', () => {
       const on = this.#els.useSwitch.getAttribute('aria-checked') === 'true';
@@ -355,13 +338,6 @@ class WueflEnergySettingsCard extends HTMLElement {
   #toggle(id, on) { const d = this.#domain(id); if (d && !isReadOnly()) this.#hass.callService(d, on ? 'turn_on' : 'turn_off', { entity_id: id }); }
   #setOption(id, option) { const d = this.#domain(id); if (d && !isReadOnly()) this.#hass.callService(d, 'select_option', { entity_id: id, option }); }
 
-  /** Nur-Lesen-Modus umschalten – landet in der Zuordnung, also nur für Admins. */
-  async #setReadOnly(on) {
-    if (!this.#hass?.user?.is_admin) return;
-    const raw = await rawConfig(this.#hass);
-    await saveConfig(this.#hass, { ...raw, settings: { ...(raw.settings ?? {}), read_only: on } });
-  }
-
   #has(key) { return !!this.#config[key] && !!this.#hass.states[this.#config[key]]; }
 
   #syncControl(key, entityId, fallback) {
@@ -393,13 +369,6 @@ class WueflEnergySettingsCard extends HTMLElement {
       const h = this.#hass;
 
       applyReadOnly(this);
-      const admin = !!h.user?.is_admin;
-      this.#els.roSwitch.setAttribute('aria-checked', String(!!c.read_only));
-      this.#els.roSwitch.disabled = !admin;
-      this.#els.roSwitch.style.opacity = admin ? '' : '.55';
-      this.#els.roNote.textContent = admin
-        ? 'Sperrt alle Regler, Schalter und die Zuordnung in diesem Dashboard – zum Weitergeben an andere. Die Automation regelt weiter.'
-        : 'Nur Administratoren können den Nur-Lese-Modus ändern.';
 
       const hasWallbox = (c.wallbox_count ?? 0) > 0;
       const hasUse = hasWallbox && this.#has('battery_use_entity');

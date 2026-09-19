@@ -8,9 +8,10 @@
 #   3. HA neu starten, im W-Energie Dashboard unter Zuordnung die Vorlage
 #      "MENNEKES AMTRON CHARGE CONTROL" anwenden
 #
-# Unten am Ende: Sollstrom-Sensor + Automation, die die Ladeleistung aus dem
-# W-Energie Dashboard (Helfer "Soll-Ladeleistung" / "Laden Freischalten")
-# auf die HEMS-Stromvorgabe der Wallbox überträgt.
+# Gesteuert wird über die Zahl "Mennekes HEMS Stromvorgabe" (0 A = Pause).
+# Die Vorlage trägt sie in der Zuordnung unter "Steuerung durch die
+# Automation" ein – die W-Energie-Automation schreibt den Ladestrom dann
+# selbst dorthin, ein eigenes Umrechnungs-Paket ist nicht mehr nötig.
 # Basierend auf der Spezifikation: https://www.mennekes.de/fileadmin/MEN-Deutschland/emobility/01_documents/04_installer/ECU_modbus_tcp_server_spec_rev_1.07.pdf
 # Lokal "mennekes_modbus_charge_controll.pdf"
 # ==============================================================================
@@ -367,50 +368,3 @@ template:
           {% else %}
             {{ old }}
           {% endif %}
-
-    # --- W-ENERGIE: Sollstrom aus der Zuordnung --------------------------------
-    # Rechnet die Soll-Ladeleistung (W) der W-Energie-Automation in die
-    # HEMS-Stromvorgabe (A) um. Gefunden wird die Wallbox in der Zuordnung über
-    # ihren Leistungssensor – der Name der Wallbox ist damit egal.
-  - sensor:
-    - name: "Mennekes W-Energie Sollstrom"
-      unique_id: mennekes_we_sollstrom
-      icon: mdi:current-ac
-      unit_of_measurement: "A"
-      state: >
-        {% set cfg = state_attr('sensor.we_config', 'config') or {} %}
-        {% set wb = (cfg.get('wallboxes') or [])
-             | selectattr('live', 'defined')
-             | selectattr('live', 'eq', 'sensor.mennekes_aktuelle_ladeleistung')
-             | list | first | default({}) %}
-        {% set aktiv = states(wb.get('activate_station', '')) | float(0) > 0 %}
-        {% set watt = states(wb.get('send_power', '')) | float(0) %}
-        {% set phasen = (wb.get('more') or {}).get('phases_value') or 3 %}
-        {% set max_a = state_attr('number.mennekes_hems_stromvorgabe', 'max') | int(16) %}
-        {% set ampere = (watt / (230 * phasen)) | round(0, 'floor') | int %}
-        {# unter 6 A lädt kein Auto – dann 0 A = Pause #}
-        {{ 0 if not aktiv or ampere < 6 else [ampere, max_a] | min }}
-
-automation:
-  - id: mennekes_we_stromvorgabe
-    alias: "Mennekes – Ladeleistung aus W-Energie übernehmen"
-    mode: queued
-    max: 2
-    trigger:
-      - trigger: state
-        entity_id: sensor.mennekes_w_energie_sollstrom
-      # Die Wallbox verliert die Vorgabe nach einem Neustart – regelmäßig nachziehen
-      - trigger: time_pattern
-        minutes: "/1"
-    condition:
-      - condition: template
-        value_template: >
-          {{ states('sensor.mennekes_w_energie_sollstrom') | is_number
-             and states('number.mennekes_hems_stromvorgabe') | float(-1)
-                 != states('sensor.mennekes_w_energie_sollstrom') | float }}
-    action:
-      - action: number.set_value
-        target:
-          entity_id: number.mennekes_hems_stromvorgabe
-        data:
-          value: "{{ states('sensor.mennekes_w_energie_sollstrom') | int }}"

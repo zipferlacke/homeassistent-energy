@@ -876,8 +876,9 @@ export const CHARGE_STATES = {
 const STATE_PATTERNS = [
   ['frei', /kein auto|kein fahrzeug|nicht angesteckt|nicht verbunden/i],
   ['fehler', /fehler|störung|stoerung|fault|error|state\s*e/i],
-  ['verbunden', /lädt nicht|laedt nicht|nicht laden|state\s*b|suspendedevse/i],
-  ['laedt', /lädt|laedt|laden aktiv|charging|state\s*c|state\s*d/i],
+  ['verbunden', /lädt nicht|laedt nicht|nicht laden|state\s*b|suspendedevse|warte auf fahrzeug|wait for car/i],
+  // go-e meldet schlicht "Laden" / "Charging"
+  ['laedt', /lädt|laedt|laden aktiv|^\s*laden\s*$|charging|state\s*c|state\s*d/i],
   ['pausiert', /pausiert|suspended|paused|unterbrochen/i],
   ['fertig', /beendet|abgeschlossen|fertig|finish|complete/i],
   ['verbunden', /angesteckt|angeschlossen|belegt|vorbereitung|preparing|connected|occupied/i],

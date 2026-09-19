@@ -1,11 +1,19 @@
 /* ------------------------------------------------------------------ *
  * PRESETS (Vorlagen)
- * ------------------------------------------------------------------ */
+ * ------------------------------------------------------------------ *
+ * label   Gerät, wie es im Auswahlmenü steht
+ * source  woher die Sensoren kommen (Integration/Paket) – steht dahinter
+ * group   Abschnitt im Auswahlmenü
+ * Entitäten sind feste IDs oder Muster: "*" = beliebig, "#" = ein
+ * Namensteil ohne "_" (z. B. die Seriennummer). Listen = erster Treffer.
+ */
 
 export const PRESETS = {
     // Passend zu docs/modbus_sungrow.yaml (mkaiser, Sungrow SHx)
     sungrow: {
-        label: 'Sungrow Wechselrichter (SHx, mkaiser)',
+        label: 'Sungrow Wechselrichter SHx',
+        group: 'Wechselrichter',
+        source: 'Modbus-Paket von mkaiser (docs/modbus_sungrow.yaml)',
         hint: 'Entitäten aus docs/modbus_sungrow.yaml. Netzleistung braucht den direkt angeschlossenen Smart Meter.',
         // Fehlzuordnungen älterer Vorlagen, die überschrieben werden dürfen
         replaces: {
@@ -53,7 +61,9 @@ export const PRESETS = {
     },
     // Passend zu docs/modbus_mennekes.yaml
     mennekes_amtron_charge_control: {
-        label: 'MENNEKES AMTRON CHARGE CONTROL',
+        label: 'MENNEKES AMTRON Charge Control',
+        group: 'Wallbox',
+        source: 'Modbus-Paket (docs/modbus_mennekes.yaml)',
         hint: 'Entitäten aus docs/modbus_mennekes.yaml. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
         replaces: {
             'wallboxes.total': ['sensor.mennekes_wallbox_gesamtzahlerstand'],
@@ -69,12 +79,55 @@ export const PRESETS = {
                 more: {
                     phases_value: 3,
                     max_power_value: 11000,
+                    min_current_value: 6,
+                },
+                // Pause über 0 A – die HEMS-Vorgabe erlaubt 0
+                control: {
+                    current_set: 'number.mennekes_hems_stromvorgabe',
+                },
+            },
+        ],
+    },
+    // HACS-Integration "go-eCharger API v2" von marq24 (goecharger_api2).
+    // Entitäten: <domain>.goe_<seriennummer>_<api-key>, im Cloud-Modus goe_wan_…
+    goe_charger: {
+        label: 'go-e Charger (Gemini, Gemini flex, HOMEfix …)',
+        group: 'Wallbox',
+        source: 'HACS: go-eCharger API v2 (marq24)',
+        hint: 'Braucht die HACS-Integration „go-eCharger API v2“ von marq24 (lokal; in der go-e App „HTTP API v2“ aktivieren). ' +
+            'Maximale Ladeleistung unter „Hardware & Grenzen“ an deine Wallbox anpassen (11 oder 22 kW). ' +
+            'Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
+        wallboxes: [
+            {
+                name: 'go-e',
+                live: ['sensor.goe_#_nrg_11', 'sensor.goe_wan_#_nrg_11'],
+                total: ['sensor.goe_#_eto', 'sensor.goe_wan_#_eto'],
+                total_session: ['sensor.goe_#_wh', 'sensor.goe_wan_#_wh'],
+                status: ['sensor.goe_#_car_value', 'sensor.goe_wan_#_car_value'],
+                more: {
+                    phases_value: 3,
+                    max_power_value: 11000,
+                    min_current_value: 6,
+                },
+                control: {
+                    // "Angeforderter Strom" 6–32 A
+                    current_set: ['number.goe_#_amp', 'number.goe_wan_#_amp'],
+                    // "Manueller Lademodus": 0 = neutral, 1 = nicht laden, 2 = laden
+                    charge_stop: ['select.goe_#_frc', 'select.goe_wan_#_frc'],
+                    stop_option: '1',
+                    start_option: '0',
+                    // "Phasen Wechselmodus": 0 = auto, 1 = 1-phasig, 2 = 3-phasig
+                    phase_switch: ['select.goe_#_psm', 'select.goe_wan_#_psm'],
+                    phase1_option: '1',
+                    phase3_option: '2',
                 },
             },
         ],
     },
     ha_default: {
         label: 'Standard Home Assistant',
+        group: 'Allgemein',
+        source: 'übliche Sensornamen',
         hint: 'Sucht nach Standard-Entitäten mit üblichen Namen.',
         grid: {
             live: ['sensor.grid_power', 'sensor.netzleistung'],
@@ -100,7 +153,9 @@ export const PRESETS = {
         },
     },
     fronius: {
-        label: 'Fronius Inverter',
+        label: 'Fronius Symo / Gen24',
+        group: 'Wechselrichter',
+        source: 'Fronius-Integration von HA',
         hint: 'Sucht nach typischen Fronius Symo / Gen24 Sensoren.',
         grid: {
             live: ['sensor.solarnet_power_grid'],
