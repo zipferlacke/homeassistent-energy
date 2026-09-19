@@ -767,8 +767,12 @@ class WueflEnergyChart extends HTMLElement {
                     }
 
                     const itemsHtml = params.map(p => {
-                        const seriesObj = processedSeries[p.seriesIndex]
-                            ?? processedSeries.find(s => s.name === p.seriesName || s.entity === p.seriesName);
+                        // Über den Namen suchen, nicht über den Index: ha-chart-base
+                        // fügt eigene Reihen hinzu (z. B. die Jetzt-Linie), dadurch
+                        // passten Beschriftung und Farbe um eine Reihe nicht mehr
+                        const seriesObj = processedSeries.find(
+                            s => (s.legend_group || s.name || s.entity) === p.seriesName
+                        ) ?? processedSeries[p.seriesIndex];
                         const unit = seriesObj?.chartTargetUnit || '';
                         const label = seriesObj?.name || p.seriesName;
                         const val = p.value[1];
