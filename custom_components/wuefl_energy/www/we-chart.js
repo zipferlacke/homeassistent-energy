@@ -17,6 +17,8 @@ class WueflEnergyChart extends HTMLElement {
     // Laufende Nummer der Abfrage: schnelles Hin- und Herschalten startet
     // mehrere Abfragen, nur die zuletzt gestartete darf zeichnen.
     #seq = 0;
+    #fs = null;        // <dialog> für die Vollbild-Ansicht
+    #fsChart = null;
 
     #unitFactors = {
         'mW': 0.001, 'W': 1, 'kW': 1000, 'MW': 1000000, 'GW': 1000000000,
@@ -36,6 +38,9 @@ class WueflEnergyChart extends HTMLElement {
 
     set config(config) {
         this.#config = config;
+        // Im Vollbild ist Zoomen/Verschieben gleich aktiv
+        if (config?._fullscreen) this.#isActive = true;
+        if (this.#fs?.open) this.#fsChart.config = { ...config, title: '', _fullscreen: true };
         if (this.#built) this.#refresh();
     }
 
@@ -46,6 +51,7 @@ class WueflEnergyChart extends HTMLElement {
      */
     set hass(hass) {
         this.#hass = hass;
+        if (this.#fs?.open) this.#fsChart.hass = hass;
         if (!this.#built) this.#build();
         if (this.#config?.series && Date.now() - this.#lastFetch > 300000) this.#refresh();
     }
@@ -97,8 +103,31 @@ class WueflEnergyChart extends HTMLElement {
         .chart-slot { flex: 1; min-height: 0; position: relative; padding: 0px 8px 4px 8px; display: flex; flex-direction: column; }
         ha-chart-base { width: 100%; height: 100%; flex: 1; display: block; }
         .error { color: var(--error-color, red); padding: 16px; }
+        .hright { align-items: center; display: flex; gap: 4px; margin-left: auto; }
+        .fs-btn {
+          align-items: center; background: none; border: 0; border-radius: 50%; color: var(--secondary-text-color);
+          cursor: pointer; display: inline-flex; height: 32px; justify-content: center; padding: 0; width: 32px;
+        }
+        .fs-btn:hover { background: var(--secondary-background-color, rgba(127,127,127,.12)); color: var(--primary-text-color); }
+        .fs-btn ha-icon { --mdc-icon-size: 22px; }
+        :host([data-fullscreen]) .fs-btn { display: none; }
+        dialog.fs {
+          background: var(--card-background-color, var(--primary-background-color, #fff)); border: 0;
+          box-sizing: border-box; color: var(--primary-text-color); display: none; flex-direction: column;
+          height: 100dvh; margin: 0; max-height: none; max-width: none; padding: 8px 8px 12px; width: 100vw;
+        }
+        dialog.fs[open] { display: flex; }
+        dialog.fs::backdrop { background: rgba(0, 0, 0, .5); }
+        dialog.fs .fs-head { align-items: center; display: flex; gap: 8px; padding: 4px 8px 8px; }
+        dialog.fs .fs-title { flex: 1; font-size: 18px; font-weight: 500; }
+        dialog.fs .fs-body { flex: 1; min-height: 0; }
+        dialog.fs .fs-body we-chart { display: block; height: 100%; }
       </style>
-      <div class="header"><div class="title"></div><div class="chip"></div></div>
+      <div class="header"><div class="title"></div>
+        <div class="hright"><div class="chip"></div>
+          <button type="button" class="fs-btn" title="Vollbild" aria-label="Diagramm im Vollbild öffnen"><ha-icon icon="mdi:fullscreen"></ha-icon></button>
+        </div>
+      </div>
       <div class="legend-slot-top"></div>
       <div class="chart-slot">
         <div class="legend-slot-inner"></div>
@@ -117,6 +146,13 @@ class WueflEnergyChart extends HTMLElement {
         };
         this.#built = true;
 
+        const fsBtn = card.querySelector('.fs-btn');
+        fsBtn.hidden = this.#config?.fullscreen === false || !!this.#config?._fullscreen;
+        fsBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // sonst schaltet der Klick die Karte in den Zoom-Modus
+            this.#openFullscreen();
+        });
+
         card.addEventListener('click', () => {
             if (!this.#isActive) {
                 this.#isActive = true;
@@ -126,12 +162,47 @@ class WueflEnergyChart extends HTMLElement {
         });
 
         window.addEventListener('pointerdown', (e) => {
-            if (this.#isActive && !e.composedPath().includes(this)) {
+            if (this.#isActive && !this.#config?._fullscreen && !e.composedPath().includes(this)) {
                 this.#isActive = false;
                 this.classList.remove('is-active');
                 this.#refresh();
             }
         });
+    }
+
+    /**
+     * Vollbild: dasselbe Diagramm groß in einem Dialog. Der Dialog liegt in
+     * der obersten Ebene des Browsers – Transformationen im Dashboard stören
+     * ihn nicht. Wo erlaubt (Android, Desktop) zusätzlich echtes Vollbild;
+     * auf dem iPhone gibt es das für normale Elemente nicht.
+     */
+    #openFullscreen() {
+        if (!this.#fs) {
+            const dlg = document.createElement('dialog');
+            dlg.className = 'fs';
+            dlg.innerHTML = `
+                <div class="fs-head"><span class="fs-title"></span>
+                  <button type="button" class="fs-btn close" title="Schließen" aria-label="Vollbild schließen"><ha-icon icon="mdi:fullscreen-exit"></ha-icon></button>
+                </div>
+                <div class="fs-body"></div>`;
+            dlg.querySelector('.close').addEventListener('click', () => dlg.close());
+            dlg.addEventListener('close', () => {
+                if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+                dlg.querySelector('.fs-body').replaceChildren();
+                this.#fsChart = null;
+            });
+            this.shadowRoot.appendChild(dlg);
+            this.#fs = dlg;
+        }
+        const chart = document.createElement('we-chart');
+        chart.setAttribute('data-fullscreen', '');
+        this.#fs.querySelector('.fs-title').textContent = this.#config.title || '';
+        this.#fs.querySelector('.fs-body').replaceChildren(chart);
+        this.#fsChart = chart;
+        this.#fs.showModal();
+        chart.config = { ...this.#config, title: '', _fullscreen: true };
+        chart.hass = this.#hass;
+        this.#fs.requestFullscreen?.().catch(() => {});
     }
 
     #resolveColor(colorStr) {

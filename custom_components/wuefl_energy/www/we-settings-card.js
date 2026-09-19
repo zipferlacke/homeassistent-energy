@@ -9,6 +9,7 @@ import {
   isReadOnly, applyReadOnly,
   COLORS, WueflFormEditor, sel, GRID_CSS,
 } from './we-shared.js';
+import './we-data-io.js';
 
 const CSS = `
 .card {
@@ -120,6 +121,7 @@ class WueflEnergySettingsCard extends HTMLElement {
       const first = !this.#hass;
       const prev = this.#hass;
       this.#hass = hass;
+      if (this.#els.dataIo) this.#els.dataIo.hass = hass;
       if (first) {
         this.#loadCentral();
         window.addEventListener('we-config-changed', () => this.#loadCentral());
@@ -257,6 +259,11 @@ class WueflEnergySettingsCard extends HTMLElement {
         <p class="hint" style="margin-top:.6rem">Welche Entität wofür steht — Netz, Solaranlage, Batterie, Wallboxen und Fahrzeuge.</p>
       </div>
 
+      <div class="group data">
+        <h3>Daten exportieren & importieren</h3>
+        <we-data-io></we-data-io>
+      </div>
+
       <p class="hint empty" hidden>Sobald du in der Zuordnung eine Wallbox anlegst, erscheinen hier automatisch die Laderegler — die Helfer dafür legt die Integration selbst an, ohne dass du etwas zuordnen musst.</p>
     `;
     root.appendChild(card);
@@ -283,7 +290,9 @@ class WueflEnergySettingsCard extends HTMLElement {
       limitNum: q('.control.limit input[type="number"]'),
       prio: q('.row.prio'), choice: q('.choice'),
       empty: q('.hint.empty'),
+      dataIo: q('we-data-io'),
     };
+    if (this.#hass) this.#els.dataIo.hass = this.#hass;
 
 
     this.#els.useSwitch?.addEventListener('click', () => {
