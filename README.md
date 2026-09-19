@@ -82,9 +82,11 @@ eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 
 Die W-Energie Automation (Wallbox und Hausakku) installiert die Integration
 selbst: Sie traegt sie nach dem Start in `automations.yaml` ein und haelt sie
-bei jedem Update aktuell. Den Stand zeigt die Ansicht *Zuordnung* oben.
-Liegt noch eine alte Kopie unter `config/packages/wuefl_automation.yaml`,
-diese bitte loeschen – sonst wuerde doppelt geregelt.
+bei jedem Update aktuell – dafuer ist nichts zu tun. Eine alte Kopie unter
+`config/packages/wuefl_automation.yaml` benennt sie in
+`wuefl_automation.yaml.alt` um, damit nicht doppelt geregelt wird.
+*Nur lesen* in der Zuordnung pausiert die Automation: Solange es an ist, wird
+nichts geschrieben; danach regelt sie sofort wieder.
 
 ## Wie die Ansichten entstehen
 

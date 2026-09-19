@@ -530,31 +530,7 @@ class WueflEnergyConfigCard extends HTMLElement {
     if (this.#built) this.#render();
   }
 
-  /** Stand der mitgelieferten Automation anzeigen (install = neu eintragen). */
-  async #loadAutomation(install = false) {
-    if (!this.#hass || !this.#els.autoText) return;
-    let st;
-    try {
-      st = await this.#hass.callWS({ type: install ? 'we/automation_install' : 'we/automation' });
-    } catch (err) {
-      st = { mode: 'error', error: err?.message ?? String(err) };
-    }
-    const admin = !!this.#hass.user?.is_admin;
-    const name = '<b>W-Energie Automation</b>';
-    const texts = {
-      automations: `${name} <span class="ok">✓ installiert und aktiv</span> – regelt Wallbox und Hausakku, wird mit jedem Update der Integration aktualisiert.`,
-      package: `${name} <span class="warn">läuft noch über das alte Paket</span> config/packages/wuefl_automation.yaml. Datei löschen und HA neu starten – dann installiert die Integration sie selbst und hält sie aktuell.`,
-      not_loaded: `${name} <span class="warn">ist eingetragen, wird aber nicht geladen</span>: In configuration.yaml fehlt die Zeile <code>automation: !include automations.yaml</code>.`,
-      unsupported: `${name} <span class="warn">konnte nicht eingetragen werden</span>: automations.yaml hat ein unbekanntes Format.`,
-      error: `${name} <span class="warn">konnte nicht eingetragen werden</span>: ${esc(st.error ?? '')}`,
-      pending: `${name} wird eingetragen, sobald Home Assistant fertig gestartet ist.`,
-    };
-    this.#els.autoText.innerHTML = texts[st.mode] ?? texts.pending;
-    this.#els.btnAuto.hidden = !admin || st.mode === 'automations';
-  }
-
   async #load() {
-    this.#loadAutomation();
     this.#config = normalizeConfig(await rawConfig(this.#hass));
     this.toggleAttribute('read-only', !!this.#config.settings?.read_only);
     if (this.#built) this.#render();
@@ -659,8 +635,6 @@ class WueflEnergyConfigCard extends HTMLElement {
         .tools-head h3 { align-items: center; display: flex; font-size: 1.05rem; font-weight: 600; gap: 8px; margin: 0; }
         .tools-head h3 ha-icon { --mdc-icon-size: 20px; color: var(--primary-color, #03a9f4); }
         .tools-head span { color: var(--secondary-text-color); font-size: 0.82rem; line-height: 1.4; }
-        .tool-info .ok { color: var(--success-color, #43a047); }
-        .tool-info .warn { color: var(--warning-color, #ffa600); }
         .preset-tabs {
           background: var(--card-background-color, #fff);
           border: 1px solid var(--divider-color, #ccc);
@@ -951,11 +925,6 @@ class WueflEnergyConfigCard extends HTMLElement {
           <div id="preset-info" class="preset-info edit-only" hidden></div>
           <div id="report" class="preset-report edit-only"></div>
 
-          <div class="tool-row sep" id="auto-row">
-            <span class="tool-info">${icon('mdi:robot-outline')}<span id="auto-text"><b>W-Energie Automation</b> – Stand wird geladen …</span></span>
-            <button type="button" class="btn secondary ctl" id="btn-auto" hidden>${icon('mdi:refresh')} Erneut installieren</button>
-          </div>
-
           <div class="tool-row edit-only">
             <span class="tool-info">${icon('mdi:palette-outline')}<span id="colors-count"></span></span>
             <button type="button" class="btn secondary ctl" id="btn-reset-colors">
@@ -970,7 +939,7 @@ class WueflEnergyConfigCard extends HTMLElement {
           <div class="colors-done edit-only" id="colors-done" hidden>${icon('mdi:check-circle-outline')}<span></span></div>
 
           <div class="tool-row ro sep" id="ro-row">
-            <span class="tool-info">${icon('mdi:lock-outline')}<span><b>Nur lesen</b> – sperrt Regler, Schalter und die Zuordnung, zum Weitergeben an andere. Die Automation regelt weiter.</span></span>
+            <span class="tool-info">${icon('mdi:lock-outline')}<span><b>Nur lesen</b> – sperrt Regler, Schalter und die Zuordnung, zum Weitergeben an andere. Pausiert auch die Automation – solange es an ist, wird nichts geschrieben.</span></span>
             <span class="ro-cell"><button class="switch" id="ro-switch" role="switch" aria-checked="false" aria-label="Nur lesen" type="button"><span></span></button></span>
           </div>
         </div>
@@ -1030,10 +999,6 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.roRow = $('#ro-row');
     this.#els.roSwitch = $('#ro-switch');
     this.#els.roSwitch.addEventListener('click', () => this.#setReadOnly(!this.#config?.settings?.read_only));
-    this.#els.autoText = $('#auto-text');
-    this.#els.btnAuto = $('#btn-auto');
-    this.#els.btnAuto.addEventListener('click', () => this.#loadAutomation(true));
-    if (this.#hass) this.#loadAutomation();
     this.#els.btnClose.addEventListener('click', () => this.#closeDialog());
     this.#els.btnCancel.addEventListener('click', () => this.#closeDialog());
     this.#els.btnSave.addEventListener('click', () => this.#commit());

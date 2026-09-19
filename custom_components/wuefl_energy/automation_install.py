@@ -5,8 +5,9 @@ Editor von HA speichert) und bei jedem Start auf den Stand der Integration
 gebracht. Erkannt wird sie an ihrer id; alle anderen Automationen bleiben
 unverändert.
 
-Liegt noch das alte Paket config/packages/wuefl_automation.yaml, wird
-nichts installiert – sonst liefe die Regelung doppelt.
+Liegt noch das alte Paket config/packages/wuefl_automation.yaml mit dieser
+Automation, wird es in wuefl_automation.yaml.alt umbenannt – sonst liefe die
+Regelung doppelt. Der Nutzer muss dafür nichts tun.
 """
 from __future__ import annotations
 
@@ -31,8 +32,22 @@ def _install(automations_path: str, package_path: str) -> dict:
     from homeassistant.util.file import write_utf8_file_atomic
     from homeassistant.util.yaml import dump, load_yaml
 
-    if Path(package_path).exists():
-        return {"mode": "package", "changed": False}
+    changed = False
+    package = Path(package_path)
+    if package.exists():
+        try:
+            old = load_yaml(str(package)) or {}
+            ids = [str(a.get("id")) for a in old.get("automation") or [] if isinstance(a, dict)]
+        except Exception:
+            ids = []
+        if AUTOMATION_ID not in ids:
+            return {"mode": "package", "changed": False}
+        package.replace(package.with_name(package.name + ".alt"))
+        _LOGGER.warning(
+            "Altes Paket %s nach %s.alt umbenannt – die Integration installiert die Automation selbst",
+            package, package.name,
+        )
+        changed = True
 
     ours = load_yaml(str(SOURCE))["automation"][0]
     ours = {**ours, "description": NOTE}
@@ -54,7 +69,7 @@ def _install(automations_path: str, package_path: str) -> dict:
         None,
     )
     if index is not None and data[index] == ours:
-        return {"mode": "automations", "changed": False}
+        return {"mode": "automations", "changed": changed}
     if index is None:
         data.append(ours)
     else:

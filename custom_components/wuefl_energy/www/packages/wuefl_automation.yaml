@@ -5,7 +5,11 @@
 # Wird von der Integration automatisch in automations.yaml eingetragen und
 # bei jedem Update aktualisiert – nicht mehr von Hand kopieren. Liegt diese
 # Datei noch unter config/packages/, bitte dort löschen (sonst läuft die
-# Regelung doppelt; die Integration trägt dann nichts ein).
+# Regelung doppelt). Die Integration benennt eine alte Kopie dort
+# selbst in wuefl_automation.yaml.alt um.
+#
+# "Nur lesen" (Zuordnung) pausiert die Regelung: solange es an ist, wird
+# nichts geschrieben. Danach regelt sie beim nächsten Durchlauf wieder.
 #
 # Alle Entitäten kommen aus der Zuordnung (sensor.we_config, Attribut
 # "config"). Dort steht je Pfad entweder der Helfer der Integration
@@ -45,6 +49,9 @@ automation:
           - switch.we_charge_battery_with_grid_bad_weather
           - number.we_battery_ussage_limit_charging
           - number.we_price_limit_charging
+      # Zuordnung gespeichert (z. B. "Nur lesen" aus) – sofort wieder regeln
+      - trigger: state
+        entity_id: sensor.we_config
       # Wallbox-Helfer heißen nach der Wallbox – daher über die Zuordnung
       - trigger: template
         value_template: >
@@ -54,6 +61,13 @@ automation:
              | select('string') | list %}
           {{ ids | count > 0 and
              expand(ids) | map(attribute='last_changed') | max > now() - timedelta(seconds=5) }}
+
+    # "Nur lesen" in der Zuordnung pausiert alle Schreibvorgänge
+    conditions:
+      - condition: template
+        value_template: >
+          {% set cfg = state_attr('sensor.we_config', 'config') or {} %}
+          {{ not ((cfg.get('settings') or {}).get('read_only') or false) }}
 
     variables:
       # --- Zuordnung ------------------------------------------------------
