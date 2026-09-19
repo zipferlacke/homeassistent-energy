@@ -47,7 +47,9 @@ async def _integration_version(hass: HomeAssistant) -> str:
     hochgezählt, und die Karten importieren sich gegenseitig ohne ?v=. Ein
     Browser (vor allem die Companion-App) mischt dann alte und neue Module,
     der Import scheitert und die Strategy wird nie registriert. Deshalb fließt
-    zusätzlich ein Fingerabdruck aller Dateien in www/ mit ein. Er kommt aus
+    zusätzlich ein Fingerabdruck aller Dateien der Integration mit ein – auch
+    der Python-Dateien, damit die Kennung wirklich den laufenden Stand
+    beschreibt und sich mit dem Repository vergleichen lässt. Er kommt aus
     dem Inhalt, nicht aus dem Datum – gleicher Stand ergibt also überall
     dieselbe Kennung, und sie steht als Attribut "version" an sensor.we_config.
     """
@@ -58,9 +60,9 @@ async def _integration_version(hass: HomeAssistant) -> str:
         except Exception:
             version = "0"
         digest = hashlib.sha1()
-        for file in sorted((base / "www").rglob("*")):
-            if file.is_file():
-                digest.update(file.name.encode())
+        for file in sorted(base.rglob("*")):
+            if file.is_file() and "__pycache__" not in file.parts:
+                digest.update(str(file.relative_to(base)).encode())
                 digest.update(file.read_bytes())
         return f"{version}-{digest.hexdigest()[:8]}"
 
