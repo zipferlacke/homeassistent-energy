@@ -381,16 +381,24 @@ class WueflEnergyChart extends HTMLElement {
             }
         }
 
+        // Gerechnete Zähler (z. B. Hausverbrauch = PV − Einspeisung + Bezug …)
+        // springen kurz zurück, wenn ihre Einzelwerte zu verschiedenen Zeiten
+        // gelesen werden. Als Minus landete das auf der falschen Seite der
+        // Nulllinie. Der Rückschritt wird deshalb mit den nächsten Schritten
+        // verrechnet – die Summe über den Zeitraum bleibt damit dieselbe.
+        let carry = 0;
+
         for (const row of rows ?? []) {
             const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
             if (Number.isNaN(t) || t > now) continue;
 
             let value = Number(isMean ? (row.mean ?? row.state) : row.change);
             if (!Number.isFinite(value)) continue;
-            // Zähler laufen nur vorwärts. Ein Minus kommt von einer Korrektur
-            // oder einem kurz falsch gerechneten Template-Zähler und würde
-            // als Ausschlag auf der falschen Seite der Nulllinie landen.
-            if (onlyPositive && !isMean && value < 0) value = 0;
+            if (onlyPositive && !isMean) {
+                value += carry;
+                carry = value < 0 ? value : 0;
+                if (value < 0) value = 0;
+            }
 
             const key = this.#bucketKey(t, bucketInfo, origin);
             const b = buckets.get(key) ?? { sum: 0, count: 0 };
