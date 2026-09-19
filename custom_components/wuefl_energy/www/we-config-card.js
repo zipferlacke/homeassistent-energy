@@ -1356,6 +1356,21 @@ class WueflEnergyConfigCard extends HTMLElement {
     for (const f of COLOR_FIELDS) {
       if (f in this.#draft) this.#draft[f] = toRgbArray(this.#draft[f]);
     }
+    // Ohne eigene Farbe zeigt der Farbwähler Schwarz – deshalb die Farbe
+    // vorbelegen, die der Punkt in der Liste auch zeigt. Bleibt sie
+    // unverändert, wird sie beim Speichern wieder entfernt (keine "eigene").
+    const listLen = block.key === 'strings'
+      ? asList(asList(this.#config.solar).find((s) => s.id === parentId)?.strings).length
+      : asList(this.#config[block.key]).length;
+    const pos = block.kind === 'list' || block.key === 'strings' ? (isNew ? listLen : index) : 0;
+    this.#colorDefaults = {};
+    for (const f of COLOR_FIELDS) {
+      if (!block.schema.some((s) => s.name === f) || this.#draft[f]) continue;
+      const rgb = toRgbArray(this.#resolveCss(colorOf(block.key, {}, pos, f)));
+      if (!rgb) continue;
+      this.#draft[f] = rgb;
+      this.#colorDefaults[f] = rgb;
+    }
 
     this.#els.dialogTitle.textContent = parentId ? `String bearbeiten` : block.title;
     // 1. Liste aller bereits genutzten Entitäten holen
@@ -1391,6 +1406,16 @@ class WueflEnergyConfigCard extends HTMLElement {
     this.#els.overlay.classList.add('open');
   }
 
+  /** Vorgabefarben der gerade offenen Bearbeitung (siehe #openDialog). */
+  #colorDefaults = {};
+
+  /** var(--x, #fallback) mit dem aktuellen Theme auflösen. */
+  #resolveCss(value) {
+    const m = /^var\(\s*(--[\w-]+)\s*(?:,\s*(.+))?\)$/.exec(String(value ?? '').trim());
+    if (!m) return value;
+    return getComputedStyle(this).getPropertyValue(m[1]).trim() || this.#resolveCss(m[2] ?? '');
+  }
+
   #closeDialog() {
     this.#els.overlay.classList.remove('open');
     this.#editing = null;
@@ -1400,6 +1425,9 @@ class WueflEnergyConfigCard extends HTMLElement {
   async #commit() {
     const { block, index, parentId } = this.#editing ?? {};
     if (!block) return;
+    for (const [f, rgb] of Object.entries(this.#colorDefaults)) {
+      if (String(this.#draft[f]) === String(rgb)) delete this.#draft[f];
+    }
     const next = normalizeConfig(this.#config);
 
     if (block.key === 'strings') {
