@@ -59,10 +59,12 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
           // Zähler liefern Stufen, keine weichen Übergänge – eine geglättete
           // Kurve würde Verläufe zeigen, die es so nie gab
           smooth: false,
-          // Ein gemeinsamer Stapel: ECharts stapelt positive Werte nach oben
-          // und negative nach unten – so stehen die Balken übereinander statt
-          // nebeneinander und können doppelt so breit sein.
-          stack: 'energie',
+          // Zwei Stapel: Erzeugung nach oben, Verbrauch nach unten. Ein
+          // gemeinsamer Stapel brachte Reihen mit dem Wert 0 auf die falsche
+          // Seite der Nulllinie – ohne Bezug lag "Netz Bezug" im Minus.
+          stack: def.sign > 0 ? 'erzeugung' : 'verbrauch',
+          // Ein Wert gilt für seinen ganzen Abschnitt – Treppe statt Dreieck
+          step: 'middle',
           type: range.overMonth ? 'bar' : 'line',
         });
       }

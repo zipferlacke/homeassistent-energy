@@ -736,7 +736,13 @@ class WueflEnergyChart extends HTMLElement {
                 name: name,
                 id: s.name || s.entity,
                 type: chartType, 
-                stack: s.stack, 
+                stack: s.stack,
+                // Innerhalb eines Stapels haben alle Reihen dasselbe Vorzeichen.
+                // Ohne diese Angabe entscheidet ECharts bei einer 0 selbst, auf
+                // welche Seite der Nulllinie sie gehört – dann landete z. B.
+                // "Batterie geladen" ohne Ladung oben bei der Erzeugung.
+                ...(s.stack ? { stackStrategy: 'all' } : {}),
+                
                 yAxisIndex: s.y_axis || 0,
                 data: isHidden ? [] : s.chartData,
                 smooth: chartType === 'line' ? (s.smooth ?? true) : undefined,
