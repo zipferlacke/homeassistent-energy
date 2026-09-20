@@ -82,6 +82,12 @@ ${TILE_CSS}
 
   & svg { display: block;height: auto; background-color: transparent;  max-height: 525px; margin: 0px auto;overflow:visible;}
 
+  /* Schmaler Schirm: Grafik wird klein, Schrift deshalb größer. Die
+     Beschriftungen ragen über den Rahmen der Grafik hinaus – die schmalere
+     Breite lässt ihnen Platz, statt sie abzuschneiden. */
+  @media (max-width: 700px) { & svg { --w-svg-fs: 1.12; width: 92%; } }
+  @media (max-width: 480px) { & svg { --w-svg-fs: 1.2; width: 88%; } }
+
   & .device .icon, & .device .fan {
     transition: stroke .25s ease, filter .25s ease;
   }

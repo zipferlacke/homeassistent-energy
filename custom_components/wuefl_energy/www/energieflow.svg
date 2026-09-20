@@ -68,6 +68,10 @@
       /* ---------- Ladestand Batterie (0 bis 1) ---------- */
       --soc: .30;
 
+      /* Auf schmalen Schirmen schrumpft die ganze Grafik – die Karte dreht
+         dann --w-svg-fs hoch, damit die Beschriftung lesbar bleibt */
+      --w-svg-fs: 1;
+
       font-family: system-ui, "Segoe UI", Roboto, sans-serif;
       background: light-dark(#fbfcfd, #10151a);
     }
@@ -77,14 +81,14 @@
        das rendert nur Firefox, Chrome/WebView und Safari (HA-App) nicht. */
     text {
       fill: var(--c-text);
-      font-size:1.2rem;
+      font-size: calc(1.2rem * var(--w-svg-fs));
       .t-header {
-        font-size: 1.9rem;
+        font-size: calc(1.9rem * var(--w-svg-fs));
         font-weight: 600;
       }
       .t-sub{font-weight: 600;}
       .v_live{
-		    font-size:1.3rem;
+		    font-size: calc(1.3rem * var(--w-svg-fs));
       }
       .v_total{ 
       	fill: grey;
@@ -225,14 +229,14 @@
       }
       .node { fill: var(--c-cable); stroke: none; }
       .verdeckt { opacity: var(--o-verdeckt); }
-      .name { fill: var(--c-text); font-size: 26px; font-weight: 600; }
+      .name { fill: var(--c-text); font-size: calc(26px * var(--w-svg-fs)); font-weight: 600; }
       .val, .car, .car-val, .car-sum, .sum-out, .sum-in {
         fill: var(--c-text);
-        font-size: 21px;
+        font-size: calc(21px * var(--w-svg-fs));
         font-weight: 500;
         font-variant-numeric: tabular-nums;
       }
-      .cap, .sum { fill: var(--c-text-soft); font-size: 16px; font-weight: 500; }
+      .cap, .sum { fill: var(--c-text-soft); font-size: calc(16px * var(--w-svg-fs)); font-weight: 500; }
     }
   </style>
   <g id="scene" transform="matrix(1.212756, 0, 0, 0.90034, -58.026199, 81.614281)" style="">

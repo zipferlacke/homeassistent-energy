@@ -1214,6 +1214,14 @@ export const GRID_CSS = `
 
 export const TILE_CSS = `
 .ha-tile-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+/* Handy: zwei Kacheln nebeneinander, Werte darin untereinander */
+@media (max-width: 700px) {
+  .ha-tile-grid { gap: 8px; grid-template-columns: 1fr 1fr; }
+  .ha-tile { padding: 10px; }
+  .tile-content { gap: 8px; }
+  .tile-icon-container { width: 34px; height: 34px; }
+  .tile-subtitle { flex-direction: column; gap: 2px; }
+}
 .ha-tile {
   border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
   border-radius: var(--ha-card-border-radius, 12px);

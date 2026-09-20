@@ -89,6 +89,10 @@ class WueflEnergyGridContainer extends HTMLElement {
           padding: 0 16px;
           box-sizing: border-box;
         }
+        @media (max-width: 700px) {
+          /* Auf dem Handy zählt jeder Millimeter Breite */
+          we-grid-container .grid-wrapper { padding: 0 8px; }
+        }
         we-grid-container .grid-container {
           display: grid;
           gap: ${gap};
