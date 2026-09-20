@@ -56,6 +56,9 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
           only_positive: true,
           sign: def.sign,
           fill: 'gradient',
+          // Zähler liefern Stufen, keine weichen Übergänge – eine geglättete
+          // Kurve würde Verläufe zeigen, die es so nie gab
+          smooth: false,
           // Ein gemeinsamer Stapel: ECharts stapelt positive Werte nach oben
           // und negative nach unten – so stehen die Balken übereinander statt
           // nebeneinander und können doppelt so breit sein.

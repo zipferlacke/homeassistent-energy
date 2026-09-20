@@ -85,8 +85,14 @@ ${TILE_CSS}
   /* Schmaler Schirm: Grafik wird klein, Schrift deshalb größer. Die
      Beschriftungen ragen über den Rahmen der Grafik hinaus – die schmalere
      Breite lässt ihnen Platz, statt sie abzuschneiden. */
-  @media (max-width: 700px) { & svg { --w-svg-fs: 1.12; width: 92%; } }
-  @media (max-width: 480px) { & svg { --w-svg-fs: 1.2; width: 88%; } }
+  @media (max-width: 700px) {
+    & svg { --w-svg-fs: 1.12; }
+    /* Die Gesamtwerte von Netz und Batterie stehen darunter noch einmal
+       (Bezug/Einspeisung bzw. Geladen/Entladen) – auf dem Handy fehlt die
+       Breite für beides, und die Beschriftungen überlappten sich */
+    & svg :is(#label-netz-text, #label-batterie-text) :is(.v_total, .sep) { display: none; }
+  }
+  @media (max-width: 480px) { & svg { --w-svg-fs: 1.2; } }
 
   & .device .icon, & .device .fan {
     transition: stroke .25s ease, filter .25s ease;
