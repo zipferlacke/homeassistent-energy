@@ -323,39 +323,6 @@ class WueflEnergyChart extends HTMLElement {
     }
 
     /**
-     * Wie oft liefern die Zähler wirklich einen neuen Wert?
-     *
-     * Sungrow & Co. zählen in 0,1-kWh-Schritten: bei kleiner Last vergehen
-     * 20 Minuten bis zum nächsten Schritt. In feineren Abschnitten stünde
-     * dann abwechselnd 0 und 0,1 – das Bild zappelt, ohne mehr zu zeigen.
-     * Zurück kommt der typische Abstand zwischen zwei Schritten (Median über
-     * die Reihen, damit eine selten genutzte Wallbox nichts verzerrt).
-     */
-    #stepInterval(dbStats, series) {
-        const median = (arr) => (arr.length ? arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)] : 0);
-        const perSeries = [];
-        for (const s of series) {
-            if (!s.entity || s.data || (s.stat_type && s.stat_type !== 'change')) continue;
-            const times = (dbStats[s.entity] ?? [])
-                .filter((r) => Math.abs(Number(r.change)) > 0.0001)
-                .map((r) => (typeof r.start === 'number' ? r.start : Date.parse(r.start)))
-                .sort((a, b) => a - b);
-            if (times.length < 4) continue;
-            const gaps = times.slice(1).map((t, i) => t - times[i]);
-            perSeries.push(median(gaps));
-        }
-        return median(perSeries);
-    }
-
-    /** Nächstgrößere übliche Schrittweite zu `ms`, höchstens `maxMs`. */
-    #fitBucket(ms, minMs, maxMs) {
-        const ladder = [5, 10, 15, 20, 30, 60, 120, 180, 360, 720].map((m) => m * 60000);
-        const wanted = Math.min(Math.max(ms, minMs), maxMs);
-        const hit = ladder.find((step) => step >= wanted && step >= minMs && step <= maxMs);
-        return hit ?? Math.max(minMs, Math.min(maxMs, wanted));
-    }
-
-    /**
      * Beginn des Buckets, in den der Zeitpunkt `t` fällt.
      *
      * Ausgerichtet an der lokalen Zeit ab `origin` (Beginn des Zeitraums),
@@ -414,6 +381,32 @@ class WueflEnergyChart extends HTMLElement {
             }
         }
 
+        const prepared = this.#prepareRows(rows, isMean, onlyPositive, now);
+        for (const [t, value] of prepared) {
+            const key = this.#bucketKey(t, bucketInfo, origin);
+            const b = buckets.get(key) ?? { sum: 0, count: 0 };
+            b.sum += value; b.count += 1;
+            buckets.set(key, b);
+        }
+
+        return [...buckets.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([t, b]) => [t, isMean ? (b.count > 0 ? b.sum / b.count : null) : b.sum]);
+    }
+
+    /**
+     * Statistikzeilen aufbereiten: Rückschritte verrechnen und verspätete
+     * Zählerschritte auf die Nullen davor verteilen.
+     *
+     * Ein Wechselrichter zählt in festen Schritten, bei Sungrow 0,1 kWh. Bei
+     * kleiner Last steht deshalb minutenlang 0 und dann kommt der ganze
+     * Schritt auf einmal – verbraucht wurde aber die ganze Zeit über. Ein
+     * einzelner Schritt nach einer Nullstrecke wird daher gleichmäßig über
+     * diese Strecke verteilt. Größere Sprünge (echter Verbrauch, z. B. der
+     * Start der Wallbox) bleiben, wo sie sind, und die Summe ändert sich nie.
+     */
+    #prepareRows(rows, isMean, onlyPositive, now) {
+        const out = [];
         // Gerechnete Zähler (z. B. Hausverbrauch = PV − Einspeisung + Bezug …)
         // springen kurz zurück, wenn ihre Einzelwerte zu verschiedenen Zeiten
         // gelesen werden. Als Minus landete das auf der falschen Seite der
@@ -433,15 +426,30 @@ class WueflEnergyChart extends HTMLElement {
                 if (value < 0) value = 0;
             }
 
-            const key = this.#bucketKey(t, bucketInfo, origin);
-            const b = buckets.get(key) ?? { sum: 0, count: 0 };
-            b.sum += value; b.count += 1;
-            buckets.set(key, b);
+            out.push([t, value]);
         }
 
-        return [...buckets.entries()]
-            .sort((a, b) => a[0] - b[0])
-            .map(([t, b]) => [t, isMean ? (b.count > 0 ? b.sum / b.count : null) : b.sum]);
+        if (isMean || !onlyPositive || out.length < 4) return out;
+
+        // Schrittweite des Zählers: die kleinen Schritte, nicht der kleinste –
+        // ein einzelner Rest aus der Verrechnung soll sie nicht verfälschen
+        const positives = out.map(([, v]) => v).filter((v) => v > 0.0001).sort((a, b) => a - b);
+        if (positives.length < 4) return out;
+        const quantum = positives[Math.floor(positives.length * 0.1)];
+        const MAX_RUN = 12;   // höchstens eine Stunde zurück verteilen
+        let zeros = 0;
+
+        for (let i = 0; i < out.length; i += 1) {
+            const value = out[i][1];
+            if (value <= 0.0001) { zeros += 1; continue; }
+            // Nur der einzelne Schritt des Zählers wird verteilt
+            if (zeros > 0 && zeros <= MAX_RUN && value <= quantum * 1.5) {
+                const share = value / (zeros + 1);
+                for (let k = i - zeros; k <= i; k += 1) out[k][1] = share;
+            }
+            zeros = 0;
+        }
+        return out;
     }
 
     #calculateNativeChipValue(dbStats, seriesList) {
@@ -578,10 +586,9 @@ class WueflEnergyChart extends HTMLElement {
         this.#els.title.textContent = this.#config.title || '';
 
         const { start, end } = this.#calculateTimeBounds(this.#config.range, this.#config.start, this.#config.end);
-        // Feinste erlaubte Auflösung; mit `adaptive` wird sie unten an die
-        // tatsächliche Schrittweite der Zähler angepasst
-        const baseBucket = this.#parseBucketSize(this.#config.aggregation, this.#config.range);
-        const period = baseBucket.ms >= 86400000 ? 'day' : baseBucket.ms >= 3600000 ? 'hour' : '5minute';
+        const bucketInfo = this.#parseBucketSize(this.#config.aggregation, this.#config.range);
+        const bucketMs = bucketInfo.ms;
+        const period = bucketMs >= 86400000 ? 'day' : bucketMs >= 3600000 ? 'hour' : '5minute';
 
         // Reihen mit fertigen Daten (z. B. Prognose) brauchen keine Statistik
         const idsToFetch = new Set(this.#config.series.filter(s => s.entity && !s.data).map(s => s.entity));
@@ -598,17 +605,6 @@ class WueflEnergyChart extends HTMLElement {
                 statistic_ids: Array.from(idsToFetch), period, types: ['change', 'mean', 'max', 'min'],
             });
             if (stale()) return;
-
-            // Auflösung an die Zähler anpassen (nur unterhalb von einem Tag –
-            // Tage, Wochen und Monate sind feste Abschnitte)
-            let bucketInfo = baseBucket;
-            if (this.#config.adaptive && baseBucket.ms < 86400000) {
-                const step = this.#stepInterval(dbStats, this.#config.series);
-                if (step > baseBucket.ms) {
-                    const maxMs = Math.max(baseBucket.ms, (end - start) / 24);
-                    bucketInfo = this.#parseBucketSize(this.#fitBucket(step, baseBucket.ms, maxMs));
-                }
-            }
 
             const processedSeries = this.#config.series.map(s => {
                 if (s.data) {
