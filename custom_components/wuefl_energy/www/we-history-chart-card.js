@@ -56,15 +56,12 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
           only_positive: true,
           sign: def.sign,
           fill: 'gradient',
-          // Zähler liefern Stufen, keine weichen Übergänge – eine geglättete
-          // Kurve würde Verläufe zeigen, die es so nie gab
-          smooth: false,
+          // Weiche Ecken, aber ohne Überschwinger (smoothMonotone in we-chart)
+          smooth: 0.35,
           // Zwei Stapel: Erzeugung nach oben, Verbrauch nach unten. Ein
           // gemeinsamer Stapel brachte Reihen mit dem Wert 0 auf die falsche
           // Seite der Nulllinie – ohne Bezug lag "Netz Bezug" im Minus.
           stack: def.sign > 0 ? 'erzeugung' : 'verbrauch',
-          // Ein Wert gilt für seinen ganzen Abschnitt – Treppe statt Dreieck
-          step: 'middle',
           type: range.overMonth ? 'bar' : 'line',
         });
       }
@@ -75,7 +72,7 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
     return {
       aggregation: this._aggregation(range),
       y_axes: [{ unit: 'kWh' }],
-      legend: [{ hidden: false, position: 'bottom-center' }],
+      legend: [{ hidden: false, position: 'top-center' }],
       series,
     };
   }

@@ -746,6 +746,9 @@ class WueflEnergyChart extends HTMLElement {
                 yAxisIndex: s.y_axis || 0,
                 data: isHidden ? [] : s.chartData,
                 smooth: chartType === 'line' ? (s.smooth ?? true) : undefined,
+                // Runde Ecken, aber keine Bögen über den Messwert hinaus –
+                // sonst zeigt die Kurve Spitzen, die es nie gab
+                ...(chartType === 'line' && (s.smooth ?? true) ? { smoothMonotone: 'x' } : {}),
                 // Treppenstufen, z. B. beim Strompreis je Stunde
                 ...(chartType === 'line' && s.step ? { step: s.step } : {}),
                 symbol: 'none',
