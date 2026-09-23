@@ -103,10 +103,11 @@ const CSS = `
 .nav button.arrow-btn ha-icon { --mdc-icon-size: 22px; }
 
 .date-trigger-btn { position: relative; }
-/* Der HA-Kalender liegt unsichtbar unter dem Knopf – nur als Anker für sein
-   Aufklapp-Fenster, geöffnet wird er über open() */
+/* Der HA-Kalender sitzt unter dem Knopf und dient nur als Anker für sein
+   Aufklapp-Fenster. Versteckt wird sein Bedienfeld, nicht er selbst –
+   sonst wäre das Fenster mit versteckt. */
 .ha-picker {
-  bottom: 0; left: 50%; pointer-events: none; position: absolute; opacity: 0;
+  bottom: 0; height: 0; left: 50%; position: absolute; width: 0;
 }
 .date-trigger-btn {
   align-items: center;
@@ -299,23 +300,41 @@ class WueflEnergyPeriodCard extends HTMLElement {
     });
     this.#els.haPicker = picker;
     this.#els.haBox.replaceChildren(picker);
+    await picker.updateComplete?.catch?.(() => {});
+    this.#hideHaField();
     // Eigene Datumsfelder werden nicht mehr gebraucht
     this.#els.popup.classList.add('hidden');
     this.#els.popup.hidden = true;
     this.#syncButtons();
   }
 
+  /**
+   * Nur das Bedienfeld des HA-Wählers verstecken (sein Symbol bzw. Textfeld).
+   * Es bleibt als Anker im Baum, das Aufklapp-Fenster bleibt sichtbar.
+   */
+  #hideHaField() {
+    const field = this.#els.haPicker?.shadowRoot?.querySelector('#field');
+    if (!field) return;
+    Object.assign(field.style, {
+      height: '0', opacity: '0', pointerEvents: 'none', position: 'absolute', width: '0',
+    });
+  }
+
   /** Kalender öffnen: bevorzugt über open(), sonst per Klick auf sein Feld. */
   #openHaPicker() {
     const picker = this.#els.haPicker;
     if (!picker) return false;
+    this.#hideHaField();
     if (typeof picker.open === 'function') {
       picker.open();
       return true;
     }
     const field = picker.shadowRoot?.querySelector('#field');
     if (field) {
+      // Versteckt reagiert es nicht auf Klicks – kurz freigeben
+      field.style.pointerEvents = 'auto';
       field.click();
+      field.style.pointerEvents = 'none';
       return true;
     }
     return false;

@@ -599,11 +599,14 @@ class WueflEnergyChart extends HTMLElement {
         ];
 
         try {
-            const dbStats = await this.#hass.callWS({
-                type: 'recorder/statistics_during_period',
-                start_time: start.toISOString(), end_time: end.toISOString(),
-                statistic_ids: Array.from(idsToFetch), period, types: ['change', 'mean', 'max', 'min'],
-            });
+            // Reihen mit fertigen Punkten (Geld, Prognose) brauchen keine Abfrage
+            const dbStats = idsToFetch.size
+                ? await this.#hass.callWS({
+                    type: 'recorder/statistics_during_period',
+                    start_time: start.toISOString(), end_time: end.toISOString(),
+                    statistic_ids: Array.from(idsToFetch), period, types: ['change', 'mean', 'max', 'min'],
+                })
+                : {};
             if (stale()) return;
 
             const processedSeries = this.#config.series.map(s => {
@@ -655,7 +658,7 @@ class WueflEnergyChart extends HTMLElement {
                 const recent = Date.now() - start < 9 * 86400000;
                 const chipPeriod = spanDays <= 1.05 ? (recent ? '5minute' : 'hour') : 'day';
                 let chipStats = dbStats;
-                if (chipPeriod !== period) {
+                if (chipPeriod !== period && idsToFetch.size) {
                     try {
                         chipStats = await this.#hass.callWS({
                             type: 'recorder/statistics_during_period',
