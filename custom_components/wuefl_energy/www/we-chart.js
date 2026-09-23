@@ -796,6 +796,21 @@ class WueflEnergyChart extends HTMLElement {
                 // Kasten sonst weit neben dem Zeiger.
                 appendToBody: false,
                 confine: true,
+                /*
+                 * In der Karte ist wenig Platz: Der Kasten sitzt deshalb an
+                 * der Linie zentriert am oberen oder unteren Rand – auf der
+                 * Seite, auf der der Finger gerade nicht ist. Im Vollbild ist
+                 * Platz genug, dort folgt er wie gewohnt dem Zeiger.
+                 */
+                ...(this.#config?._fullscreen ? {} : {
+                    position: (point, params, dom, rect, size) => {
+                        const [breite, hoehe] = size.viewSize;
+                        const [kastenB, kastenH] = size.contentSize;
+                        const x = Math.min(Math.max(point[0] - kastenB / 2, 0), Math.max(0, breite - kastenB));
+                        const y = point[1] > hoehe / 2 ? 0 : Math.max(0, hoehe - kastenH);
+                        return [x, y];
+                    },
+                }),
                 formatter: (params) => {
                     if (!params || !params.length) return '';
                     const date = new Date(params[0].value[0]);
