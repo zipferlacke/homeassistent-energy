@@ -758,7 +758,10 @@ class WueflEnergyChart extends HTMLElement {
                 lineStyle: chartType === 'line'
                     ? { width: 1.5, ...(s.dashed ? { type: 'dashed', opacity: 0.8 } : {}) }
                     : undefined,
-                ...(chartType === 'bar' ? { barCategoryGap: '25%', barMaxWidth: 48 } : {}),
+                // Erzeugung und Verbrauch sind zwei Stapel. Ohne barGap stellt
+                // ECharts sie nebeneinander – sie sollen aber übereinander
+                // stehen, oben die Erzeugung, unten der Verbrauch.
+                ...(chartType === 'bar' ? { barCategoryGap: '25%', barMaxWidth: 48, barGap: '-100%' } : {}),
             };
         });
 
