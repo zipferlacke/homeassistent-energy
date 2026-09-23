@@ -8,6 +8,56 @@
  */
 import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS } from './we-shared.js';
 
+/**
+ * Home Assistant bringt einen eigenen Zeitraum-Wähler mit (derselbe wie im
+ * Verlauf: Kalender plus Schnellauswahl). Er ist kein offizieller Baustein
+ * für eigene Karten, deshalb wird er nur benutzt, wenn er sich laden lässt –
+ * sonst bleibt es bei den beiden Datumsfeldern.
+ *
+ * Angemeldet wird er beim Laden der Energie-Karte von HA; das stoßen wir
+ * über die Karten-Helfer an.
+ */
+let haPickerReady = null;
+function ensureHaPicker() {
+  if (haPickerReady) return haPickerReady;
+  haPickerReady = (async () => {
+    if (customElements.get('ha-date-range-picker')) return true;
+    try {
+      const helpers = await window.loadCardHelpers?.();
+      helpers?.createCardElement?.({ type: 'energy-date-selection' });
+    } catch (err) {
+      // Energie-Dashboard nicht eingerichtet o. ä. – dann eben ohne
+    }
+    await Promise.race([
+      customElements.whenDefined('ha-date-range-picker'),
+      new Promise((done) => setTimeout(done, 3000)),
+    ]);
+    return !!customElements.get('ha-date-range-picker');
+  })();
+  return haPickerReady;
+}
+
+/** Schnellauswahl des HA-Wählers, in unseren Zeitraum-Begriffen. */
+function quickRanges() {
+  const day = (d) => [new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0),
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)];
+  const now = new Date();
+  const gestern = new Date(now); gestern.setDate(now.getDate() - 1);
+  const wochenStart = new Date(now); wochenStart.setDate(now.getDate() - ((now.getDay() || 7) - 1));
+  const vorTagen = (n) => { const d = new Date(now); d.setDate(now.getDate() - n + 1); return d; };
+  const von = (d) => day(d)[0];
+  const bis = (d) => day(d)[1];
+  return {
+    Heute: day(now),
+    Gestern: day(gestern),
+    'Diese Woche': [von(wochenStart), bis(now)],
+    'Letzte 7 Tage': [von(vorTagen(7)), bis(now)],
+    'Letzte 30 Tage': [von(vorTagen(30)), bis(now)],
+    'Dieser Monat': [new Date(now.getFullYear(), now.getMonth(), 1), bis(now)],
+    'Dieses Jahr': [new Date(now.getFullYear(), 0, 1), bis(now)],
+  };
+}
+
 const PERIODS = [
   { id: 'day', label: 'Tag' },
   { id: 'week', label: 'Woche' },
@@ -138,6 +188,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
           <span>–</span>
           <input type="date" class="to">
         </div>
+        <div class="ha-picker" hidden></div>
       </div>
     `;
     root.replaceChildren(card);
@@ -152,7 +203,9 @@ class WueflEnergyPeriodCard extends HTMLElement {
       label: card.querySelector('.label'),
       prev: card.querySelector('.prev'),
       next: card.querySelector('.next'),
+      haBox: card.querySelector('.ha-picker'),
     };
+    this.#setupHaPicker();
 
     this.#els.selector.innerHTML = PERIODS.map((p) => `<button type="button" class="time-btn"
       data-id="${p.id}">${p.label}</button>`).join('');
@@ -207,6 +260,34 @@ class WueflEnergyPeriodCard extends HTMLElement {
       this.#apply();
     }
     this.#built = true;
+  }
+
+  /** Den Wähler von HA einhängen, falls vorhanden. */
+  async #setupHaPicker() {
+    if (!(await ensureHaPicker()) || !this.#els.haBox) return;
+    const picker = document.createElement('ha-date-range-picker');
+    picker.hass = this.#hass;
+    picker.ranges = quickRanges();
+    picker.autoApply = true;
+    picker.addEventListener('value-changed', (ev) => {
+      const { startDate, endDate } = ev.detail ?? {};
+      if (!startDate || !endDate) return;
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      // Ganze Tage, wie bei unseren eigenen Zeiträumen
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      this.#granularity = 'custom';
+      setPeriod({ period: 'custom', start, end });
+      this.#syncButtons();
+    });
+    this.#els.haPicker = picker;
+    this.#els.haBox.replaceChildren(picker);
+    this.#els.haBox.hidden = false;
+    // Eigene Datumsfelder werden nicht mehr gebraucht
+    this.#els.dateBtn.hidden = true;
+    this.#els.popup.classList.add('hidden');
+    this.#syncButtons();
   }
 
   /** Wie viele Zeiträume der Granularität liegt `date` vor heute? */
@@ -279,12 +360,19 @@ class WueflEnergyPeriodCard extends HTMLElement {
 
   #syncButtons() {
     const range = getPeriod();
+    if (this.#els.haPicker) {
+      this.#els.haPicker.hass = this.#hass;
+      this.#els.haPicker.startDate = new Date(range.start);
+      this.#els.haPicker.endDate = new Date(range.end);
+    }
     for (const btn of this.#els.selector.querySelectorAll('[data-id]')) {
       btn.classList.toggle('active', btn.dataset.id === this.#granularity && range.period !== 'custom');
     }
 
     this.#els.dateBtn.classList.toggle('active', range.period === 'custom');
     this.#els.label.textContent = this.#formatLabel(range);
+    // Beschriftung des Knopfs zeigt den Zeitraum – mit HA-Wähler steht er dort
+    if (this.#els.haPicker) this.#els.dateBtn.hidden = true;
 
     // Vor-Button deaktivieren, wenn wir im aktuellen Zeitraum (#offset === 0) sind
     this.#els.next.disabled = this.#offset === 0 || range.period === 'custom';
