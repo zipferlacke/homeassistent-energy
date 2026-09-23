@@ -102,6 +102,12 @@ const CSS = `
 .nav button.arrow-btn:disabled { color: var(--disabled-text-color, #bdbdbd); cursor: default; }
 .nav button.arrow-btn ha-icon { --mdc-icon-size: 22px; }
 
+.date-trigger-btn { position: relative; }
+/* Der HA-Kalender liegt unsichtbar unter dem Knopf – nur als Anker für sein
+   Aufklapp-Fenster, geöffnet wird er über open() */
+.ha-picker {
+  bottom: 0; left: 50%; pointer-events: none; position: absolute; opacity: 0;
+}
 .date-trigger-btn {
   align-items: center;
   background: var(--secondary-background-color, rgba(127, 127, 127, .12));
@@ -180,6 +186,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
           <button type="button" class="date-trigger-btn" title="Datum wählen">
             <ha-icon icon="mdi:calendar"></ha-icon>
             <span class="label"></span>
+            <span class="ha-picker"></span>
           </button>
           <button type="button" class="arrow-btn next" title="Vor"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
         </div>
@@ -188,7 +195,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
           <span>–</span>
           <input type="date" class="to">
         </div>
-        <div class="ha-picker" hidden></div>
+
       </div>
     `;
     root.replaceChildren(card);
@@ -233,6 +240,8 @@ class WueflEnergyPeriodCard extends HTMLElement {
     });
 
     this.#els.dateBtn.addEventListener('click', () => {
+      // Mit dem Kalender von HA öffnet der Knopf diesen, sonst die Felder
+      if (this.#openHaPicker()) return;
       this.#els.popup.classList.toggle('hidden');
     });
 
@@ -262,12 +271,19 @@ class WueflEnergyPeriodCard extends HTMLElement {
     this.#built = true;
   }
 
-  /** Den Wähler von HA einhängen, falls vorhanden. */
+  /**
+   * Den Wähler von HA hinter unseren Kalender-Knopf legen.
+   *
+   * Er bleibt unsichtbar (nur sein Anker wird gebraucht, damit der Kalender
+   * an der richtigen Stelle aufgeht) und wird über seine open()-Methode
+   * geöffnet. Angezeigt wird weiter unser Knopf mit dem Zeitraum.
+   */
   async #setupHaPicker() {
     if (!(await ensureHaPicker()) || !this.#els.haBox) return;
     const picker = document.createElement('ha-date-range-picker');
     picker.hass = this.#hass;
     picker.ranges = quickRanges();
+    picker.minimal = true;      // nur ein Symbol statt Textfeld und Pfeilen
     picker.autoApply = true;
     picker.addEventListener('value-changed', (ev) => {
       const { startDate, endDate } = ev.detail ?? {};
@@ -283,11 +299,26 @@ class WueflEnergyPeriodCard extends HTMLElement {
     });
     this.#els.haPicker = picker;
     this.#els.haBox.replaceChildren(picker);
-    this.#els.haBox.hidden = false;
     // Eigene Datumsfelder werden nicht mehr gebraucht
-    this.#els.dateBtn.hidden = true;
     this.#els.popup.classList.add('hidden');
+    this.#els.popup.hidden = true;
     this.#syncButtons();
+  }
+
+  /** Kalender öffnen: bevorzugt über open(), sonst per Klick auf sein Feld. */
+  #openHaPicker() {
+    const picker = this.#els.haPicker;
+    if (!picker) return false;
+    if (typeof picker.open === 'function') {
+      picker.open();
+      return true;
+    }
+    const field = picker.shadowRoot?.querySelector('#field');
+    if (field) {
+      field.click();
+      return true;
+    }
+    return false;
   }
 
   /** Wie viele Zeiträume der Granularität liegt `date` vor heute? */
@@ -371,8 +402,6 @@ class WueflEnergyPeriodCard extends HTMLElement {
 
     this.#els.dateBtn.classList.toggle('active', range.period === 'custom');
     this.#els.label.textContent = this.#formatLabel(range);
-    // Beschriftung des Knopfs zeigt den Zeitraum – mit HA-Wähler steht er dort
-    if (this.#els.haPicker) this.#els.dateBtn.hidden = true;
 
     // Vor-Button deaktivieren, wenn wir im aktuellen Zeitraum (#offset === 0) sind
     this.#els.next.disabled = this.#offset === 0 || range.period === 'custom';
