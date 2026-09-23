@@ -4,6 +4,7 @@
  * eigener Abschnitt neben dem Hauptdiagramm, hört auf Zeitraum-Änderungen
  * von we-period-card, ohne diese Karte selbst zu kennen.
  */
+import './we-chart.js';
 import {
   asList, fmtEnergy, fmtEuro, esc, registerCard, centralConfig, WueflFormEditor, sel,
   TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats, colorOf, priceInfo,
@@ -34,6 +35,24 @@ const CSS = `
 ${TILE_CSS}
 .ha-tile { min-height: auto; }
 .state { color: var(--secondary-text-color); padding: 24px 0; text-align: center; }
+
+/* Detail-Diagramm einer Kachel */
+dialog.detail {
+  background: var(--card-background-color, #fff); border: 0; border-radius: var(--ha-card-border-radius, 12px);
+  box-sizing: border-box; color: var(--primary-text-color); display: none; flex-direction: column;
+  height: min(70dvh, 560px); max-height: none; max-width: none; padding: 8px; width: min(92vw, 900px);
+}
+dialog.detail[open] { display: flex; }
+dialog.detail::backdrop { background: rgba(0, 0, 0, .5); }
+dialog.detail .head { align-items: center; display: flex; gap: 8px; padding: 4px 4px 8px; }
+dialog.detail .head .t { flex: 1; font-size: 18px; font-weight: 500; }
+dialog.detail .body { flex: 1; min-height: 0; }
+dialog.detail we-chart { display: block; height: 100%; }
+dialog.detail .close {
+  align-items: center; background: none; border: 0; border-radius: 50%; color: var(--secondary-text-color);
+  cursor: pointer; display: inline-flex; height: 36px; justify-content: center; padding: 0; width: 36px;
+}
+dialog.detail .close:hover { background: var(--secondary-background-color, rgba(127,127,127,.12)); }
 `;
 
 class WueflEnergyTilesCard extends HTMLElement {
@@ -206,30 +225,76 @@ class WueflEnergyTilesCard extends HTMLElement {
           const c = x.color(this.#config);
           return `<span class="sub-item" style="color: ${c}">${fmtEnergy(this.#total(x))} ${esc(x.short)}</span>`;
         }).join('');
-        html.push(`<ha-card class="ha-tile"><div class="tile-content">
-          <div class="tile-icon-container" style="--icon-color: ${color}; --icon-bg: color-mix(in srgb, ${color} 18%, transparent);">
-            <ha-icon icon="${s.icon}"></ha-icon>
-          </div>
-          <div class="tile-info">
-            <div class="tile-title">${esc(PAIR_NAMES[s.pair])}</div>
-            <div class="tile-value">${fmtEnergy(total)}</div>
-            <div class="tile-subtitle">${subs}</div>
-          </div>
-        </div></ha-card>`);
+        html.push(tileHtml({
+          icon: s.icon, color, title: PAIR_NAMES[s.pair], value: fmtEnergy(total),
+          subtitle: subs, click: `pair:${s.pair}`,
+        }));
         continue;
       }
-      html.push(`<ha-card class="ha-tile"><div class="tile-content">
-        <div class="tile-icon-container" style="--icon-color: ${color}; --icon-bg: color-mix(in srgb, ${color} 18%, transparent);">
-          <ha-icon icon="${s.icon}"></ha-icon>
-        </div>
-        <div class="tile-info">
-          <div class="tile-title">${esc(s.label)}</div>
-          <div class="tile-value">${fmtEnergy(this.#total(s))}</div>
-        </div>
-      </div></ha-card>`);
+      html.push(tileHtml({
+        icon: s.icon, color, title: s.label, value: fmtEnergy(this.#total(s)),
+        click: `key:${s.key}`,
+      }));
     }
     html.push(...this.#moneyTiles(used));
     this.#els.grid.innerHTML = html.join('');
+    for (const btn of this.#els.grid.querySelectorAll('[data-click]')) {
+      btn.addEventListener('click', () => this.#openDetail(btn.dataset.click));
+    }
+  }
+
+  /**
+   * Klick auf eine Kachel: derselbe Wert als Diagramm, im selben Zeitraum
+   * und in denselben Farben wie die Verteilung.
+   */
+  #openDetail(what) {
+    const [kind, id] = String(what).split(':');
+    const used = this.#used();
+    const parts = kind === 'pair'
+      ? used.filter((s) => s.pair === id)
+      : used.filter((s) => s.key === id);
+    if (!parts.length) return;
+
+    const range = getPeriod();
+    const title = kind === 'pair' ? PAIR_NAMES[id] : parts[0].label;
+    const series = parts.flatMap((s) => s.getIds(this.#config).map((entity, i) => ({
+      entity,
+      name: parts.length > 1 || s.getIds(this.#config).length > 1
+        ? `${s.label}${s.short ? ` ${s.short}` : ''}${s.getIds(this.#config).length > 1 ? ` ${i + 1}` : ''}`
+        : s.label,
+      color: s.color(this.#config),
+      stat_type: 'change',
+      only_positive: true,
+      // Verbrauchsseiten nach unten, wie in der Verteilung
+      sign: s.key === 'battery_in' || s.key === 'grid_export' ? -1 : 1,
+      fill: 'gradient',
+      smooth: 0.35,
+      type: range.overMonth ? 'bar' : 'line',
+    })));
+
+    const dlg = document.createElement('dialog');
+    dlg.className = 'detail';
+    dlg.innerHTML = `<div class="head"><div class="t">${esc(title)}</div>
+      <button type="button" class="close" aria-label="Schließen"><ha-icon icon="mdi:close"></ha-icon></button></div>
+      <div class="body"></div>`;
+    const chart = document.createElement('we-chart');
+    chart.setConfig({
+      title: '',
+      start: range.start.toISOString(),
+      end: range.end.toISOString(),
+      aggregation: range.overYear ? '1m' : range.overMonth ? '1d' : range.overWeek ? '2h' : range.overDay ? '10min' : '5min',
+      y_axes: [{ unit: 'kWh' }],
+      legend: [{ hidden: series.length <= 1, position: 'top-center' }],
+      fullscreen: false,
+      series,
+    });
+    chart.hass = this.#hass;
+    dlg.querySelector('.body').append(chart);
+    // Esc schließt ebenfalls – in beiden Fällen den Dialog wieder entfernen
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.querySelector('.close').addEventListener('click', () => { dlg.close(); dlg.remove(); });
+    this.shadowRoot.append(dlg);
+    dlg.showModal();
   }
 }
 
