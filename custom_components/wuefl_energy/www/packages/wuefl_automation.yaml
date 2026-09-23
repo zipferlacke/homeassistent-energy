@@ -241,8 +241,10 @@ automation:
         {% set e = (cfg.get('systemdata') or {}).get('house_base_load') %}
         {{ (states(e) | float(0) * 24 / 1000) if e else 10 }}
       akku_netzladen: "{{ netzladen_erlaubt and preis < grenze and prognose_kwh < tagesverbrauch_kwh and batt_soc < 80 }}"
-      # Schnellladen soll den Akku nicht leeren – außer mit Freigabe über der Reserve
-      akku_sperren: "{{ wb_ziel_aktiv == 1 and modus_eff == 'Schnell' and not akku_abgabe_moeglich }}"
+      # Das Auto soll den Hausakku nicht leeren – außer mit Freigabe über der
+      # Reserve. Gilt in jedem Lademodus, denn auch beim Solarladen zieht der
+      # Wechselrichter sonst aus dem Akku, sobald eine Wolke kommt.
+      akku_sperren: "{{ (wb_ziel_aktiv == 1 or laedt_gerade) and not akku_abgabe_moeglich }}"
       akku_ziel: >
         {% if not (has_battery and can_control_battery) %}{{ '' }}
         {% elif akku_netzladen and batt_force_charge %}{{ batt_force_charge }}
