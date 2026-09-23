@@ -126,6 +126,30 @@ def _log_wallboxes(hass: HomeAssistant, enriched: dict) -> None:
 
 
 @callback
+def _log_battery(hass: HomeAssistant, enriched: dict) -> None:
+    """Kann die Automation den Hausakku steuern? Suchbegriff: W-Energie."""
+    for i, batt in enumerate(enriched.get("battery") or [], 1):
+        if not isinstance(batt, dict):
+            continue
+        ctrl = batt.get("control") or {}
+        felder = {
+            "Normalbetrieb": ctrl.get("normal_mode"),
+            "Entladen sperren": ctrl.get("mode_stop_discharging"),
+            "Netzladen": ctrl.get("mode_start_charging"),
+        }
+        teile = [
+            f"{label}={value or 'nicht zugeordnet'}"
+            + ("" if not value else " (Entität fehlt)" if hass.states.get(value) is None else "")
+            for label, value in felder.items()
+        ]
+        steuerbar = bool(felder["Normalbetrieb"]) and hass.states.get(felder["Normalbetrieb"]) is not None
+        _LOGGER.info(
+            "W-Energie: Batterie %s %r – Automation steuert: %s – %s",
+            i, batt.get("name") or "ohne Namen", "ja" if steuerbar else "nein", ", ".join(teile),
+        )
+
+
+@callback
 def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
     """Schreibt die vollständige Konfiguration inkl. Helfer-Entitäten in den Lese-Sensor.
 
@@ -147,6 +171,7 @@ def _update_config_sensor(hass: HomeAssistant, config: dict) -> None:
         },
     )
     _log_wallboxes(hass, enriched)
+    _log_battery(hass, enriched)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
