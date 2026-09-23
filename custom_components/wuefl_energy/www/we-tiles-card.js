@@ -29,6 +29,9 @@ const SERIES = [
 ];
 const PAIR_NAMES = { grid: 'Netz', battery: 'Batterie' };
 
+/** Zuordnung speichert entweder "sensor.x" oder { entity: "sensor.x" }. */
+const getEntity = (val) => (typeof val === 'string' ? val : val?.entity || null);
+
 const CSS = `
 :host { display: block; }
 .card { ${GRID_CSS} }
@@ -137,14 +140,55 @@ class WueflEnergyTilesCard extends HTMLElement {
     const ids = used.flatMap((s) => s.getIds(this.#config));
     // Nur die zuletzt gestartete Abfrage zeichnet – ältere Antworten verwerfen
     const seq = ++this.#seq;
-    const stats = await fetchStats(this.#hass, ids, getPeriod(), ['change']);
+    const range = getPeriod();
+    const [stats, preise] = await Promise.all([
+      fetchStats(this.#hass, ids, range, ['change']),
+      this.#fetchPrices(range),
+    ]);
     if (seq !== this.#seq) return;
     this.#stats = stats;
+    this.#prices = preise;
     this.#render(used);
   }
 
   #stats = {};
+  #prices = { import: new Map(), export: new Map() };
   #seq = 0;
+
+  /**
+   * Die Preise von damals, nicht den von jetzt.
+   *
+   * Schreibt der Preissensor Statistiken (bei dynamischen Tarifen die Regel,
+   * weil er eine Messgröße ist), liegt je Stunde ein Mittelwert im Recorder.
+   * Den holen wir uns – so stimmen Bilanz und Ersparnis auch für einen Monat.
+   * Gibt es keine Statistik, wird weiter mit dem aktuellen Preis gerechnet.
+   */
+  async #fetchPrices(range) {
+    const c = this.#config;
+    const ents = {
+      import: getEntity(c.grid?.price_import),
+      export: getEntity(c.grid?.price_export),
+    };
+    const ids = [...new Set(Object.values(ents).filter(Boolean))];
+    const stats = ids.length ? await fetchStats(this.#hass, ids, range, ['mean']) : {};
+
+    const toCt = (id) => {
+      const unit = (this.#hass.states?.[id]?.attributes?.unit_of_measurement ?? '').toLowerCase();
+      return /€|eur/.test(unit) && !/ct|cent/.test(unit) ? 100 : 1;
+    };
+    const map = (id) => {
+      const out = new Map();
+      if (!id) return out;
+      const f = toCt(id);
+      for (const row of stats[id] ?? []) {
+        const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
+        const v = Number(row.mean);
+        if (!Number.isNaN(t) && Number.isFinite(v)) out.set(t, v * f);
+      }
+      return out;
+    };
+    return { import: map(ents.import), export: map(ents.export) };
+  }
 
   #total(s) {
     return s.getIds(this.#config).reduce(
@@ -161,21 +205,15 @@ class WueflEnergyTilesCard extends HTMLElement {
    */
   #moneyTiles(used) {
     const c = this.#config;
-    const sum = (key) => {
-      const s = used.find((x) => x.key === key);
-      return s ? this.#total(s) : null;
-    };
-    const imp = sum('grid_import');
-    const exp = sum('grid_export');
-    const pv = sum('pv_energy');
+    const has = (key) => used.some((x) => x.key === key);
+    const rows = this.#moneyRows(used);
+    if (!rows.length) return [];
 
-    const pImp = priceInfo(this.#hass, c, 'import').now;
-    const pExp = priceInfo(this.#hass, c, 'export').now;
-
-    const own = pv !== null ? Math.max(0, pv - (exp ?? 0)) : null;
-    const saved = own !== null && pImp !== null ? (own * pImp) / 100 : null;
-    const earned = exp !== null && pExp !== null ? (exp * pExp) / 100 : null;
-    const paid = imp !== null && pImp !== null ? (imp * pImp) / 100 : null;
+    // Dieselben Zahlen wie im Diagramm: Summe über die Abschnitte
+    const summe = (f) => rows.reduce((a, r) => a + f(r), 0);
+    const saved = has('pv_energy') ? summe((r) => r.gespart) : null;
+    const earned = has('grid_export') ? summe((r) => r.eingespeist) : null;
+    const paid = has('grid_import') ? summe((r) => r.bezogen) : null;
     if (saved === null && earned === null && paid === null) return [];
 
     const tiles = [];
@@ -241,15 +279,20 @@ class WueflEnergyTilesCard extends HTMLElement {
     const pv = perBucket(idsOf('pv_energy'));
     const times = [...new Set([...imp.keys(), ...exp.keys(), ...pv.keys()])].sort((a, b) => a - b);
 
+    // Preis des Abschnitts, sonst der aktuelle
+    const preis = (art, t, jetzt) => this.#prices[art]?.get(t) ?? jetzt;
+
     return times.map((t) => {
       const e = exp.get(t) ?? 0;
       const i = imp.get(t) ?? 0;
       const p = pv.get(t) ?? 0;
+      const cImp = preis('import', t, pImp);
+      const cExp = preis('export', t, pExp);
       return {
         t,
-        eingespeist: pExp === null ? 0 : (e * pExp) / 100,
-        bezogen: pImp === null ? 0 : (i * pImp) / 100,
-        gespart: pImp === null ? 0 : (Math.max(0, p - e) * pImp) / 100,
+        eingespeist: cExp === null ? 0 : (e * cExp) / 100,
+        bezogen: cImp === null ? 0 : (i * cImp) / 100,
+        gespart: cImp === null ? 0 : (Math.max(0, p - e) * cImp) / 100,
       };
     });
   }
