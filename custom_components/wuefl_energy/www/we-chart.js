@@ -791,7 +791,11 @@ class WueflEnergyChart extends HTMLElement {
             ],
             tooltip: {
                 trigger: 'axis',
-                appendToBody: true,
+                // Im Diagramm zeichnen statt am Seitenende: in Karten mit
+                // eigenem Shadow-DOM und verschobenen Rastern landete der
+                // Kasten sonst weit neben dem Zeiger.
+                appendToBody: false,
+                confine: true,
                 formatter: (params) => {
                     if (!params || !params.length) return '';
                     const date = new Date(params[0].value[0]);
@@ -878,6 +882,73 @@ class WueflEnergyChart extends HTMLElement {
 }
 
 customElements.define('we-chart', WueflEnergyChart);
+
+const POPUP_CSS = `
+dialog.we-chart-popup {
+  background: var(--card-background-color, #fff); border: 0;
+  border-radius: var(--ha-card-border-radius, 12px); box-sizing: border-box;
+  color: var(--primary-text-color); display: none; flex-direction: column;
+  height: min(70dvh, 560px); max-height: none; max-width: none;
+  padding: 8px; width: min(92vw, 900px);
+}
+dialog.we-chart-popup[open] { display: flex; }
+dialog.we-chart-popup::backdrop { background: rgba(0, 0, 0, .5); }
+dialog.we-chart-popup .body { flex: 1; min-height: 0; }
+dialog.we-chart-popup we-chart { display: block; height: 100%; }
+dialog.we-chart-popup .close {
+  align-items: center; align-self: flex-end; background: none; border: 0; border-radius: 50%;
+  color: var(--secondary-text-color); cursor: pointer; display: inline-flex; height: 36px;
+  justify-content: center; margin: -4px -4px 0 0; padding: 0; width: 36px;
+}
+dialog.we-chart-popup .close:hover { background: var(--secondary-background-color, rgba(127,127,127,.12)); }
+@media (max-width: 700px) {
+  dialog.we-chart-popup { height: min(80dvh, 560px); padding: 6px; width: 96vw; }
+}
+`;
+
+/**
+ * Ein Diagramm in einem Fenster zeigen – überall gleich.
+ *
+ * Titel, Vollbild-Knopf, Legende und Bedienung sind dieselben wie in einer
+ * Karte; das Diagramm füllt den Platz, den das Fenster hergibt. Benutzt von
+ * den Kacheln der Energie-Ansicht.
+ *
+ * @param {object} o
+ * @param {Node}   o.root   Shadow-Root oder Element, in das der Dialog kommt
+ * @param {object} o.hass
+ * @param {string} o.title      Überschrift, auch im Vollbild sichtbar
+ * @param {object} o.config     Diagramm-Konfiguration (ohne title)
+ * @param {boolean} [o.fullscreen=true]  Vollbild-Knopf anbieten
+ */
+export function openChartPopup({ root, hass, title, config, fullscreen = true }) {
+  if (!root || !config?.series?.length) return null;
+
+  const dlg = document.createElement('dialog');
+  dlg.className = 'we-chart-popup';
+  const style = document.createElement('style');
+  style.textContent = POPUP_CSS;
+  dlg.append(style);
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'close';
+  close.setAttribute('aria-label', 'Schließen');
+  close.innerHTML = '<ha-icon icon="mdi:close"></ha-icon>';
+  close.addEventListener('click', () => { dlg.close(); dlg.remove(); });
+
+  const body = document.createElement('div');
+  body.className = 'body';
+  const chart = document.createElement('we-chart');
+  chart.setConfig({ ...config, title, fullscreen });
+  chart.hass = hass;
+  body.append(chart);
+
+  dlg.append(close, body);
+  dlg.addEventListener('close', () => dlg.remove());
+  root.append(dlg);
+  dlg.showModal();
+  return dlg;
+}
 
 registerCard({
     type: 'we-chart',

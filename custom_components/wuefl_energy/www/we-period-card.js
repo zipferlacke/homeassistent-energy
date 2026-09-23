@@ -103,12 +103,13 @@ const CSS = `
 .nav button.arrow-btn ha-icon { --mdc-icon-size: 22px; }
 
 .date-trigger-btn { position: relative; }
-/* Der HA-Kalender sitzt unter dem Knopf und dient nur als Anker für sein
-   Aufklapp-Fenster. Versteckt wird sein Bedienfeld, nicht er selbst –
-   sonst wäre das Fenster mit versteckt. */
+/* Der HA-Kalender liegt deckungsgleich über dem Knopf: sein Bedienfeld ist
+   durchsichtig, behält aber die Größe des Knopfs. Nur so weiß sein
+   Aufklapp-Fenster, wie breit und wie hoch es werden darf. */
 .ha-picker {
-  bottom: 0; height: 0; left: 50%; position: absolute; width: 0;
+  inset: 0; pointer-events: none; position: absolute;
 }
+.ha-picker ha-date-range-picker { display: block; height: 100%; width: 100%; }
 .date-trigger-btn {
   align-items: center;
   background: var(--secondary-background-color, rgba(127, 127, 127, .12));
@@ -287,7 +288,8 @@ class WueflEnergyPeriodCard extends HTMLElement {
     picker.minimal = true;      // nur ein Symbol statt Textfeld und Pfeilen
     picker.autoApply = true;
     picker.addEventListener('value-changed', (ev) => {
-      const { startDate, endDate } = ev.detail ?? {};
+      // HA schickt { value: { startDate, endDate } }, ältere Fassungen flach
+      const { startDate, endDate } = ev.detail?.value ?? ev.detail ?? {};
       if (!startDate || !endDate) return;
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -316,7 +318,8 @@ class WueflEnergyPeriodCard extends HTMLElement {
     const field = this.#els.haPicker?.shadowRoot?.querySelector('#field');
     if (!field) return;
     Object.assign(field.style, {
-      height: '0', opacity: '0', pointerEvents: 'none', position: 'absolute', width: '0',
+      height: '100%', inset: '0', margin: '0', opacity: '0',
+      pointerEvents: 'none', position: 'absolute', width: '100%',
     });
   }
 
