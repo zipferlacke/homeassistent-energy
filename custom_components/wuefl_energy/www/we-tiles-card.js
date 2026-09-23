@@ -5,8 +5,9 @@
  * von we-period-card, ohne diese Karte selbst zu kennen.
  */
 import {
-  asList, fmtEnergy, esc, registerCard, centralConfig, WueflFormEditor, sel,
-  TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats, colorOf,
+  asList, fmtEnergy, fmtEuro, esc, registerCard, centralConfig, WueflFormEditor, sel,
+  TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats, colorOf, priceInfo,
+  tileHtml, cssColor,
 } from './we-shared.js';
 
 const SERIES = [
@@ -132,6 +133,64 @@ class WueflEnergyTilesCard extends HTMLElement {
     );
   }
 
+  /**
+   * Geld-Kacheln für den gewählten Zeitraum.
+   *
+   * Gerechnet wird mit den Preisen, die gerade gelten (fester Preis aus den
+   * Einstellungen oder der aktuelle Wert des Preissensors). Bei einem
+   * dynamischen Tarif ist das für längere Zeiträume eine Näherung.
+   */
+  #moneyTiles(used) {
+    const c = this.#config;
+    const sum = (key) => {
+      const s = used.find((x) => x.key === key);
+      return s ? this.#total(s) : null;
+    };
+    const imp = sum('grid_import');
+    const exp = sum('grid_export');
+    const pv = sum('pv_energy');
+
+    const pImp = priceInfo(this.#hass, c, 'import').now;
+    const pExp = priceInfo(this.#hass, c, 'export').now;
+
+    const own = pv !== null ? Math.max(0, pv - (exp ?? 0)) : null;
+    const saved = own !== null && pImp !== null ? (own * pImp) / 100 : null;
+    const earned = exp !== null && pExp !== null ? (exp * pExp) / 100 : null;
+    const paid = imp !== null && pImp !== null ? (imp * pImp) / 100 : null;
+    if (saved === null && earned === null && paid === null) return [];
+
+    const tiles = [];
+
+    if (earned !== null || paid !== null) {
+      tiles.push(tileHtml({
+        icon: 'mdi:cash-multiple', color: cssColor(this, '--primary-color', '#03a9f4'),
+        title: 'Bilanz', value: fmtEuro((earned ?? 0) - (paid ?? 0)),
+        subtitle: [
+          earned !== null ? `<span class="sub-item" style="color: ${colorOf('battery', asList(c.battery)[0])}">${esc(fmtEuro(earned))} eingespeist</span>` : '',
+          paid !== null ? `<span class="sub-item" style="color: var(--error-color, #db4437)">${esc(fmtEuro(-paid))} bezogen</span>` : '',
+        ].join(''),
+      }));
+    }
+
+    const cost = Number(c.systemdata?.system_cost_value);
+    const beitrag = (saved ?? 0) + (earned ?? 0);
+    if (Number.isFinite(cost) && cost > 0) {
+      const anteil = (beitrag / cost) * 100;
+      tiles.push(tileHtml({
+        icon: 'mdi:cash-clock', color: colorOf('solar', asList(c.solar)[0]),
+        title: 'Zur Amortisation', value: fmtEuro(beitrag, { signed: false }),
+        subtitle: `<span class="sub-item">${esc(`${anteil.toFixed(anteil < 1 ? 2 : 1).replace('.', ',')} % der Anlage`)}</span>`,
+      }));
+    } else if (saved !== null) {
+      tiles.push(tileHtml({
+        icon: 'mdi:solar-power', color: colorOf('solar', asList(c.solar)[0]),
+        title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }),
+        subtitle: `<span class="sub-item">${esc('Anschaffungskosten in den Einstellungen ergänzen für die Amortisation')}</span>`,
+      }));
+    }
+    return tiles;
+  }
+
   #render(used) {
     const html = [];
     const seen = new Set();
@@ -169,6 +228,7 @@ class WueflEnergyTilesCard extends HTMLElement {
         </div>
       </div></ha-card>`);
     }
+    html.push(...this.#moneyTiles(used));
     this.#els.grid.innerHTML = html.join('');
   }
 }
