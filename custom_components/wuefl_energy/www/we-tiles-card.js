@@ -183,7 +183,7 @@ class WueflEnergyTilesCard extends HTMLElement {
     if (earned !== null || paid !== null) {
       tiles.push(tileHtml({
         icon: 'mdi:cash-multiple', color: cssColor(this, '--primary-color', '#03a9f4'),
-        title: 'Bilanz', value: fmtEuro((earned ?? 0) - (paid ?? 0)),
+        title: 'Bilanz', value: fmtEuro((earned ?? 0) - (paid ?? 0)), click: 'geld:bilanz',
         subtitle: [
           earned !== null ? `<span class="sub-item" style="color: ${colorOf('battery', asList(c.battery)[0])}">${esc(fmtEuro(earned))} eingespeist</span>` : '',
           paid !== null ? `<span class="sub-item" style="color: var(--error-color, #db4437)">${esc(fmtEuro(-paid))} bezogen</span>` : '',
@@ -197,17 +197,89 @@ class WueflEnergyTilesCard extends HTMLElement {
       const anteil = (beitrag / cost) * 100;
       tiles.push(tileHtml({
         icon: 'mdi:cash-clock', color: colorOf('solar', asList(c.solar)[0]),
-        title: 'Zur Amortisation', value: fmtEuro(beitrag, { signed: false }),
+        title: 'Zur Amortisation', value: fmtEuro(beitrag, { signed: false }), click: 'geld:amortisation',
         subtitle: `<span class="sub-item">${esc(`${anteil.toFixed(anteil < 1 ? 2 : 1).replace('.', ',')} % der Anlage`)}</span>`,
       }));
     } else if (saved !== null) {
       tiles.push(tileHtml({
         icon: 'mdi:solar-power', color: colorOf('solar', asList(c.solar)[0]),
-        title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }),
+        title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }), click: 'geld:gespart',
         subtitle: `<span class="sub-item">${esc('Anschaffungskosten in den Einstellungen ergänzen für die Amortisation')}</span>`,
       }));
     }
     return tiles;
+  }
+
+  /**
+   * Euro je Abschnitt aus den schon geladenen Statistiken.
+   *
+   * Die Zeilen aller Zähler liegen auf demselben Raster (Stunde, Tag oder
+   * Monat), deshalb lässt sich je Abschnitt rechnen: eingespeist × Vergütung,
+   * bezogen × Arbeitspreis und der Eigenverbrauch (Erzeugung minus
+   * Einspeisung) zum Arbeitspreis.
+   */
+  #moneyRows(used) {
+    const c = this.#config;
+    const pImp = priceInfo(this.#hass, c, 'import').now;
+    const pExp = priceInfo(this.#hass, c, 'export').now;
+    const idsOf = (key) => (used.find((x) => x.key === key)?.getIds(c)) ?? [];
+
+    const perBucket = (ids) => {
+      const map = new Map();
+      for (const id of ids) {
+        for (const row of this.#stats[id] ?? []) {
+          const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
+          if (Number.isNaN(t)) continue;
+          map.set(t, (map.get(t) ?? 0) + Math.max(0, Number(row.change) || 0));
+        }
+      }
+      return map;
+    };
+
+    const imp = perBucket(idsOf('grid_import'));
+    const exp = perBucket(idsOf('grid_export'));
+    const pv = perBucket(idsOf('pv_energy'));
+    const times = [...new Set([...imp.keys(), ...exp.keys(), ...pv.keys()])].sort((a, b) => a - b);
+
+    return times.map((t) => {
+      const e = exp.get(t) ?? 0;
+      const i = imp.get(t) ?? 0;
+      const p = pv.get(t) ?? 0;
+      return {
+        t,
+        eingespeist: pExp === null ? 0 : (e * pExp) / 100,
+        bezogen: pImp === null ? 0 : (i * pImp) / 100,
+        gespart: pImp === null ? 0 : (Math.max(0, p - e) * pImp) / 100,
+      };
+    });
+  }
+
+  /** Reihen für die Geld-Diagramme; `art` ist bilanz, amortisation oder gespart. */
+  #moneySeries(art, used, range) {
+    const rows = this.#moneyRows(used);
+    if (!rows.length) return [];
+    const bar = range.overMonth || range.overWeek ? 'bar' : 'line';
+    const punkte = (f) => rows.map((r) => [r.t, Math.round(f(r) * 100) / 100]);
+
+    if (art === 'bilanz') {
+      return [
+        { name: 'Eingespeist', data: punkte((r) => r.eingespeist), unit: '€',
+          color: colorOf('grid', this.#config.grid, 0, 'color_export'), type: bar, stack: 'plus', fill: 'gradient' },
+        { name: 'Bezogen', data: punkte((r) => -r.bezogen), unit: '€',
+          color: colorOf('grid', this.#config.grid), type: bar, stack: 'minus', fill: 'gradient' },
+      ];
+    }
+
+    // Beitrag je Abschnitt plus die aufgelaufene Summe
+    let summe = 0;
+    const beitrag = (r) => (art === 'gespart' ? r.gespart : r.gespart + r.eingespeist);
+    const kumuliert = rows.map((r) => { summe += beitrag(r); return [r.t, Math.round(summe * 100) / 100]; });
+    return [
+      { name: art === 'gespart' ? 'Gespart' : 'Beitrag', data: punkte(beitrag), unit: '€',
+        color: colorOf('solar', asList(this.#config.solar)[0]), type: bar, fill: 'gradient' },
+      { name: 'Summe im Zeitraum', data: kumuliert, unit: '€', y_axis: 1,
+        color: colorOf('battery', asList(this.#config.battery)[0]), type: 'line', smooth: 0.35, fill: false },
+    ];
   }
 
   #render(used) {
@@ -250,12 +322,19 @@ class WueflEnergyTilesCard extends HTMLElement {
   #openDetail(what) {
     const [kind, id] = String(what).split(':');
     const used = this.#used();
+    const range = getPeriod();
+
+    if (kind === 'geld') {
+      const titel = { bilanz: 'Bilanz', amortisation: 'Zur Amortisation', gespart: 'Durch PV gespart' };
+      this.#showChart(titel[id] ?? 'Geld', this.#moneySeries(id, used, range), range, '€');
+      return;
+    }
+
     const parts = kind === 'pair'
       ? used.filter((s) => s.pair === id)
       : used.filter((s) => s.key === id);
     if (!parts.length) return;
 
-    const range = getPeriod();
     const title = kind === 'pair' ? PAIR_NAMES[id] : parts[0].label;
     const series = parts.flatMap((s) => s.getIds(this.#config).map((entity, i) => ({
       entity,
@@ -272,6 +351,12 @@ class WueflEnergyTilesCard extends HTMLElement {
       type: range.overMonth ? 'bar' : 'line',
     })));
 
+    this.#showChart(title, series, range, 'kWh');
+  }
+
+  /** Diagramm einer Kachel in einem Fenster zeigen. */
+  #showChart(title, series, range, unit) {
+    if (!series.length) return;
     const dlg = document.createElement('dialog');
     dlg.className = 'detail';
     dlg.innerHTML = `<div class="head"><div class="t">${esc(title)}</div>
@@ -283,7 +368,7 @@ class WueflEnergyTilesCard extends HTMLElement {
       start: range.start.toISOString(),
       end: range.end.toISOString(),
       aggregation: range.overYear ? '1m' : range.overMonth ? '1d' : range.overWeek ? '2h' : range.overDay ? '10min' : '5min',
-      y_axes: [{ unit: 'kWh' }],
+      y_axes: series.some((s) => s.y_axis === 1) ? [{ unit }, { unit }] : [{ unit }],
       legend: [{ hidden: series.length <= 1, position: 'top-center' }],
       fullscreen: false,
       series,
