@@ -326,6 +326,14 @@ function sheet(key, cssText) {
   return SHEETS.get(key);
 }
 
+/** Ein weiteres Stilblatt dazunehmen, ohne die vorhandenen zu verlieren. */
+export function addSheet(root, cssText, key) {
+  const extra = sheet(key, cssText);
+  if (!root.adoptedStyleSheets.includes(extra)) {
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, extra];
+  }
+}
+
 export function adoptSheet(root, cssText, key) {
   root.adoptedStyleSheets = [
     sheet('tokens', TOKENS_CSS),

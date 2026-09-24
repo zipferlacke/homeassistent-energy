@@ -6,7 +6,8 @@
  * NEU: Beim Wechsel der Granularität wird der letzte Zeitraum im zuvor 
  * gewählten Zeitraum beibehalten (z.B. Wechsel von Jahr 2025 auf Monat -> Dezember 2025).
  */
-import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS } from './we-shared.js';
+import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS,
+  addSheet, centralConfig, asList } from './we-shared.js';
 import { DatePicker } from './datepicker_v2.0.1/datepicker_v2_0_1.js';
 
 /**
@@ -19,12 +20,19 @@ import { DatePicker } from './datepicker_v2.0.1/datepicker_v2_0_1.js';
  * laufendes Home Assistant lässt sich das auch nicht nachstellen, also
  * jedes Mal Raten.
  *
- * Dieser Kalender hängt an zwei normalen Datumsfeldern, zeichnet sich
- * selbst in die oberste Ebene (Popover) und lässt sich hier im Test
- * öffnen und anklicken. Die Felder liegen bewusst im hellen Baum der
- * Karte und werden über einen Slot in die Leiste gereicht – so findet der
- * Kalender sein Stylesheet (es hängt am Dokument) und erkennt Klicks auf
- * seinen Auslöser, die im Schatten-Baum beim Karten-Element landen würden.
+ * Dieser Kalender hängt an zwei normalen Datumsfeldern und zeichnet sich
+ * in die oberste Ebene (Popover).
+ *
+ * Er sitzt samt Feldern in unserem Schatten-Baum, und sein Stilblatt wird
+ * dort ausdrücklich dazugeladen. Der erste Anlauf legte die Felder in den
+ * hellen Baum der Karte – im Test am Dokument hing das Stilblatt richtig,
+ * in Home Assistant steckt die Karte aber selbst mehrere Schatten-Bäume
+ * tief, und CSS aus dem Dokument kommt dort nicht an: Der Kalender stand
+ * unformatiert da, mit "chevron_left" als Text.
+ *
+ * Positioniert wird ausdrücklich per JavaScript (forceJsPosition): Die
+ * Anker-Positionierung von CSS über Baumgrenzen hinweg ist nichts, worauf
+ * man sich hier verlassen möchte.
  *
  * Lädt er nicht, bleiben die beiden Datumsfelder sichtbar und bedienbar.
  */
@@ -39,6 +47,17 @@ let dpZaehler = 0;
 function datePicker() {
   if (!dpSingleton) dpSingleton = new DatePicker({ lang: 'de', locale: 'de-DE' });
   return dpSingleton;
+}
+
+/** Das Stilblatt des Kalenders – einmal geholt, von allen Karten benutzt. */
+let dpCss = null;
+function datePickerCss() {
+  if (!dpCss) {
+    dpCss = fetch(new URL('./datepicker_v2.0.1/datepicker_v2_0_1.css', import.meta.url))
+      .then((r) => (r.ok ? r.text() : ''))
+      .catch(() => '');
+  }
+  return dpCss;
 }
 
 const PERIODS = [
@@ -94,7 +113,8 @@ const CSS = `
 .datum-slot {
   inset: 0; position: absolute;
 }
-::slotted(.we-datum) { display: block; height: 100%; width: 100%; }
+/* Tage ohne Daten: sichtbar, aber nicht wählbar */
+.dp_day.we-aus { opacity: .32; pointer-events: none; }
 .date-trigger-btn {
   align-items: center;
   background: var(--secondary-background-color, rgba(127, 127, 127, .12));
@@ -146,6 +166,8 @@ class WueflEnergyPeriodCard extends HTMLElement {
   #hass = null;
   #offset = 0;
   #granularity = 'day';
+  #von = null;
+  #bis = null;
 
   static getConfigElement() { return document.createElement('we-period-card-editor'); }
   static getStubConfig() { return {}; }
@@ -173,7 +195,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
           <button type="button" class="date-trigger-btn" title="Datum wählen">
             <ha-icon icon="mdi:calendar"></ha-icon>
             <span class="label"></span>
-            <span class="datum-slot"><slot name="datum"></slot></span>
+            <span class="datum-slot"></span>
           </button>
           <button type="button" class="arrow-btn next" title="Vor"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
         </div>
@@ -226,11 +248,14 @@ class WueflEnergyPeriodCard extends HTMLElement {
       this.#apply(); 
     });
 
-    this.#els.dateBtn.addEventListener('click', () => {
-      // Trifft der Klick den durchsichtigen Auslöser, öffnet der Kalender
-      // sich selbst. Ohne Kalender bleiben die beiden Datumsfelder.
-      if (this.#els.dp) this.#els.dp.open();
-      else this.#els.popup.classList.toggle('hidden');
+    this.#els.dateBtn.addEventListener('click', (ev) => {
+      // Im Schatten-Baum sieht der Kalender als Klick-Ziel nur die Karte und
+      // hielte das für "irgendwo daneben" – er würde sofort wieder zumachen.
+      // Deshalb hier selbst auf- und zuklappen und den Klick anhalten.
+      if (!this.#els.dp) { this.#els.popup.classList.toggle('hidden'); return; }
+      ev.stopPropagation();
+      if (this.#els.dp.isOpen) this.#els.dp.close();
+      else { this.#els.dp.open(); this.#limitDays(); }
     });
 
     const applyCustom = () => {
@@ -266,19 +291,18 @@ class WueflEnergyPeriodCard extends HTMLElement {
    * Kalender versteckt sie selbst und setzt seinen eigenen Auslöser
    * dorthin – den machen wir durchsichtig, sichtbar bleibt unser Knopf.
    */
-  #setupPicker() {
+  async #setupPicker() {
     // Erst den Kalender wecken, dann die Felder einhängen: sein Bausatz
     // durchsucht beim Start das Dokument und würde sie sonst selbst
     // übernehmen – wir bekämen keinen Griff auf die Instanz.
     const dp = datePicker();
+    const root = this.shadowRoot;
+    addSheet(root, await datePickerCss(), 'datepicker');
 
-    const box = document.createElement('div');
-    box.className = 'we-datum';
-    box.slot = 'datum';
+    const box = this.#els.slot;
     const id = `we${(dpZaehler += 1)}`;
     box.innerHTML = `<input type="date" data-tp-picker="${id}+" data-tp-format="iso">`
       + `<input type="date" data-tp-picker="${id}-" data-tp-format="iso">`;
-    this.appendChild(box);
 
     const [von, bis] = box.querySelectorAll('input');
     this.#els.von = von;
@@ -302,7 +326,9 @@ class WueflEnergyPeriodCard extends HTMLElement {
     bis.addEventListener('change', uebernehmen);
 
     try {
-      this.#els.dp = dp.create([von, bis], { outputFormat: 'iso', showDate: true, showTime: false });
+      this.#els.dp = dp.create([von, bis], {
+        outputFormat: 'iso', showDate: true, showTime: false, forceJsPosition: true,
+      });
     } catch (err) {
       // Ohne Kalender bleiben die beiden Datumsfelder – sichtbar und nutzbar
       this.#els.dp = null;
@@ -317,8 +343,68 @@ class WueflEnergyPeriodCard extends HTMLElement {
       // Unsere alten Datumsfelder werden nicht mehr gebraucht
       this.#els.popup.classList.add('hidden');
       this.#els.popup.hidden = true;
+      this.#loadBounds();
     }
     this.#syncButtons();
+  }
+
+  /**
+   * Bis wann und ab wann es überhaupt Daten gibt.
+   *
+   * Heute ist das Ende – in die Zukunft gibt es nichts zu zeigen. Der Anfang
+   * ist der erste Monat, für den der Recorder eine Statistik hat.
+   */
+  async #loadBounds() {
+    this.#bis = new Date(); this.#bis.setHours(23, 59, 59, 999);
+    try {
+      const cfg = await centralConfig(this.#hass);
+      const ids = [...new Set([
+        ...asList(cfg.grid?.import_total), ...asList(cfg.grid?.export_total),
+        ...asList(cfg.solar).map((x) => x?.total), ...asList(cfg.consumers?.total),
+      ].map((v) => (typeof v === 'string' ? v : v?.entity)).filter(Boolean))];
+      if (!ids.length) return;
+      const res = await this.#hass.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: new Date(2000, 0, 1).toISOString(),
+        statistic_ids: ids, period: 'month', types: ['sum'],
+      });
+      const erste = Object.values(res ?? {})
+        .map((rows) => +new Date(rows?.[0]?.start ?? NaN))
+        .filter(Number.isFinite);
+      if (erste.length) { this.#von = new Date(Math.min(...erste)); this.#von.setHours(0, 0, 0, 0); }
+    } catch {
+      // Ohne Auskunft bleibt nur die Grenze nach vorn
+    }
+  }
+
+  /**
+   * Tage ohne Daten ausgrauen und ihre Klicks abfangen.
+   *
+   * Der Kalender selbst kennt keine Grenzen, baut sein Tagesraster aber bei
+   * jeder Bewegung neu – deshalb ein Beobachter darauf statt einmaligem
+   * Bemalen. Der Klick wird in der Abfangphase gestoppt, bevor der Kalender
+   * ihn sieht.
+   */
+  #limitDays() {
+    const pop = this.#els.dp?.popover;
+    if (!pop || pop.dataset.weGrenzen === '1') return;
+    pop.dataset.weGrenzen = '1';
+
+    const ausserhalb = (taste) => {
+      const t = +new Date(`${taste.dataset.date}T12:00:00`);
+      return (this.#von && t < +this.#von) || (this.#bis && t > +this.#bis);
+    };
+    const malen = () => {
+      for (const taste of pop.querySelectorAll('.dp_day')) {
+        taste.classList.toggle('we-aus', ausserhalb(taste));
+      }
+    };
+    pop.addEventListener('click', (ev) => {
+      const taste = ev.target?.closest?.('.dp_day');
+      if (taste && ausserhalb(taste)) { ev.stopPropagation(); ev.preventDefault(); }
+    }, true);
+    new MutationObserver(malen).observe(pop, { childList: true, subtree: true });
+    malen();
   }
 
   /** Den gerade gültigen Zeitraum in den Kalender schreiben. */

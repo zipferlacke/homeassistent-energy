@@ -954,27 +954,30 @@ class WueflEnergyLiveCard extends HTMLElement {
       : [];
     // Heute zählt zuerst – ein größeres Fenster morgen darf das nicht verdecken
     const heuteStr = new Date(now).toDateString();
-    const heute = fenster.filter((w) => w.start.toDateString() === heuteStr);
-    const morgen = fenster.find((w) => w.start.toDateString() !== heuteStr);
+    // Schnipsel unter zehn Minuten sind Rauschen an der Schwelle, keine Fenster
+    const echte = fenster.filter((w) => w.end - w.start >= 10 * 60_000);
+    const heute = echte.filter((w) => w.start.toDateString() === heuteStr);
+    const morgen = echte.find((w) => w.start.toDateString() !== heuteStr);
     const heuteKwh = heute.reduce((a, w) => a + w.kwh, 0);
     const ende = heute.length ? roundQuarter(heute[heute.length - 1].end) : null;
+    // Mittlere freie Leistung in den Fenstern (ohne die Pausen dazwischen)
+    const aktiveStunden = heute.reduce((a, w) => a + (w.end - w.start) / 3_600_000, 0);
+    const schnittKw = aktiveStunden > 0 ? heuteKwh / aktiveStunden : 0;
+    const pausen = Math.max(0, heute.length - 1);
 
     let html = '';
     let go = false;
     const zahl = (v) => v.toFixed(1).replace('.', ',');
-    // Ein Abschnitt: "frei bis ca. 17:00". Mehrere: alle Zeiten einzeln,
-    // damit eine Wolkenlücke am Nachmittag nicht als Dauerfreigabe gilt.
-    const zeiten = heute.slice(0, 4)
-      .map((w) => `${fmtClock(roundQuarter(w.start))}–${fmtClock(roundQuarter(w.end))}`);
-    if (heute.length > 4) zeiten.push('…');
-    const abschnitte = heute.length > 1
-      ? ` · ${zeiten.join(' · ')}`
-      : ende ? ` bis ca. ${fmtClock(ende)}` : '';
+    // Ein Zeitraum von vorn bis hinten, die Löcher darin nur gezählt: eine
+    // Liste aus sieben Viertelstunden-Schnipseln liest niemand.
+    const bis = ende ? ` bis ca. ${fmtClock(ende)}` : '';
+    const lücken = pausen ? ` · mit ${pausen} ${pausen === 1 ? 'Unterbrechung' : 'Unterbrechungen'}` : '';
+    const schnitt = heute.length ? ` · im Schnitt ca. ${zahl(schnittKw)} kW` : '';
 
     if (this.#surplusNow) {
       go = true;
       // Jetzt zählt die gemessene Leistung, die Menge kommt aus der Prognose
-      const rest = heute.length ? ` · heute noch <b>ca. ${zahl(heuteKwh)} kWh</b>${abschnitte}` : '';
+      const rest = heute.length ? ` · heute noch <b>ca. ${zahl(heuteKwh)} kWh</b>${bis}${lücken}` : '';
       html = `<b>Jetzt</b> genug Strom für größere Verbraucher · <b>ca. ${zahl(mean / 1000)} kW</b> frei${rest}`;
     } else if (heute.length) {
       go = true;
@@ -983,7 +986,7 @@ class WueflEnergyLiveCard extends HTMLElement {
         ? roundQuarter(new Date(now + 10 * 60_000), true)
         : roundQuarter(heute[0].start);
       html = `Ab <b>ca. ${fmtClock(start)}</b> genug Strom für größere Verbraucher`
-        + ` · <b>ca. ${zahl(heuteKwh)} kWh</b> frei${abschnitte}`;
+        + ` · <b>ca. ${zahl(heuteKwh)} kWh</b> frei${bis}${schnitt}${lücken}`;
     } else if (morgen) {
       html = 'Heute kein größerer Überschuss mehr erwartet'
         + ` <span class="sub">· morgen ab ca. ${fmtClock(roundQuarter(morgen.start))}`

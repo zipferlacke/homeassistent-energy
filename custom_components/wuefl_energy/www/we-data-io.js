@@ -88,16 +88,23 @@ function fmtTime(date, period) {
 }
 const fmtNum = (v) => (v === null || v === undefined || !Number.isFinite(v) ? '' : v.toFixed(3).replace('.', ','));
 
-/** CSV (Semikolon, Dezimalkomma – öffnet sich in Excel direkt richtig). */
+/**
+ * CSV (Semikolon, Dezimalkomma – öffnet sich in Excel direkt richtig).
+ *
+ * Feiner als fünf Minuten gibt es nicht: So führt Home Assistant seine
+ * Langzeitstatistik. Halbe Stunden fasst der Export aus den
+ * Fünf-Minuten-Werten zusammen, die Summe bleibt dabei dieselbe.
+ */
 export async function exportCsv(hass, targets, start, end, period) {
   const ids = targets.map((t) => t.entity);
+  const bucketMs = period === '30min' ? 1_800_000 : 0;
   const res = ids.length
     ? await hass.callWS({
       type: 'recorder/statistics_during_period',
       start_time: start.toISOString(),
       end_time: end.toISOString(),
       statistic_ids: ids,
-      period,
+      period: bucketMs ? '5minute' : period,
       types: ['change'],
       units: { energy: 'kWh' },
     })
@@ -105,9 +112,11 @@ export async function exportCsv(hass, targets, start, end, period) {
   const times = new Map();
   targets.forEach((t, col) => {
     for (const row of res?.[t.entity] ?? []) {
-      const key = +new Date(row.start);
+      const roh = +new Date(row.start);
+      const key = bucketMs ? Math.floor(roh / bucketMs) * bucketMs : roh;
       if (!times.has(key)) times.set(key, new Array(targets.length).fill(null));
-      times.get(key)[col] = Number(row.change);
+      const v = Number(row.change);
+      if (Number.isFinite(v)) times.get(key)[col] = (times.get(key)[col] ?? 0) + v;
     }
   });
   const lines = [['Zeit', ...targets.map((t) => `${t.label} (kWh)`)].join(';')];
@@ -454,12 +463,16 @@ class WueflDataIo extends HTMLElement {
     root.innerHTML = `
       <div class="part">
         <div class="sub">Export</div>
-        <span class="note">Energie aus der Langzeitstatistik von Home Assistant als CSV-Tabelle (Excel-tauglich, kWh).</span>
+        <span class="note">Energie aus der Langzeitstatistik von Home Assistant als CSV-Tabelle (Excel-tauglich, kWh).
+          Feiner als fünf Minuten führt Home Assistant keine Statistik, und die
+          Fünf-Minuten-Werte hält der Recorder nur etwa zehn Tage – für ältere Zeiträume je Stunde oder gröber.</span>
         <div class="line">
           <input type="date" class="from" value="${today.getFullYear()}-01-01" aria-label="Von">
           <span>bis</span>
           <input type="date" class="to" value="${iso(today)}" aria-label="Bis">
           <select class="period" aria-label="Auflösung">
+            <option value="5minute">je 5 Minuten</option>
+            <option value="30min">je 30 Minuten</option>
             <option value="hour">je Stunde</option>
             <option value="day" selected>je Tag</option>
             <option value="month">je Monat</option>

@@ -44,7 +44,9 @@ class WueflEnergyHistoryCard extends WueflChartWrapper {
   buildChartConfig(range) {
     const series = [];
 
-    for (const def of SERIES) {
+    // Erst alles, was nach oben geht, dann alles nach unten – in der Legende
+    // stehen damit Erzeugung und Verbrauch beieinander statt gemischt.
+    for (const def of [...SERIES].sort((a, b) => b.sign - a.sign)) {
       for (const { entity, name, color } of seriesEntries(this._config, def)) {
         series.push({
           entity,
