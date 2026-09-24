@@ -399,19 +399,37 @@ export function isProtected(start, schutz) {
   return true;
 }
 
-/** Stunden, für die es schon Werte gibt, als Menge von Zeitstempeln. */
-export async function existingHours(hass, id, von, bis) {
+/**
+ * Stunden mit vorhandenen Werten, für mehrere Zähler in einer Abfrage.
+ *
+ * Ein Jahr sind 8.760 Zeilen je Zähler. Bei sieben Zählern einzeln abgefragt
+ * warten wir siebenmal hintereinander auf dieselbe Spanne – gebündelt holt
+ * Home Assistant alles in einem Durchgang. Gefragt wird nur nach 'sum': Ob
+ * eine Stunde existiert, steht damit fest, und 'change' müsste HA erst
+ * ausrechnen.
+ */
+export async function existingHoursMany(hass, ids, von, bis) {
+  const leer = new Map(ids.map((id) => [id, new Set()]));
+  if (!ids.length) return leer;
   try {
     const res = await hass.callWS({
       type: 'recorder/statistics_during_period',
       start_time: new Date(von).toISOString(),
       end_time: new Date(bis + HOUR).toISOString(),
-      statistic_ids: [id], period: 'hour', types: ['change'],
+      statistic_ids: ids, period: 'hour', types: ['sum'],
     });
-    return new Set((res?.[id] ?? []).map((r) => +new Date(r.start)));
+    for (const id of ids) {
+      leer.set(id, new Set((res?.[id] ?? []).map((r) => +new Date(r.start))));
+    }
+    return leer;
   } catch {
-    return new Set();
+    return leer;
   }
+}
+
+/** Stunden, für die es schon Werte gibt, als Menge von Zeitstempeln. */
+export async function existingHours(hass, id, von, bis) {
+  return (await existingHoursMany(hass, [id], von, bis)).get(id) ?? new Set();
 }
 
 /**
@@ -900,25 +918,38 @@ class WueflDataIo extends HTMLElement {
       setMsg(msg, 'err'); msg.textContent = 'Bitte mindestens einem Zähler eine Spalte der Datei zuweisen.';
       return;
     }
-    const plan = [];
     const schutz = protectRange(this.#els.keepFrom.value, this.#els.keepTo.value);
     const modus = this.#els.overlap.value;
+    let plan = [];
     try {
+      // Erst die Stundenreihen rechnen – das geht ohne Home Assistant
+      const reihen = [];
       for (const [entity, acc] of byEntity) {
         const roh = [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([start, kwh]) => ({ start, kwh }));
         if (!roh.length) continue;
         // Die Datei bestimmt den Zeitraum vollständig – Stunden ohne Wert
         // werden auf 0 gesetzt, nicht stehen gelassen.
         const hourly = fillGaps(roh);
-        const leer = hourly.length - roh.length;
-        const vorhanden = await existingHours(this.#hass, entity, hourly[0].start, hourly[hourly.length - 1].start);
+        reihen.push({ entity, hourly, leer: hourly.length - roh.length });
+      }
+      if (!reihen.length) throw new Error('keine Werte');
+
+      // Eine Abfrage für alle Zähler statt einer je Zähler
+      const spanneVon = Math.min(...reihen.map((r) => r.hourly[0].start));
+      const spanneBis = Math.max(...reihen.map((r) => r.hourly[r.hourly.length - 1].start));
+      msg.textContent = 'Vorhandene Werte werden gelesen …';
+      const vorhandenAlle = await existingHoursMany(
+        this.#hass, reihen.map((r) => r.entity), spanneVon, spanneBis,
+      );
+
+      // Die Zähler hängen nicht voneinander ab – also nebeneinander rechnen
+      msg.textContent = 'Anschluss wird gesucht …';
+      plan = await Promise.all(reihen.map(async ({ entity, hourly, leer }) => {
+        const vorhanden = vorhandenAlle.get(entity) ?? new Set();
         const { bloecke, geschuetzt, behalten, ersetzt } = planBlocks(hourly, { schutz, vorhanden, modus });
 
         // Jeder Block hängt sich für sich an die vorhandenen Summen an.
-        const stats = [];
-        let kwh = 0;
-        let naht = 0;
-        for (const block of bloecke) {
+        const teile = await Promise.all(bloecke.map(async (block) => {
           const von = block[0].start;
           const bis = block[block.length - 1].start;
           const [vorher, nachher] = await Promise.all([
@@ -929,21 +960,24 @@ class WueflDataIo extends HTMLElement {
           // Steht der Block zwischen zwei festen Summen, muss die Rechnung
           // aufgehen. Tut sie es nicht, landet der Rest in der ersten
           // geschriebenen Stunde – das gehört vorher gesagt.
-          if (vorher !== null && nachher) {
-            naht += ((Number(nachher.sum) || 0) - (Number(nachher.change) || 0)) - vorher - b.kwh;
-          }
-          stats.push(...b.stats);
-          kwh += b.kwh;
-        }
+          const naht = vorher !== null && nachher
+            ? ((Number(nachher.sum) || 0) - (Number(nachher.change) || 0)) - vorher - b.kwh
+            : 0;
+          return { b, naht };
+        }));
+
+        const stats = teile.flatMap((t) => t.b.stats);
+        const kwh = teile.reduce((a, t) => a + t.b.kwh, 0);
+        const naht = teile.reduce((a, t) => a + t.naht, 0);
         const label = this.#targets.find((t) => t.entity === entity)?.label ?? entity;
-        plan.push({
+        return {
           entity, label, stats, kwh, leer, geschuetzt, behalten, ersetzt,
           naht: Math.abs(naht) < 0.01 ? 0 : naht,
           from: bloecke[0]?.[0]?.start ?? null,
           to: bloecke.length ? bloecke[bloecke.length - 1].at(-1).start : null,
           bloecke: bloecke.length,
-        });
-      }
+        };
+      }));
     } catch (err) {
       setMsg(msg, 'err'); msg.textContent = `Prüfen fehlgeschlagen: ${err?.message ?? err}`;
       return;
