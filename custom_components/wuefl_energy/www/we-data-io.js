@@ -171,6 +171,25 @@ export function numberParser(values) {
 }
 
 /**
+ * Monatsname → Nummer. Deutsch und Englisch, ausgeschrieben oder abgekürzt.
+ *
+ * Verglichen werden die ersten drei Buchstaben ohne Punkt und ohne Umlaut,
+ * damit "Jan", "Jan.", "Januar" und "January" alle auf dasselbe fallen.
+ */
+const MONAT = {
+  jan: 0, feb: 1, mar: 2, mrz: 2, apr: 3, mai: 4, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, okt: 9, oct: 9, nov: 10, dez: 11, dec: 11,
+};
+
+function monatNr(wort) {
+  const w = String(wort ?? '').toLowerCase()
+    .replace(/\./g, '')
+    .replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u');
+  const nr = MONAT[w.slice(0, 3)];
+  return nr === undefined ? null : nr;
+}
+
+/**
  * Zeitpunkt aus üblichen Formaten. grain = wie fein: hour, day oder month.
  * Ohne Zeitzone gilt Ortszeit.
  */
@@ -194,6 +213,24 @@ export function parseTime(value) {
   if ((m = s.match(/^(\d{4})-(\d{1,2})$/)) || (m = s.match(/^(\d{1,2})[./](\d{4})$/))) {
     const [y, mo] = m[1].length === 4 ? [+m[1], +m[2]] : [+m[2], +m[1]];
     return { date: new Date(y, mo - 1, 1), grain: 'month' };
+  }
+  // Mit Monatsnamen: "1. Jan. 2026", "1 Januar 2026 14:00"
+  if ((m = s.match(/^(\d{1,2})\.?\s+([A-Za-zÄÖÜäöüß]+)\.?,?\s+(\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::\d{2})?)?$/))) {
+    const mo = monatNr(m[2]);
+    if (mo !== null) {
+      const d = new Date(+m[3], mo, +m[1], +(m[4] ?? 0), +(m[5] ?? 0));
+      return { date: d, grain: m[4] !== undefined ? 'hour' : 'day' };
+    }
+  }
+  // Englische Reihenfolge: "Jan 1, 2026"
+  if ((m = s.match(/^([A-Za-zÄÖÜäöüß]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/))) {
+    const mo = monatNr(m[1]);
+    if (mo !== null) return { date: new Date(+m[3], mo, +m[2]), grain: 'day' };
+  }
+  // Nur Monat: "Jan. 2026", "Januar 2026"
+  if ((m = s.match(/^([A-Za-zÄÖÜäöüß]+)\.?\s+(\d{4})$/))) {
+    const mo = monatNr(m[1]);
+    if (mo !== null) return { date: new Date(+m[2], mo, 1), grain: 'month' };
   }
   return null;
 }
