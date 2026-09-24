@@ -8,10 +8,10 @@
  */
 import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS,
   addSheet, centralConfig, asList } from './we-shared.js';
-import { DatePicker } from './datepicker_v2.1.1/datepicker_v2_1_1.js';
+import { DatePicker } from './datepicker_v2.1.2/datepicker_v2_1_2.js';
 
 /**
- * Der Kalender kommt aus datepicker_v2.1.1 im selben Ordner.
+ * Der Kalender kommt aus datepicker_v2.1.2 im selben Ordner.
  *
  * Vorher lag hier der Wähler von Home Assistant. Der ist kein offizieller
  * Baustein für eigene Karten: Auf dem Handy ging er auf, am Rechner blieb
@@ -56,7 +56,7 @@ function datePicker() {
 let dpCss = null;
 function datePickerCss() {
   if (!dpCss) {
-    dpCss = fetch(new URL('./datepicker_v2.1.1/datepicker_v2_1_1.css', import.meta.url))
+    dpCss = fetch(new URL('./datepicker_v2.1.2/datepicker_v2_1_2.css', import.meta.url))
       .then((r) => (r.ok ? r.text() : ''))
       .catch(() => '');
   }
@@ -353,6 +353,9 @@ class WueflEnergyPeriodCard extends HTMLElement {
         // Nur Tage, für die es Daten gibt: nicht in die Zukunft und nicht
         // vor den ersten Wert im Recorder. Das Blättern endet dort ebenfalls.
         min: this.#von, max: this.#bis,
+        // Ein Knopf setzt den Zeitraum nur im Kalender; gültig wird er erst
+        // mit "Speichern". So lässt sich "Letzte 7 Tage" noch um einen Tag
+        // verschieben, bevor die Karte neu lädt.
         quick: SCHNELLWAHL,
       });
     } catch (err) {

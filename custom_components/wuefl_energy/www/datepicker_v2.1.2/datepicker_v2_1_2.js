@@ -40,7 +40,7 @@ class PickerBase {
     }
 
     injectCss() {
-        const url = new URL('./datepicker_v2_1_1.css', import.meta.url);
+        const url = new URL('./datepicker_v2_1_2.css', import.meta.url);
         if (document.querySelector(`link[href="${url.href}"]`)) return;
         document.head.insertAdjacentHTML('beforeend', `<link rel="stylesheet" href="${url.href}">`);
     }
@@ -215,7 +215,7 @@ export class DatePicker extends PickerBase {
         disabled:        [],        // gesperrte Abschnitte [{from,to}|Datum]
         limitView:       true,      // Blättern nur innerhalb min/max
         quick:           [],        // Schnellwahl [{ name, rule }]
-        quickApply:      true,      // Schnellwahl übernimmt und schließt
+        quickApply:      false,     // Schnellwahl nur auswählen, nicht speichern
         spanBlocked:     true,      // darf ein Zeitraum Gesperrtes überspringen?
     };
 
@@ -302,7 +302,7 @@ export class DatePicker extends PickerBase {
             disabled:        json(fromInput.dataset.tpDisabled) ?? [],
             limitView:       fromInput.dataset.tpLimitView !== 'false',
             quick:           json(fromInput.dataset.tpQuick) ?? [],
-            quickApply:      fromInput.dataset.tpQuickApply !== 'false',
+            quickApply:      fromInput.dataset.tpQuickApply === 'true',
             spanBlocked:     fromInput.dataset.tpSpanBlocked !== 'false',
         };
 
@@ -367,7 +367,7 @@ export class DatePicker extends PickerBase {
             disabled:        toRanges(opts.disabled),
             limitView:       opts.limitView !== false,
             quick:           Array.isArray(opts.quick) ? opts.quick : [],
-            quickApply:      opts.quickApply !== false,
+            quickApply:      opts.quickApply === true,
             spanBlocked:     opts.spanBlocked !== false,
             viewYear:        now.getFullYear(),
             viewMonth:       now.getMonth(),
@@ -1445,9 +1445,10 @@ export class DatePicker extends PickerBase {
      * Einen Schnellwahl-Knopf ausführen.
      *
      * Der Zeitraum wird auf min/max beschnitten – "letzte 30 Tage" bei nur
-     * zwölf Tagen Daten endet sonst im Leeren. Mit quickApply (Standard) wird
-     * gleich übernommen und geschlossen, sonst steht die Auswahl nur im
-     * Kalender und wartet auf "Speichern".
+     * zwölf Tagen Daten endet sonst im Leeren. Standardmäßig steht die Auswahl
+     * danach nur im Kalender und wartet auf "Speichern" – so lässt sie sich
+     * noch nachbessern, bevor sie gilt. Mit quickApply: true wird gleich
+     * übernommen und geschlossen.
      */
     /**
      * Der längste Abschnitt innerhalb [von, bis], in dem nichts gesperrt ist.
