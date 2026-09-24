@@ -60,13 +60,18 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
         chipEntity = plantTotal;
       }
 
+      const strings = (plant.strings ?? []).filter((str) => getEntity(str.live));
+
       if (plantLive) {
         series.push({
           entity: plantLive,
           name: plant.name || (solarPlants.length > 1 ? `Anlage ${plantIdx + 1}` : 'Gesamt'),
           color: colorOf('solar', plant, plantIdx),
           stat_type: 'mean',
-          fill: 'gradient',
+          // Stehen die einzelnen Dächer gestapelt darunter, ergeben sie schon
+          // die volle Fläche – die Gesamtlinie liegt dann nur als Linie oben
+          // drauf, sonst deckt sie den Stapel zu.
+          fill: strings.length ? false : 'gradient',
           type: range.overMonth ? 'bar' : 'line',
         });
 
@@ -75,19 +80,17 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
         }
       }
 
-      const strings = plant.strings ?? [];
+      // Die Dächer einer Anlage werden übereinander gestapelt: zusammen sind
+      // sie die Erzeugung der Anlage, nebeneinander verdecken sie sich nur.
       strings.forEach((str, strIdx) => {
-        const strLive = getEntity(str.live);
-        if (!strLive) return;
-
         series.push({
-          entity: strLive,
+          entity: getEntity(str.live),
           name: str.name || `String ${strIdx + 1}`,
           color: colorOf('strings', str, colorIdx++),
           stat_type: 'mean',
           fill: 'gradient',
           type: range.overMonth ? 'bar' : 'line',
-          ...(range.overMonth ? { stack: 'bar' } : {}),
+          stack: `anlage_${plantIdx}`,
         });
       });
     });

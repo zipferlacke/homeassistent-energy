@@ -723,32 +723,62 @@ export function forecastFactor(fc, samples) {
   return Math.min(1.5, Math.max(0.2, actual / expected));
 }
 
+// Eine Wolke von höchstens einer Dreiviertelstunde trennt kein Fenster.
+const DIP_MS = 45 * 60_000;
+
 /**
- * Erstes Zeitfenster ab jetzt, in dem PV minus Grundlast mindestens
+ * Das beste Zeitfenster ab jetzt, in dem PV minus Grundlast mindestens
  * thresholdKw übrig lässt. Die Abweichung von jetzt (factor) wirkt auf die
  * nächsten Stunden und läuft danach zur reinen Prognose aus.
- * Ergebnis: { start, end, kw } oder null.
+ *
+ * Eine einzelne Wolke beendet das Fenster nicht: Kurze Einbrüche (bis DIP_MS)
+ * gehören dazu, solange danach wieder genug übrig ist. Sonst meldete die
+ * Karte "frei bis 12:45", obwohl die Prognose noch bis in den Nachmittag
+ * reicht und nur eine Viertelstunde dazwischen knapp darunter liegt.
+ * Von mehreren Fenstern gewinnt das mit der meisten Energie.
+ *
+ * Ergebnis: { start, end, kw, kwh } oder null.
  */
 export function surplusWindow(fc, { now = new Date(), baseKw = 0.4, thresholdKw = 2, factor = 1, untilDays = 2 } = {}) {
-  const stepMs = (fc?.stepH ?? 1) * 3_600_000;
+  const stepH = fc?.stepH ?? 1;
+  const stepMs = stepH * 3_600_000;
   const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + untilDays);
-  let win = null;
+
+  // Freie Leistung je Zeitraum, ab jetzt
+  const slots = [];
   for (const r of fc?.rows ?? []) {
     const from = +r.time, to = from + stepMs;
     if (to <= +now || from >= +limit) continue;
     const hoursAhead = Math.max(0, (from + stepMs / 2 - +now) / 3_600_000);
     const adj = 1 + (factor - 1) * Math.exp(-hoursAhead / 2);
-    const free = (r.kwh / fc.stepH) * adj - baseKw;
-    if (free >= thresholdKw) {
-      if (!win) win = { start: new Date(Math.max(from, +now)), end: new Date(to), sum: 0, n: 0 };
-      else if (+win.end !== from) break;
-      win.end = new Date(to);
-      win.sum += free; win.n += 1;
-    } else if (win) {
-      break;
+    slots.push({ from: Math.max(from, +now), to, free: (r.kwh / stepH) * adj - baseKw });
+  }
+
+  const fenster = [];
+  let lauf = null, delle = [];
+  const schliessen = () => { if (lauf?.length) fenster.push(lauf); lauf = null; delle = []; };
+  let vorher = null;
+  for (const s of slots) {
+    if (vorher !== null && s.from !== vorher) schliessen();  // Lücke in der Prognose
+    vorher = s.to;
+    if (s.free >= thresholdKw) {
+      if (!lauf) lauf = [];
+      lauf.push(...delle, s);
+      delle = [];
+    } else if (lauf) {
+      delle.push(s);
+      if (delle.reduce((a, x) => a + (x.to - x.from), 0) > DIP_MS) schliessen();
     }
   }
-  return win ? { start: win.start, end: win.end, kw: win.sum / win.n } : null;
+  schliessen();
+  if (!fenster.length) return null;
+
+  const bewerten = (l) => {
+    const kwh = l.reduce((a, x) => a + Math.max(0, x.free) * (x.to - x.from) / 3_600_000, 0);
+    return { start: new Date(l[0].from), end: new Date(l[l.length - 1].to), kwh,
+             kw: kwh / ((l[l.length - 1].to - l[0].from) / 3_600_000) };
+  };
+  return fenster.map(bewerten).reduce((a, b) => (b.kwh > a.kwh ? b : a));
 }
 
 /** Auf die Viertelstunde runden – die Prognose ist ohnehin nur ungefähr. */
@@ -1415,6 +1445,106 @@ export async function fetchStats(hass, ids, range, types = ['change']) {
   } catch {
     return {};
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Geld: eine einzige Rechnung für Live-Ansicht und Energieverlauf
+ * ------------------------------------------------------------------ *
+ * Beide Ansichten zeigen "Bilanz", "Durch PV gespart" und "Zur
+ * Amortisation". Rechneten sie unterschiedlich, stand am selben Tag in der
+ * Live-Ansicht eine andere Zahl als im Verlauf. Deshalb liegt die Rechnung
+ * hier einmal und wird von beiden benutzt.
+ */
+
+/** Preis-Mittelwerte je Abschnitt aus der Statistik, in ct/kWh. */
+export async function fetchPriceMeans(hass, config, range) {
+  const ents = {
+    import: entityOfValue(config?.grid?.price_import),
+    export: entityOfValue(config?.grid?.price_export),
+  };
+  const ids = [...new Set(Object.values(ents).filter(Boolean))];
+  const stats = ids.length ? await fetchStats(hass, ids, range, ['mean']) : {};
+
+  const toCt = (id) => {
+    const unit = (hass?.states?.[id]?.attributes?.unit_of_measurement ?? '').toLowerCase();
+    return /€|eur/.test(unit) && !/ct|cent/.test(unit) ? 100 : 1;
+  };
+  const map = (id) => {
+    const out = new Map();
+    if (!id) return out;
+    const f = toCt(id);
+    for (const row of stats[id] ?? []) {
+      const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
+      const v = Number(row.mean);
+      if (!Number.isNaN(t) && Number.isFinite(v)) out.set(t, v * f);
+    }
+    return out;
+  };
+  return { import: map(ents.import), export: map(ents.export) };
+}
+
+/**
+ * Euro je Abschnitt aus schon geladenen Statistiken.
+ *
+ * Die Zeilen aller Zähler liegen auf demselben Raster (Stunde, Tag oder
+ * Monat), deshalb lässt sich je Abschnitt rechnen: eingespeist × Vergütung,
+ * bezogen × Arbeitspreis und der Eigenverbrauch (Erzeugung minus
+ * Einspeisung) zum Arbeitspreis. Fehlt für einen Abschnitt ein Preis aus der
+ * Statistik, gilt der aktuelle — bei festem Tarif ist das derselbe.
+ */
+export function moneyRows(hass, config, stats, prices, { importIds = [], exportIds = [], pvIds = [] } = {}) {
+  const pImp = priceInfo(hass, config, 'import').now;
+  const pExp = priceInfo(hass, config, 'export').now;
+
+  const perBucket = (ids) => {
+    const map = new Map();
+    for (const id of asList(ids)) {
+      for (const row of stats?.[id] ?? []) {
+        const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
+        if (Number.isNaN(t)) continue;
+        map.set(t, (map.get(t) ?? 0) + Math.max(0, Number(row.change) || 0));
+      }
+    }
+    return map;
+  };
+
+  const imp = perBucket(importIds);
+  const exp = perBucket(exportIds);
+  const pv = perBucket(pvIds);
+  const times = [...new Set([...imp.keys(), ...exp.keys(), ...pv.keys()])].sort((a, b) => a - b);
+  const preis = (art, t, jetzt) => prices?.[art]?.get(t) ?? jetzt;
+
+  return times.map((t) => {
+    const e = exp.get(t) ?? 0;
+    const i = imp.get(t) ?? 0;
+    const p = pv.get(t) ?? 0;
+    const cImp = preis('import', t, pImp);
+    const cExp = preis('export', t, pExp);
+    return {
+      t,
+      eingespeist: cExp === null ? 0 : (e * cExp) / 100,
+      bezogen: cImp === null ? 0 : (i * cImp) / 100,
+      gespart: cImp === null ? 0 : (Math.max(0, p - e) * cImp) / 100,
+    };
+  });
+}
+
+/** Summen über die Abschnitte. Ohne zugeordnete Zähler null statt 0. */
+export function moneySums(rows, { hasImport = true, hasExport = true, hasPv = true } = {}) {
+  const summe = (f) => rows.reduce((a, r) => a + f(r), 0);
+  const earned = hasExport ? summe((r) => r.eingespeist) : null;
+  const paid = hasImport ? summe((r) => r.bezogen) : null;
+  const saved = hasPv ? summe((r) => r.gespart) : null;
+  return {
+    earned, paid, saved,
+    balance: (earned ?? 0) - (paid ?? 0),
+    beitrag: (saved ?? 0) + (earned ?? 0),
+  };
+}
+
+/** Anteil an den Anschaffungskosten – überall mit denselben Nachkommastellen. */
+export function fmtShare(beitrag, cost) {
+  return `${((beitrag / cost) * 100).toFixed(4).replace('.', ',')} % der Anlage`;
 }
 
 /* ------------------------------------------------------------------ *

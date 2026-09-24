@@ -7,8 +7,8 @@
 import { openChartPopup } from './we-chart.js';
 import {
   asList, fmtEnergy, fmtEuro, esc, registerCard, centralConfig, WueflFormEditor, sel,
-  TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats, colorOf, priceInfo,
-  tileHtml, cssColor,
+  TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats, colorOf,
+  tileHtml, cssColor, fetchPriceMeans, moneyRows, moneySums, fmtShare,
 } from './we-shared.js';
 
 const SERIES = [
@@ -28,9 +28,6 @@ const SERIES = [
     getIds: (c) => asList(c.wallboxes).map(w => w.total).filter(Boolean) },
 ];
 const PAIR_NAMES = { grid: 'Netz', battery: 'Batterie' };
-
-/** Zuordnung speichert entweder "sensor.x" oder { entity: "sensor.x" }. */
-const getEntity = (val) => (typeof val === 'string' ? val : val?.entity || null);
 
 const CSS = `
 :host { display: block; }
@@ -126,7 +123,7 @@ class WueflEnergyTilesCard extends HTMLElement {
     const range = getPeriod();
     const [stats, preise] = await Promise.all([
       fetchStats(this.#hass, ids, range, ['change']),
-      this.#fetchPrices(range),
+      fetchPriceMeans(this.#hass, this.#config, range),
     ]);
     if (seq !== this.#seq) return;
     this.#stats = stats;
@@ -138,41 +135,6 @@ class WueflEnergyTilesCard extends HTMLElement {
   #prices = { import: new Map(), export: new Map() };
   #seq = 0;
 
-  /**
-   * Die Preise von damals, nicht den von jetzt.
-   *
-   * Schreibt der Preissensor Statistiken (bei dynamischen Tarifen die Regel,
-   * weil er eine Messgröße ist), liegt je Stunde ein Mittelwert im Recorder.
-   * Den holen wir uns – so stimmen Bilanz und Ersparnis auch für einen Monat.
-   * Gibt es keine Statistik, wird weiter mit dem aktuellen Preis gerechnet.
-   */
-  async #fetchPrices(range) {
-    const c = this.#config;
-    const ents = {
-      import: getEntity(c.grid?.price_import),
-      export: getEntity(c.grid?.price_export),
-    };
-    const ids = [...new Set(Object.values(ents).filter(Boolean))];
-    const stats = ids.length ? await fetchStats(this.#hass, ids, range, ['mean']) : {};
-
-    const toCt = (id) => {
-      const unit = (this.#hass.states?.[id]?.attributes?.unit_of_measurement ?? '').toLowerCase();
-      return /€|eur/.test(unit) && !/ct|cent/.test(unit) ? 100 : 1;
-    };
-    const map = (id) => {
-      const out = new Map();
-      if (!id) return out;
-      const f = toCt(id);
-      for (const row of stats[id] ?? []) {
-        const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
-        const v = Number(row.mean);
-        if (!Number.isNaN(t) && Number.isFinite(v)) out.set(t, v * f);
-      }
-      return out;
-    };
-    return { import: map(ents.import), export: map(ents.export) };
-  }
-
   #total(s) {
     return s.getIds(this.#config).reduce(
       (a, id) => a + (this.#stats[id] ?? []).reduce((b, r) => b + (Number(r.change) || 0), 0), 0,
@@ -182,9 +144,9 @@ class WueflEnergyTilesCard extends HTMLElement {
   /**
    * Geld-Kacheln für den gewählten Zeitraum.
    *
-   * Gerechnet wird mit den Preisen, die gerade gelten (fester Preis aus den
-   * Einstellungen oder der aktuelle Wert des Preissensors). Bei einem
-   * dynamischen Tarif ist das für längere Zeiträume eine Näherung.
+   * Gerechnet wird je Abschnitt mit dem Preis von damals, damit ein
+   * dynamischer Tarif auch über einen Monat stimmt. Nur wo der Recorder
+   * keinen Preis hat, gilt der aktuelle.
    */
   #moneyTiles(used) {
     const c = this.#config;
@@ -193,10 +155,9 @@ class WueflEnergyTilesCard extends HTMLElement {
     if (!rows.length) return [];
 
     // Dieselben Zahlen wie im Diagramm: Summe über die Abschnitte
-    const summe = (f) => rows.reduce((a, r) => a + f(r), 0);
-    const saved = has('pv_energy') ? summe((r) => r.gespart) : null;
-    const earned = has('grid_export') ? summe((r) => r.eingespeist) : null;
-    const paid = has('grid_import') ? summe((r) => r.bezogen) : null;
+    const { saved, earned, paid } = moneySums(rows, {
+      hasPv: has('pv_energy'), hasExport: has('grid_export'), hasImport: has('grid_import'),
+    });
     if (saved === null && earned === null && paid === null) return [];
 
     const tiles = [];
@@ -215,11 +176,10 @@ class WueflEnergyTilesCard extends HTMLElement {
     const cost = Number(c.systemdata?.system_cost_value);
     const beitrag = (saved ?? 0) + (earned ?? 0);
     if (Number.isFinite(cost) && cost > 0) {
-      const anteil = (beitrag / cost) * 100;
       tiles.push(tileHtml({
         icon: 'mdi:cash-clock', color: colorOf('solar', asList(c.solar)[0]),
         title: 'Zur Amortisation', value: fmtEuro(beitrag, { signed: false }), click: 'geld:amortisation',
-        subtitle: `<span class="sub-item">${esc(`${anteil.toFixed(anteil < 1 ? 2 : 1).replace('.', ',')} % der Anlage`)}</span>`,
+        subtitle: `<span class="sub-item">${esc(fmtShare(beitrag, cost))}</span>`,
       }));
     } else if (saved !== null) {
       tiles.push(tileHtml({
@@ -231,52 +191,13 @@ class WueflEnergyTilesCard extends HTMLElement {
     return tiles;
   }
 
-  /**
-   * Euro je Abschnitt aus den schon geladenen Statistiken.
-   *
-   * Die Zeilen aller Zähler liegen auf demselben Raster (Stunde, Tag oder
-   * Monat), deshalb lässt sich je Abschnitt rechnen: eingespeist × Vergütung,
-   * bezogen × Arbeitspreis und der Eigenverbrauch (Erzeugung minus
-   * Einspeisung) zum Arbeitspreis.
-   */
+  /** Euro je Abschnitt – dieselbe Rechnung wie in der Live-Ansicht. */
   #moneyRows(used) {
-    const c = this.#config;
-    const pImp = priceInfo(this.#hass, c, 'import').now;
-    const pExp = priceInfo(this.#hass, c, 'export').now;
-    const idsOf = (key) => (used.find((x) => x.key === key)?.getIds(c)) ?? [];
-
-    const perBucket = (ids) => {
-      const map = new Map();
-      for (const id of ids) {
-        for (const row of this.#stats[id] ?? []) {
-          const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
-          if (Number.isNaN(t)) continue;
-          map.set(t, (map.get(t) ?? 0) + Math.max(0, Number(row.change) || 0));
-        }
-      }
-      return map;
-    };
-
-    const imp = perBucket(idsOf('grid_import'));
-    const exp = perBucket(idsOf('grid_export'));
-    const pv = perBucket(idsOf('pv_energy'));
-    const times = [...new Set([...imp.keys(), ...exp.keys(), ...pv.keys()])].sort((a, b) => a - b);
-
-    // Preis des Abschnitts, sonst der aktuelle
-    const preis = (art, t, jetzt) => this.#prices[art]?.get(t) ?? jetzt;
-
-    return times.map((t) => {
-      const e = exp.get(t) ?? 0;
-      const i = imp.get(t) ?? 0;
-      const p = pv.get(t) ?? 0;
-      const cImp = preis('import', t, pImp);
-      const cExp = preis('export', t, pExp);
-      return {
-        t,
-        eingespeist: cExp === null ? 0 : (e * cExp) / 100,
-        bezogen: cImp === null ? 0 : (i * cImp) / 100,
-        gespart: cImp === null ? 0 : (Math.max(0, p - e) * cImp) / 100,
-      };
+    const idsOf = (key) => (used.find((x) => x.key === key)?.getIds(this.#config)) ?? [];
+    return moneyRows(this.#hass, this.#config, this.#stats, this.#prices, {
+      importIds: idsOf('grid_import'),
+      exportIds: idsOf('grid_export'),
+      pvIds: idsOf('pv_energy'),
     });
   }
 

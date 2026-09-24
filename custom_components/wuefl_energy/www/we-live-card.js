@@ -7,8 +7,9 @@
 import {
   adoptSheet, asList, power, energy, num, breakdown,
   fmtPower, fmtEnergy, fmtPercent, fmtEuro, esc, icon, registerCard,
-  weatherIcon, WEEKDAYS, priceInfo, centralConfig, mergeConfig,
+  weatherIcon, WEEKDAYS, centralConfig, mergeConfig,
   statesChanged, todayTotals, todaySum,
+  fetchStats, fetchPriceMeans, moneyRows, moneySums, fmtShare,
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, applyColorVars,
   loadSolarForecast, forecastFactor, surplusWindow, roundQuarter, fmtClock,
 } from './we-shared.js';
@@ -201,6 +202,8 @@ class WueflEnergyLiveCard extends HTMLElement {
   #explain = null;
   #today = {};
   #todayTimer = null;
+  #money = [];
+  #moneyIds = { importIds: [], exportIds: [], pvIds: [] };
   #pv = null;          // PV-Prognose { rows, stepH, source }
   #pvTimer = null;
   #samples = [];       // [{ t, pvKw, freeW }] – gemessene Werte der letzten Zeit
@@ -307,10 +310,39 @@ class WueflEnergyLiveCard extends HTMLElement {
     ]);
 
     this.#today = await todayTotals(this.#hass, entities);
+    await this.#loadMoney();
     this.#render();
 
     clearTimeout(this.#todayTimer);
     this.#todayTimer = setTimeout(() => this.#loadToday(), 300_000);
+  }
+
+  /**
+   * Die Geld-Zeilen für heute – Stunde für Stunde, mit dem Preis von damals.
+   *
+   * Genau dieselbe Rechnung wie im Energieverlauf (`moneyRows`). Rechnete die
+   * Live-Ansicht wie früher den ganzen Tag mit dem Preis von jetzt, stand
+   * beim dynamischen Tarif in beiden Ansichten eine andere Amortisation.
+   */
+  async #loadMoney() {
+    const c = this.#config;
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const range = { start, end: new Date(), period: 'day' };
+
+    this.#moneyIds = {
+      importIds: entitiesOf(c.grid?.import_total),
+      exportIds: entitiesOf(c.grid?.export_total),
+      pvIds: Array.isArray(c.solar) ? c.solar.map((s) => getEntity(s.total)).filter(Boolean) : [],
+    };
+    const ids = [...new Set(Object.values(this.#moneyIds).flat())];
+    if (!ids.length) { this.#money = []; return; }
+
+    const [stats, preise] = await Promise.all([
+      fetchStats(this.#hass, ids, range, ['change']),
+      fetchPriceMeans(this.#hass, c, range),
+    ]);
+    this.#money = moneyRows(this.#hass, c, stats, preise, this.#moneyIds);
   }
 
   disconnectedCallback() {
@@ -800,38 +832,23 @@ class WueflEnergyLiveCard extends HTMLElement {
   /* ------------------------------ Geld ------------------------------ */
 
   #renderMoney() {
-    const c = this.#config;
-    const h = this.#hass;
-    const impEntity = entitiesOf(c.grid?.import_total);
-    const expEntity = entitiesOf(c.grid?.export_total);
-    const pvTotalEntities = Array.isArray(c.solar)
-      ? c.solar.map(s => getEntity(s.total)).filter(Boolean)
-      : [];
-
-    const imp = todaySum(this.#today, impEntity);
-    const exp = todaySum(this.#today, expEntity);
-    const pv = todaySum(this.#today, pvTotalEntities);
-
-    const pImp = priceInfo(h, c, 'import').now;
-    const pExp = priceInfo(h, c, 'export').now;
-    const ref = pImp;
-
-    const own = pv !== null ? Math.max(0, pv - (exp ?? 0)) : null;
-    const saved = own !== null && ref !== null ? (own * ref) / 100 : null;
-    const earned = exp !== null && pExp !== null ? (exp * pExp) / 100 : null;
-    const paid = imp !== null && pImp !== null ? (imp * pImp) / 100 : null;
+    const { importIds, exportIds, pvIds } = this.#moneyIds;
+    const { saved, earned, paid } = moneySums(this.#money, {
+      hasImport: importIds.length > 0,
+      hasExport: exportIds.length > 0,
+      hasPv: pvIds.length > 0,
+    });
 
     const tiles = [];
 
     if (earned !== null || paid !== null) {
-      const balance = (earned ?? 0) - (paid ?? 0);
       const subtitle = `
         ${earned !== null ? `<span class="sub-item" style="color: var(--w-batt-out)">${esc(fmtEuro(earned))} eingespeist</span>` : ''}
         ${paid !== null ? `<span class="sub-item" style="color: var(--error-color, #db4437)">${esc(fmtEuro(-paid))} bezogen</span>` : ''}
       `;
       tiles.push(tileHtml({
         icon: 'mdi:cash-multiple', color: cssColor(this, '--primary-color', '#03a9f4'),
-        title: 'Bilanz heute', value: fmtEuro(balance), subtitle,
+        title: 'Bilanz heute', value: fmtEuro((earned ?? 0) - (paid ?? 0)), subtitle,
       }));
     }
 
@@ -845,11 +862,10 @@ class WueflEnergyLiveCard extends HTMLElement {
     const cost = this.#getSystemCost();
     if (Number.isFinite(cost) && cost > 0 && (saved !== null || earned !== null)) {
       const today = (saved ?? 0) + (earned ?? 0);
-      const percent = `${((today / cost) * 100).toFixed(3).replace('.', ',')} % der Anlage`;
       tiles.push(tileHtml({
         icon: 'mdi:cash-clock', color: cssColor(this, '--w-batt-out', '#2BB673'),
         title: 'Zur Amortisation', value: fmtEuro(today, { signed: false }),
-        subtitle: `<span class="sub-item">${esc(percent)}</span>`, click: 'payback',
+        subtitle: `<span class="sub-item">${esc(fmtShare(today, cost))}</span>`, click: 'payback',
       }));
     }
 
@@ -931,16 +947,21 @@ class WueflEnergyLiveCard extends HTMLElement {
 
     let html = '';
     let go = false;
-    const kw = (w) => `${(w / 1000).toFixed(1).replace('.', ',')} kW`;
+    const zahl = (v) => v.toFixed(1).replace('.', ',');
     if (this.#surplusNow) {
       go = true;
-      const until = win && +win.start <= now + 30 * 60_000 ? ` bis ca. ${fmtClock(roundQuarter(win.end))}` : '';
-      html = `<b>Jetzt</b> genug Strom für größere Verbraucher · <b>ca. ${kw(mean)}</b> frei${until}`;
+      // Jetzt zählt die gemessene Leistung; wie viel daraus noch wird, sagt
+      // die Prognose – aber nur, wenn das Fenster wirklich gerade läuft.
+      const laeuft = win && +win.start <= now + 30 * 60_000;
+      const rest = laeuft
+        ? ` · noch <b>ca. ${zahl(win.kwh)} kWh</b> bis ca. ${fmtClock(roundQuarter(win.end))}`
+        : '';
+      html = `<b>Jetzt</b> genug Strom für größere Verbraucher · <b>ca. ${zahl(mean / 1000)} kW</b> frei${rest}`;
     } else if (win) {
       const today = new Date(now).toDateString() === win.start.toDateString();
       // Laut Prognose schon jetzt, aber noch nicht lange genug gemessen → "gleich"
       const start = +win.start <= now ? roundQuarter(new Date(now + 10 * 60_000), true) : roundQuarter(win.start);
-      const range = `<b>ca. ${kw(win.kw * 1000)}</b> frei bis ca. ${fmtClock(roundQuarter(win.end))}`;
+      const range = `<b>ca. ${zahl(win.kwh)} kWh</b> frei bis ca. ${fmtClock(roundQuarter(win.end))}`;
       if (today) {
         go = true;
         html = `Ab <b>ca. ${fmtClock(start)}</b> genug Strom für größere Verbraucher · ${range}`;
