@@ -44,7 +44,7 @@ const modeInfo = (label) => MODE_KINDS.find((m) => m.match.test(label)) ?? { ico
  *
  * Der Hausakku hängt an der Freigabe, nicht am Modus: Ist er freigegeben,
  * lädt er das Auto in jedem Modus bis zum Entladelimit mit. Deshalb steht
- * das bei allen dreien und der Vorbehalt einmal darunter.
+ * das bei allen dreien.
  */
 const MODE_HELP = {
   off: 'lädt nicht',
@@ -52,10 +52,6 @@ const MODE_HELP = {
   mix: 'wie Solar, zusätzlich volle Leistung bei günstigem Börsenpreis, Batterie wird bis Entladelimit geleert',
   fast: 'lädt sofort mit voller Leistung, notfalls aus dem Netz, Batterie wird bis Entladelimit geleert',
 };
-
-// Gilt für alle Modi, die den Akku anfassen – einmal statt dreimal gesagt.
-const AKKU_HINWEIS = 'Den Hausakku nutzt die Automation nur, wenn er in den Einstellungen '
-  + 'freigegeben ist; das Entladelimit ist die dort eingestellte Reserve.';
 
 function getEntity(val) {
   if (!val) return null;
@@ -140,7 +136,6 @@ ${TOGGLE_CSS}
   & div { display: flex; flex-wrap: wrap; gap: .3rem; }
   & dt { font-weight: 600; }
   & dd { color: var(--w-text-soft); margin: 0; }
-  & .hint { color: var(--w-text-soft); margin-top: .5rem; }
 }
 .modes {
   background: var(--secondary-background-color, rgba(127, 127, 127, .12));
@@ -817,9 +812,7 @@ class WueflWallboxCard extends HTMLElement {
       return;
     }
     // Ohne eigenes Symbol im Kasten: das eine "i" über den Knöpfen genügt
-    const akku = options.some((opt) => ['solar', 'mix', 'fast'].includes(modeInfo(opt).kind));
-    box.innerHTML = `<div class="txt"><dl>${zeilen.join('')}</dl>`
-      + `${akku ? `<p class="hint">${esc(AKKU_HINWEIS)}</p>` : ''}</div>`;
+    box.innerHTML = `<div class="txt"><dl>${zeilen.join('')}</dl></div>`;
   }
 
   #syncSlider(key, entityId, fallback) {
