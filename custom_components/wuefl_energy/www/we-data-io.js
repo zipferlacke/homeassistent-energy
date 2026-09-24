@@ -312,6 +312,27 @@ export function toHourly(rows, timeCol, col, { mode = 'interval', factor = 1, pa
 }
 
 /**
+ * Fehlende Stunden zwischen erstem und letztem Wert mit 0 auffüllen.
+ *
+ * Der Import ersetzt nur Stunden, die in der Datei stehen. Ohne Auffüllen
+ * bliebe eine Stunde, für die die Datei nichts hergibt, auf ihrem alten Wert
+ * stehen – nach einem Tagesimport und einem späteren Stundenimport wäre der
+ * Tag dann eine Mischung aus beidem. Mit den Nullen bestimmt die Datei den
+ * Zeitraum vollständig.
+ *
+ * Gelöscht wird dabei nichts: Home Assistant kennt keine Lücke, sondern nur
+ * Stunden ohne Verbrauch. Eine 0 ist genau das.
+ */
+export function fillGaps(hourly) {
+  if (hourly.length < 2) return hourly;
+  const vorhanden = new Map(hourly.map((h) => [h.start, h.kwh]));
+  const bis = hourly[hourly.length - 1].start;
+  const out = [];
+  for (let t = hourly[0].start; t <= bis; t += HOUR) out.push({ start: t, kwh: vorhanden.get(t) ?? 0 });
+  return out;
+}
+
+/**
  * Statistik-Zeilen für recorder/import_statistics.
  *
  * Home Assistant speichert je Stunde eine laufende Summe; die Energie einer
@@ -719,8 +740,12 @@ class WueflDataIo extends HTMLElement {
     const plan = [];
     try {
       for (const [entity, acc] of byEntity) {
-        const hourly = [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([start, kwh]) => ({ start, kwh }));
-        if (!hourly.length) continue;
+        const roh = [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([start, kwh]) => ({ start, kwh }));
+        if (!roh.length) continue;
+        // Die Datei bestimmt den Zeitraum vollständig – Stunden ohne Wert
+        // werden auf 0 gesetzt, nicht stehen gelassen.
+        const hourly = fillGaps(roh);
+        const leer = hourly.length - roh.length;
         const von = hourly[0].start;
         const bis = hourly[hourly.length - 1].start;
         const [vorher, nachher] = await Promise.all([
@@ -729,7 +754,7 @@ class WueflDataIo extends HTMLElement {
         ]);
         const b = buildStats(hourly, { vorher, nachher });
         const label = this.#targets.find((t) => t.entity === entity)?.label ?? entity;
-        plan.push({ entity, label, nachher, ...b });
+        plan.push({ entity, label, nachher, leer, ...b });
       }
     } catch (err) {
       setMsg(msg, 'err'); msg.textContent = `Prüfen fehlgeschlagen: ${err?.message ?? err}`;
@@ -739,7 +764,8 @@ class WueflDataIo extends HTMLElement {
     this.#els.summary.hidden = false;
     this.#els.summary.innerHTML = plan.map((p) => `<div><b>${esc(p.label)}</b>: ${p.stats.length
       ? `${p.kwh.toLocaleString('de-DE', { maximumFractionDigits: 1 })} kWh vom ${day(p.from)} bis ${day(p.to)}`
-        + `${p.nachher ? ' · vorhandene Werte in diesem Zeitraum werden ersetzt' : ''}`
+        + ' · vorhandene Werte in diesem Zeitraum werden ersetzt'
+        + `${p.leer ? `, davon ${p.leer} Stunde${p.leer === 1 ? '' : 'n'} ohne Wert auf 0` : ''}`
       : 'nichts zu importieren'}</div>`).join('');
     this.#plan = plan.filter((p) => p.stats.length);
     this.#els.go.hidden = !this.#plan.length;
