@@ -40,7 +40,7 @@ class PickerBase {
     }
 
     injectCss() {
-        const url = new URL('./datepicker_v2_1_2.css', import.meta.url);
+        const url = new URL('./datepicker_v2_1_3.css', import.meta.url);
         if (document.querySelector(`link[href="${url.href}"]`)) return;
         document.head.insertAdjacentHTML('beforeend', `<link rel="stylesheet" href="${url.href}">`);
     }

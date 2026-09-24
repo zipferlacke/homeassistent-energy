@@ -462,7 +462,10 @@
         font-size:     0.82rem;
         font-weight:   500;
         padding:       0.4rem 0.8rem;
-        white-space:   nowrap;
+        /* In der Spalte umbrechen: Die Breite ist bei --picker-quick-max
+           gedeckelt, ein langer Name würde sonst abgeschnitten. */
+        white-space:   normal;
+        text-align:    center;
         width:         100%;
         flex:          0 0 auto;
 
@@ -733,7 +736,10 @@
 
     .dp_popover .dp_quick {
       flex-direction: row;
-      width:          auto;
+      /* Volle Breite, nicht Inhaltsbreite: Der Rumpf steht auf
+         align-items: flex-start, die Zeile schrumpft sonst auf ihren Inhalt
+         und läuft über den Rand, statt in sich zu scrollen. */
+      width:          100%;
       max-width:      none;
       max-height:     none !important;
       overflow-x:     auto;
@@ -742,7 +748,8 @@
       padding-bottom: 0.55rem;
       border-bottom:  1px solid var(--_clr-picker-700);
 
-      & .dp_btn_quick { width: auto; }
+      /* In der Zeile dagegen nicht umbrechen – dafür wird ja gescrollt */
+      & .dp_btn_quick { width: auto; white-space: nowrap; }
     }
   }
 
