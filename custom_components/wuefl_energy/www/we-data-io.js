@@ -488,17 +488,47 @@ export function buildStats(hourly, anchor = {}, toUnit = 1) {
   };
 }
 
+/** Anfang des Folgemonats zu einem Zeitpunkt. */
+function naechsterMonat(ms) {
+  const d = new Date(ms);
+  return +new Date(d.getFullYear(), d.getMonth() + 1, 1);
+}
+
+/**
+ * Monate mit Daten, damit die Suche nach dem Anschluss keine Lücke verpasst.
+ *
+ * Vorher wurde stur ein Fenster von 32 Tagen abgesucht. Liegt der nächste
+ * vorhandene Wert weiter weg – bei jahresweisem Import ist das der Normalfall
+ * –, fand die Suche nichts, der Block wurde vorwärts weitergezählt, und an der
+ * Nahtstelle stand ein Sprung in Höhe des gesamten Imports.
+ */
+async function monateMitDaten(hass, id, von, bis) {
+  const res = await hass.callWS({
+    type: 'recorder/statistics_during_period',
+    start_time: new Date(von).toISOString(),
+    ...(bis === null ? {} : { end_time: new Date(bis).toISOString() }),
+    statistic_ids: [id], period: 'month', types: ['sum'],
+  });
+  return (res?.[id] ?? []).map((r) => +new Date(r.start)).sort((a, b) => a - b);
+}
+
 /** Summe der letzten Stunde mit Daten vor `bis` (ms) oder null. */
 export async function statSumBefore(hass, id, bis) {
   try {
-    const res = await hass.callWS({
-      type: 'recorder/statistics_during_period',
-      start_time: new Date(bis - 32 * 24 * HOUR).toISOString(),
-      end_time: new Date(bis).toISOString(),
-      statistic_ids: [id], period: 'hour', types: ['sum'],
-    });
-    const rows = res?.[id] ?? [];
-    return rows.length ? Number(rows[rows.length - 1].sum) : null;
+    const monate = await monateMitDaten(hass, id, 0, bis);
+    // Von hinten, der jüngste Monat mit Daten gewinnt
+    for (let i = monate.length - 1; i >= 0; i -= 1) {
+      const start = monate[i];
+      const res = await hass.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: new Date(start).toISOString(),
+        end_time: new Date(Math.min(naechsterMonat(start), bis)).toISOString(),
+        statistic_ids: [id], period: 'hour', types: ['sum'],
+      });
+      const rows = (res?.[id] ?? []).filter((r) => +new Date(r.start) < bis);
+      if (rows.length) return Number(rows[rows.length - 1].sum);
+    }
+    return null;
   } catch {
     return null;
   }
@@ -507,22 +537,19 @@ export async function statSumBefore(hass, id, bis) {
 /** Erste Stunde mit Daten ab `ab` (ms) samt Summe und Verbrauch, oder null. */
 export async function statAfter(hass, id, ab) {
   try {
-    const month = await hass.callWS({
-      type: 'recorder/statistics_during_period',
-      start_time: new Date(ab).toISOString(),
-      statistic_ids: [id], period: 'month', types: ['sum'],
-    });
-    const m0 = month?.[id]?.[0];
-    if (!m0) return null;
-    const von = Math.max(ab, +new Date(m0.start));
-    const hours = await hass.callWS({
-      type: 'recorder/statistics_during_period',
-      start_time: new Date(von).toISOString(),
-      end_time: new Date(von + 32 * 24 * HOUR).toISOString(),
-      statistic_ids: [id], period: 'hour', types: ['sum', 'change'],
-    });
-    const h0 = (hours?.[id] ?? []).find((r) => +new Date(r.start) >= ab);
-    return h0 ? { start: +new Date(h0.start), sum: Number(h0.sum), change: Number(h0.change) } : null;
+    const monate = await monateMitDaten(hass, id, ab, null);
+    for (const start of monate) {
+      const von = Math.max(ab, start);
+      const res = await hass.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: new Date(von).toISOString(),
+        end_time: new Date(naechsterMonat(start)).toISOString(),
+        statistic_ids: [id], period: 'hour', types: ['sum', 'change'],
+      });
+      const h0 = (res?.[id] ?? []).find((r) => +new Date(r.start) >= ab);
+      if (h0) return { start: +new Date(h0.start), sum: Number(h0.sum), change: Number(h0.change) };
+    }
+    return null;
   } catch {
     return null;
   }
