@@ -7,12 +7,21 @@
   --clr-picker-trigger      Farbton des Trigger-Elements
   --clr-picker-input        Akzentfarbe: Buttons, Auswahl, Range
   --clr-picker-today        Farbe des Heute-Kreises
+  --clr-picker-bad          Farbe für "so nicht": Vorschau über Gesperrtes
   --fs-picker-header        Schriftgröße Header/Monat
   --fs-input-picker         Schriftgröße Tage & Inputs
   --br-picker               Border-Radius
   --height-input-picker     Höhe Buttons & Zeit-Inputs
-  --picker-cal-width        Breite des Kalender-Popovers (default: 290px)
-  --picker-sel-size         Durchmesser Auswahl-/Heute-Kreis (default: 1.9rem)
+  --picker-cal-min          Mindestbreite des Kalenderblocks (default: 300px)
+  --picker-cal-max          Höchstbreite des Kalenderblocks (default: 26rem)
+  --picker-max-width        Höchstbreite des Popovers (default: 600px)
+  --picker-quick-max        Höchstbreite der Schnellwahl-Spalte (default: 12rem)
+  --picker-seg-width        Platz je Datum im Trigger (default: 9ch)
+  --picker-seg-width-time   dasselbe mit Uhrzeit (default: 15ch)
+  --picker-sel-size         Durchmesser Auswahl-/Heute-Kreis (default: 2.2rem)
+
+  Unter 600px Breite wird das Popover bildschirmbreit und die Schnellwahl
+  wandert als scrollbare Zeile über den Kalender.
 
   Alle internen Abstufungen werden automatisch per relativer Farbsyntax
   aus den Basisvariablen berechnet.
@@ -36,13 +45,19 @@
     --clr-picker-trigger:  light-dark(hsl(0,0%,90%), hsl(0,0%,10%));
     --clr-picker-input:    light-dark(hsl(219,100%,50%), hsl(219,100%,30%));
     --clr-picker-today:    hsl(30,100%,52%);
+    --clr-picker-bad:      hsl(0,72%,52%);
 
-    --fs-picker-header:    1rem;
-    --fs-input-picker:     0.9rem;
+    --fs-picker-header:    1.15rem;
+    --fs-input-picker:     1rem;
     --br-picker:           0.5rem;
-    --height-input-picker: 2rem;
-    --picker-cal-width:    290px;
-    --picker-sel-size:     1.9rem;
+    --height-input-picker: 2.25rem;
+    --picker-cal-min:      300px;
+    --picker-cal-max:      26rem;
+    --picker-max-width:    600px;
+    --picker-quick-max:    12rem;
+    --picker-seg-width:     9ch;
+    --picker-seg-width-time: 15ch;
+    --picker-sel-size:     2.2rem;
 
     /* interne Picker-Abstufungen */
     --_clr-picker-100: light-dark(hsl(from var(--clr-picker) h s 10%), hsl(from var(--clr-picker) h s 90%));
@@ -109,7 +124,16 @@
     &:hover { background: var(--_clr-picker-trigger-700); }
     &:focus { outline: 0px solid black;}
 
-    & .dp_trigger_seg   { color: var(--_clr-picker-trigger-100); }
+    /* Platz für ein vollständiges Datum von Anfang an. Sonst wächst der
+       Trigger, sobald der Platzhalter durch das gewählte Datum ersetzt wird,
+       und alles daneben rutscht mit. */
+    & .dp_trigger_seg {
+      color:      var(--_clr-picker-trigger-100);
+      min-width:  var(--picker-seg-width);
+      text-align: center;
+    }
+
+    &.dp_trigger_time .dp_trigger_seg { min-width: var(--picker-seg-width-time); }
     & .dp_trigger_arrow { color: var(--_clr-picker-trigger-500); font-size: 0.8em; }
 
     /* Bleistift-Icon: nur sichtbar wenn Picker offen */
@@ -188,10 +212,16 @@
   /* ── dp_popover ──────────────────────────────────────────────────────────── */
   .dp_popover {
     position: fixed;
-    position-area:  bottom;
-    position-try: flip-y;
-    position-try-fallbacks: flip-y;
-    min-width:      anchor-size(width);
+    /* Linke Kanten bündig, nicht mittig: Der Trigger ändert seine Breite,
+       sobald das gewählte Datum den Platzhalter ersetzt – zentriert würde das
+       Popover bei jedem Klick ein Stück wandern. span-right heißt: vom Anker
+       aus nach rechts aufspannen. Reicht der Platz nicht, kippt es über die
+       Ausweichregeln auf rechtsbündig bzw. nach oben. */
+    position-area:  bottom span-right;
+    position-try-fallbacks:
+      --dp-bottom-right,
+      --dp-top-left,
+      --dp-top-right;
     margin-bottom:  0.25rem;
     margin-top:  0.25rem;
 
@@ -200,9 +230,13 @@
     border-radius: calc(var(--br-picker) * 1.5);
     box-shadow:    0 8px 28px hsl(from var(--clr-picker) h s 10% / 0.2);
     border:        none;
-    padding:       0.75rem;
-    width:         var(--picker-cal-width);
-    max-width:     calc(100vw - 1rem);
+    padding:       1rem;
+    /* Der Kalender gibt die Mindestbreite vor, die Schnellwahl kommt mit
+       ihrer Inhaltsbreite dazu – bis zur Höchstbreite. Unter die Breite des
+       Kalenders geht es nie, auch nicht auf einem schmalen Bildschirm. */
+    min-width:     calc(var(--picker-cal-min) + 2rem);
+    width:         fit-content;
+    max-width:     min(var(--picker-max-width), calc(100vw - 1rem));
     box-sizing:    border-box;
     color:         var(--_clr-picker-100);
     font-family:   inherit;
@@ -217,6 +251,11 @@
     /* JS-Positionierung übernimmt → anchor()-Werte deaktivieren,
        inline-styles vom JS gelten dann (top/left/max-height). */
     &[data-jsposition] {
+      /* position-area spannt einen eigenen Bezugsrahmen am Anker auf – ein
+         per JS gesetztes left würde dann vom Anker aus zählen statt vom
+         Bildschirmrand. Für den JS-Weg also abschalten. */
+      position-area:          none;
+      position-try-fallbacks: none;
       top:        auto;
       left:       auto;
       bottom:     auto;
@@ -225,6 +264,32 @@
     }
 
     & * { box-sizing: border-box; }
+
+    /* ── dp_body ─────────────────────────────────────────────────────────── */
+    /* Am Rechner zwei Spalten: Schnellwahl links, Kalender rechts.
+       Am Handy (Media-Query unten) wird daraus eine Zeile über dem Kalender. */
+    /* Kein Strecken: So bleibt die natürliche Höhe des Kalenders messbar,
+       und die Schnellwahl bekommt sie in #fitQuick als Grenze gesetzt. */
+    & .dp_body {
+      display:        flex;
+      flex-direction: row;
+      align-items:    flex-start;
+      min-height:     0;
+    }
+
+    & .dp_main {
+      flex:      1 1 auto;
+      /* Nach unten hart begrenzt, nach oben auch: Ein breites Fenster soll
+         den Kalender nicht aufblasen, sondern ihn stehen lassen. */
+      min-width: var(--picker-cal-min);
+      max-width: var(--picker-cal-max);
+    }
+
+    /* Der Trennstrich hängt am Kalender, weil der die volle Höhe hat */
+    & .dp_body.dp_has_quick .dp_main {
+      border-left:  1px solid var(--_clr-picker-700);
+      padding-left: 0.85rem;
+    }
 
     /* ── dp_btn ──────────────────────────────────────────────────────────── */
     & .dp_btn {
@@ -360,7 +425,7 @@
 
       & span {
         text-align:  center;
-        font-size:   0.68rem;
+        font-size:   0.78rem;
         color:       var(--_clr-picker-500);
         font-weight: 500;
         padding:     0.15rem 0;
@@ -368,14 +433,25 @@
     }
 
     /* ── dp_quick ────────────────────────────────────────────────────────── */
-    /* Schnellwahl – nur da, wenn beim Erstellen eine Liste übergeben wurde */
+    /* Schnellwahl – nur da, wenn beim Erstellen eine Liste übergeben wurde.
+       Der Rahmen gibt die Spaltenbreite vor und wächst mit dem Kalender mit;
+       die Knöpfe liegen absolut darin, damit eine lange Liste das Popover
+       nicht in die Länge zieht, sondern einfach scrollt. */
     & .dp_quick {
-      display:       flex;
-      flex-wrap:     wrap;
-      gap:           0.3rem;
-      margin-bottom: 0.55rem;
-      padding-bottom: 0.55rem;
-      border-bottom: 1px solid var(--_clr-picker-700);
+      flex:           0 0 auto;
+      width:          max-content;
+      max-width:      var(--picker-quick-max);
+      padding-right:  0.85rem;
+      display:        flex;
+      flex-direction: column;
+      flex-wrap:      nowrap;
+      gap:            0.3rem;
+      overflow-y:     auto;
+      overflow-x:     hidden;
+      overscroll-behavior: contain;
+
+      &::-webkit-scrollbar       { width: 4px; height: 4px; }
+      &::-webkit-scrollbar-thumb { background: var(--_clr-picker-600); border-radius: 4px; }
 
       & .dp_btn_quick {
         background:    color-mix(in srgb, var(--_clr-picker-700) 55%, transparent);
@@ -383,10 +459,12 @@
         border-radius: 999px;
         color:         var(--_clr-picker-100);
         cursor:        pointer;
-        font-size:     0.72rem;
+        font-size:     0.82rem;
         font-weight:   500;
-        padding:       0.3rem 0.7rem;
+        padding:       0.4rem 0.8rem;
         white-space:   nowrap;
+        width:         100%;
+        flex:          0 0 auto;
 
         &:hover  { background: var(--_clr-picker-700); }
         &:active { background: var(--_clr-picker-input-500); color: var(--_clr-picker-input-900); }
@@ -402,9 +480,24 @@
          der Zeigefinger an den Tagen, die wirklich gehen. */
       cursor:                not-allowed;
 
+      /* Der überfahrene Tag liegt hinter etwas Gesperrtem: ganze Vorschau rot */
+      &.dp_hover_bad .dp_day {
+        &.dp_hover_in::after,
+        &.dp_hover_start::after,
+        &.dp_hover_end::after {
+          background: color-mix(in srgb, var(--clr-picker-bad) 35%, transparent);
+        }
+      }
+
       & .dp_day {
         position:        relative;
+        /* Die Breite kommt aus der Spalte, nicht aus dem Seitenverhältnis –
+           sonst schrumpft die Zelle mit der Höhengrenze unten mit und
+           zwischen den markierten Tagen klaffen Lücken. */
+        width:           100%;
         aspect-ratio:    1 / 1;
+        /* Ein breites Popover soll keine turmhohen Zellen bekommen */
+        max-block-size:  calc(var(--picker-sel-size) * 1.5);
         display:         flex;
         align-items:     center;
         justify-content: center;
@@ -427,7 +520,7 @@
           align-items:     center;
           justify-content: center;
           border-radius:   50%;
-          font-size:       0.8rem;
+          font-size:       0.95rem;
           color:           var(--_clr-picker-100);
           transition:      background .1s, color .1s;
         }
@@ -438,6 +531,24 @@
 
         &.dp_faded {
           & span { color: var(--_clr-picker-600); }
+        }
+
+        /* Hinter dem nächsten gesperrten Tag geht es nicht weiter (spanBlocked:
+           false). Anders als gesperrte Tage sind diese nicht durchgestrichen –
+           sie sind nur von diesem Anfang aus nicht erreichbar. Sie nehmen den
+           Zeiger an (sonst gäbe es keine Rückmeldung, warum nichts passiert),
+           bleiben aber ohne Wirkung: Der Klick wird verworfen, die Vorschau
+           zeigt in Rot, dass es so nicht geht. */
+        &.dp_unreachable {
+          cursor: not-allowed;
+
+          & span { opacity: 0.3; }
+
+          &:hover span {
+            background: var(--clr-picker-bad);
+            color:      hsl(0 0% 100%);
+            opacity:    1;
+          }
         }
 
         /* Gesperrt: sichtbar, aber nicht anfassbar */
@@ -578,6 +689,63 @@
       padding-top: 0.6rem;
     }
   }
+  /* ── Handy ───────────────────────────────────────────────────────────────── */
+  /* Unter 600px: volle Bildschirmbreite, Schnellwahl als Zeile obendrüber. */
+  @media (max-width: 599px) {
+    .dp_popover {
+      width:     100vw;
+      min-width: 0;
+      max-width: 100vw;
+      padding:   0.85rem;
+    }
+
+    /* Volle Breite heißt linke Kante am Bildschirmrand – auch dann, wenn die
+       JS-Positionierung sonst am Trigger ausrichten würde. span-all spannt den
+       Bezugsrahmen über die ganze Breite auf; ohne das zählt left ab der
+       linken Kante des Triggers und das Popover hängt rechts heraus. */
+    .dp_popover {
+      position-area:          bottom span-all;
+      position-try-fallbacks: --dp-top-all;
+    }
+
+    .dp_popover,
+    .dp_popover[data-jsposition] {
+      left:  0 !important;
+      right: auto !important;
+    }
+
+    .dp_popover .dp_body {
+      flex-direction: column;
+      gap:            0.6rem;
+    }
+
+    /* Das Fenster nimmt die volle Breite, der Kalender darin nicht: sonst
+       werden die Tageszellen auf breiten Geräten albern groß. */
+    .dp_popover .dp_main {
+      width:         100%;
+      margin-inline: auto;
+    }
+
+    .dp_popover .dp_body.dp_has_quick .dp_main {
+      border-left:  none;
+      padding-left: 0;
+    }
+
+    .dp_popover .dp_quick {
+      flex-direction: row;
+      width:          auto;
+      max-width:      none;
+      max-height:     none !important;
+      overflow-x:     auto;
+      overflow-y:     hidden;
+      padding-right:  0;
+      padding-bottom: 0.55rem;
+      border-bottom:  1px solid var(--_clr-picker-700);
+
+      & .dp_btn_quick { width: auto; }
+    }
+  }
+
   dp-picker {
     display: contents;
   }
@@ -588,22 +756,11 @@
   }
 }
 /* ── @position-try Regeln (außerhalb @layer) ──────────────────────────────── */
-/* Fallback: kein Platz seitlich → horizontal zentrieren, unter dem Trigger */
-@position-try --dp-center-bottom {
-  top:           anchor(bottom);
-  bottom:        auto;
-  left:          max(0.5rem, calc((100vw - var(--picker-cal-width, 290px)) / 2));
-  right:         auto;
-  margin-top:    0.5rem;
-  margin-bottom: 0;
-}
-
-/* Fallback: kein Platz seitlich + kein Platz unten → zentriert über Trigger */
-@position-try --dp-center-top {
-  top:           auto;
-  bottom:        anchor(top);
-  left:          max(0.5rem, calc((100vw - var(--picker-cal-width, 290px)) / 2));
-  right:         auto;
-  margin-top:    0;
-  margin-bottom: 0.5rem;
-}
+/* Der Reihe nach: rechts kein Platz → rechte Kanten bündig; unten kein Platz
+   → dasselbe über dem Trigger. Zentriert wird nie, damit das Popover beim
+   Tippen und Klicken stehen bleibt. */
+@position-try --dp-bottom-right { position-area: bottom span-left; }
+@position-try --dp-top-left     { position-area: top    span-right; }
+@position-try --dp-top-right    { position-area: top    span-left; }
+/* Handy: volle Breite, nur oberhalb statt unterhalb */
+@position-try --dp-top-all      { position-area: top    span-all; }

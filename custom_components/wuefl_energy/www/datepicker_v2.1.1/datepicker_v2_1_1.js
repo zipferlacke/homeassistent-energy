@@ -40,7 +40,7 @@ class PickerBase {
     }
 
     injectCss() {
-        const url = new URL('./datepicker_v2_1_0.css', import.meta.url);
+        const url = new URL('./datepicker_v2_1_1.css', import.meta.url);
         if (document.querySelector(`link[href="${url.href}"]`)) return;
         document.head.insertAdjacentHTML('beforeend', `<link rel="stylesheet" href="${url.href}">`);
     }
@@ -96,6 +96,9 @@ const WEEKDAYS = {
     en: ['Mo','Tu','We','Th','Fr','Sa','Su'],
 };
 
+/** Ab hier gilt das Handy-Layout – gleicher Wert wie in der CSS-Media-Query. */
+const PHONE_MAX = 599;
+
 const pad     = n => String(n).padStart(2, '0');
 const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const clamp   = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -124,6 +127,14 @@ const toRanges = list => (Array.isArray(list) ? list : list ? [list] : [])
     .filter(Boolean);
 
 /** Erster und letzter Tag der Woche (Montag als Wochenanfang). */
+/** Tage verschieben über die Kalenderrechnung – Sommerzeit macht 24h ungenau. */
+const tagVersetzt = (ts, n) => {
+    const d = new Date(ts);
+    d.setDate(d.getDate() + n);
+    d.setHours(0, 0, 0, 0);
+    return +d;
+};
+
 const weekStart = d => {
     const s = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     s.setDate(s.getDate() - ((s.getDay() + 6) % 7));
@@ -151,7 +162,9 @@ function rangeFromRule(rule, heute = new Date()) {
     }
 
     if (rule && typeof rule === 'object') {
-        if (Number.isFinite(rule.days))   return [plus(tag, -(rule.days - 1)), tag];
+        // days zählt zurück (Daten ansehen), nextDays nach vorn (buchen)
+        if (Number.isFinite(rule.days))     return [plus(tag, -(rule.days - 1)), tag];
+        if (Number.isFinite(rule.nextDays)) return [tag, plus(tag, rule.nextDays - 1)];
         if (Number.isFinite(rule.months)) return [new Date(tag.getFullYear(), tag.getMonth() - rule.months, tag.getDate()), tag];
         const von = toDay(rule.from);
         const bis = toDay(rule.to);
@@ -164,6 +177,18 @@ function rangeFromRule(rule, heute = new Date()) {
         case 'yesterday':  return [plus(tag, -1), plus(tag, -1)];
         case 'thisWeek':   return [weekStart(tag), tag];
         case 'lastWeek':   return [plus(weekStart(tag), -7), plus(weekStart(tag), -1)];
+        // Ganze Woche: Montag bis Sonntag, nicht nur bis heute
+        case 'fullWeek':   return [weekStart(tag), plus(weekStart(tag), 6)];
+        case 'nextWeek':   return [plus(weekStart(tag), 7), plus(weekStart(tag), 13)];
+        // Wochenende: Freitag bis Sonntag. Ist das schon vorbei (Sonntagabend
+        // zählt noch dazu), ist das nächste gemeint – beim Buchen will niemand
+        // ein Wochenende in der Vergangenheit vorgeschlagen bekommen.
+        case 'weekend': {
+            const fr = plus(weekStart(tag), 4);
+            return +tag > +plus(fr, 2)
+                ? [plus(fr, 7), plus(fr, 9)]
+                : [fr, plus(fr, 2)];
+        }
         case 'thisMonth':  return [monat(0), tag];
         case 'lastMonth':  return [monat(-1), letzterTag(monat(-1))];
         case 'thisYear':   return [new Date(tag.getFullYear(), 0, 1), tag];
@@ -191,6 +216,7 @@ export class DatePicker extends PickerBase {
         limitView:       true,      // Blättern nur innerhalb min/max
         quick:           [],        // Schnellwahl [{ name, rule }]
         quickApply:      true,      // Schnellwahl übernimmt und schließt
+        spanBlocked:     true,      // darf ein Zeitraum Gesperrtes überspringen?
     };
 
     constructor(config = {}) {
@@ -277,6 +303,7 @@ export class DatePicker extends PickerBase {
             limitView:       fromInput.dataset.tpLimitView !== 'false',
             quick:           json(fromInput.dataset.tpQuick) ?? [],
             quickApply:      fromInput.dataset.tpQuickApply !== 'false',
+            spanBlocked:     fromInput.dataset.tpSpanBlocked !== 'false',
         };
 
         this.create(toInput ? [fromInput, toInput] : fromInput, options);
@@ -341,6 +368,7 @@ export class DatePicker extends PickerBase {
             limitView:       opts.limitView !== false,
             quick:           Array.isArray(opts.quick) ? opts.quick : [],
             quickApply:      opts.quickApply !== false,
+            spanBlocked:     opts.spanBlocked !== false,
             viewYear:        now.getFullYear(),
             viewMonth:       now.getMonth(),
             showYearPanel:   false,
@@ -349,6 +377,7 @@ export class DatePicker extends PickerBase {
             fromTime:        { h: 0,  m: 0  },
             toTime:          { h: 23, m: 59 },
             hoverDate:       null,
+            hoverBlocked:    false,
             triggerElm:      null,
             popover:         null,
             isOpen:          false,
@@ -432,6 +461,34 @@ export class DatePicker extends PickerBase {
     }
 
     /** Gibt es im angezeigten Monat ±1 überhaupt noch etwas zu holen? */
+    /**
+     * Wie weit darf der zweite Klick reichen?
+     *
+     * Mit spanBlocked: false darf ein Zeitraum nichts Gesperrtes überspringen.
+     * Beim Buchen einer Wohnung liegt zwischen zwei freien Nächten sonst eine
+     * belegte, und der Zeitraum wäre gar nicht buchbar. Nach dem ersten Klick
+     * endet der wählbare Bereich deshalb am nächsten gesperrten Tag in jede
+     * Richtung. Beim Daten-Ansehen (Standard) gibt es diese Grenze nicht: eine
+     * Lücke in den Messwerten ist kein Grund, den Zeitraum zu zerschneiden.
+     *
+     * Ohne angefangenen Zeitraum gibt es nichts zu begrenzen – dann null.
+     */
+    #spanLimits(instance) {
+        if (instance.spanBlocked || !instance.isRange) return null;
+        const anker = this.#hoverAnchor(instance);
+        if (!anker) return null;
+
+        const ts = +new Date(anker.getFullYear(), anker.getMonth(), anker.getDate());
+        let von = instance.min ? +instance.min : -Infinity;
+        let bis = instance.max ? +instance.max :  Infinity;
+
+        for (const r of instance.disabled) {
+            if (r.to   < ts) von = Math.max(von, tagVersetzt(r.to,    1));
+            if (r.from > ts) bis = Math.min(bis, tagVersetzt(r.from, -1));
+        }
+        return { von, bis };
+    }
+
     #canShift(instance, dir) {
         if (!instance.limitView) return true;
         const ziel = new Date(instance.viewYear, instance.viewMonth + dir, 1);
@@ -647,7 +704,7 @@ export class DatePicker extends PickerBase {
 
     #buildTrigger(instance) {
         const el = document.createElement('div');
-        el.className = 'dp_trigger';
+        el.className = 'dp_trigger' + (instance.showTime ? ' dp_trigger_time' : '');
         el.tabIndex  = 0;
         el.style.setProperty('anchor-name', `--${instance.id}`);
         el.addEventListener('keydown', e => {
@@ -940,36 +997,89 @@ export class DatePicker extends PickerBase {
                 </div>
             </div>
 
-            ${instance.showDate && instance.showYearPanel ? `
-                <div class="dp_year_panel">
-                    <div class="dp_year_list">${this.#buildYearList(instance)}</div>
-                </div>
-            ` : ''}
+            <div class="dp_body${instance.quick.length ? ' dp_has_quick' : ''}">
+                ${instance.quick.length ? `
+                    <div class="dp_quick">
+                        ${instance.quick.map((q, i) => `<button class="dp_btn dp_btn_quick" type="button"
+                            data-quick="${i}">${this.resolveLangString(q?.name ?? q?.label ?? '')}</button>`).join('')}
+                    </div>
+                ` : ''}
 
-            ${instance.quick.length && !instance.showYearPanel ? `
-                <div class="dp_quick">
-                    ${instance.quick.map((q, i) => `<button class="dp_btn dp_btn_quick" type="button"
-                        data-quick="${i}">${this.resolveLangString(q?.name ?? q?.label ?? '')}</button>`).join('')}
-                </div>
-            ` : ''}
+                <div class="dp_main">
+                    ${instance.showDate && instance.showYearPanel ? `
+                        <div class="dp_year_panel">
+                            <div class="dp_year_list">${this.#buildYearList(instance)}</div>
+                        </div>
+                    ` : ''}
 
-            ${instance.showDate && !instance.showYearPanel ? `
-                <div class="dp_weekdays">
-                    ${weekdays.map(d => `<span>${d}</span>`).join('')}
-                </div>
-                <div class="dp_days">${this.#buildDayGrid(instance)}</div>
-            ` : ''}
+                    ${instance.showDate && !instance.showYearPanel ? `
+                        <div class="dp_weekdays">
+                            ${weekdays.map(d => `<span>${d}</span>`).join('')}
+                        </div>
+                        <div class="dp_days">${this.#buildDayGrid(instance)}</div>
+                    ` : ''}
 
-            ${instance.showTime ? this.#buildTimePicker(instance) : ''}
+                    ${instance.showTime ? this.#buildTimePicker(instance) : ''}
+                </div>
+            </div>
 
             ${instance.needSave ? `
                 <div class="dp_footer">
-                    <button class="dp_btn dp_btn_save" type="button">${this.t('save')}</button>
+                    <button class="dp_btn dp_btn_save" type="button"
+                        ${this.#saveBlocked(instance) ? 'disabled' : ''}>${this.t('save')}</button>
                 </div>
             ` : ''}
         `;
 
         this.#attachEvents(instance);
+        this.#fitQuick(instance);
+    }
+
+    /**
+     * Die Schnellwahl darf nicht höher werden als der Kalender.
+     *
+     * In CSS geht das nicht: Die Spalte müsste sich an der Höhe des Nachbarn
+     * orientieren, und der Rumpf streckt bewusst nicht (sonst wäre die Höhe
+     * des Kalenders gar nicht mehr messbar). Also einmal nachmessen und die
+     * Grenze setzen – zu viele Knöpfe scrollen dann, statt das Popover in die
+     * Länge zu ziehen. Am Handy steht die Schnellwahl als Zeile obendrüber,
+     * da gilt die Grenze nicht.
+     */
+    /**
+     * Darf gerade gespeichert werden?
+     *
+     * Nach dem ersten Klick steht nur der Anfang fest; gespeichert würde das
+     * als Zeitraum von diesem einen Tag. Wo ein Tag nicht reicht – eine
+     * Übernachtung braucht zwei Daten – ist das kein gültiger Stand, und der
+     * Knopf bleibt aus, bis das Ende gesetzt ist.
+     */
+    #saveBlocked(instance) {
+        return instance.isRange && !instance.allowSameDay
+            && !!instance.selectedFrom && !instance.selectedTo;
+    }
+
+    /** Den Speichern-Knopf nachziehen, ohne das ganze Popover neu zu bauen. */
+    #syncSave(instance) {
+        const btn = instance.popover?.querySelector('.dp_btn_save');
+        if (btn) btn.disabled = this.#saveBlocked(instance);
+    }
+
+    #fitQuick(instance) {
+        // Einen Frame warten: Die Tageszellen holen ihre Höhe über
+        // aspect-ratio aus der Spaltenbreite, und die steht direkt nach dem
+        // Einhängen noch nicht. Sofort gemessen ist der Kalender nur so hoch
+        // wie seine Kopfzeile, und die Schnellwahl bekäme diese Höhe als
+        // Grenze – von vier Knöpfen wären dann zwei zu sehen.
+        requestAnimationFrame(() => {
+            const quick = instance.popover?.querySelector('.dp_quick');
+            const main  = instance.popover?.querySelector('.dp_main');
+            if (!quick || !main || !instance.isOpen) return;
+
+            if (window.innerWidth <= PHONE_MAX) { quick.style.maxHeight = ''; return; }
+
+            const hoehe = main.offsetHeight;
+            quick.style.maxHeight = hoehe ? `${hoehe}px` : '';
+        });
     }
 
     // ── Year / Day Grid ────────────────────────────────────────────────────────
@@ -990,6 +1100,8 @@ export class DatePicker extends PickerBase {
     #buildDayGrid(instance) {
         const { viewYear: yr, viewMonth: mo } = instance;
         const today    = new Date(); today.setHours(0, 0, 0, 0);
+        // Einmal pro Raster, nicht einmal pro Tag
+        instance._spanLimits = this.#spanLimits(instance);
         const firstDay = new Date(yr, mo, 1);
         const lastDay  = new Date(yr, mo + 1, 0);
         const offset   = (firstDay.getDay() + 6) % 7;
@@ -1022,20 +1134,23 @@ export class DatePicker extends PickerBase {
         if (instance.isRange && fromTs !== null && toTs !== null) {
             const lo = Math.min(fromTs, toTs);
             const hi = Math.max(fromTs, toTs);
-            if      (ts === lo && ts === hi) classes.push('dp_range_start', 'dp_range_end');
+            // Anfang und Ende am selben Tag: nur der runde Punkt. Zwei halbe
+            // Balken ergäben sonst einen Kasten um einen Zeitraum, der aus
+            // genau einem Tag besteht.
+            if      (ts === lo && ts === hi) { /* nichts */ }
             else if (ts === lo)              classes.push('dp_range_start');
             else if (ts === hi)              classes.push('dp_range_end');
             else if (ts > lo && ts < hi)     classes.push('dp_in_range');
-        } else if (instance.isRange && isSelFrom) {
-            classes.push('dp_range_start');
         }
+        // Steht erst der Anfang fest, bleibt es beim runden Symbol – der halbe
+        // Balken käme sonst schon, bevor es überhaupt ein Ende gibt.
 
         if (instance.isRange && hovTs !== null) {
-            const anchorTs = instance.activeSide === 'from' ? toTs : fromTs;
+            const anchorTs = instance.activeSide === 'to' && fromTs !== null ? fromTs : null;
             if (anchorTs !== null) {
                 const lo = Math.min(anchorTs, hovTs);
                 const hi = Math.max(anchorTs, hovTs);
-                if      (ts === lo && ts === hi) classes.push('dp_hover_start', 'dp_hover_end');
+                if      (ts === lo && ts === hi) { /* nichts, siehe oben */ }
                 else if (ts === lo)              classes.push('dp_hover_start');
                 else if (ts === hi)              classes.push('dp_hover_end');
                 else if (ts > lo && ts < hi)     classes.push('dp_hover_in');
@@ -1044,15 +1159,23 @@ export class DatePicker extends PickerBase {
 
         const blocked = this.#isBlocked(instance, date);
 
+        // Zwischen erstem und zweitem Klick: hinter dem nächsten gesperrten Tag
+        // geht es nicht weiter, wenn der Zeitraum nichts überspringen darf.
+        const grenze     = instance._spanLimits;
+        const unerreicht = !blocked && grenze !== null && grenze !== undefined
+            && (ts < grenze.von || ts > grenze.bis);
+
+        const tot = blocked || unerreicht;
+
         const cls = [
             'dp_day', faded ? 'dp_faded' : '', isToday ? 'dp_today' : '',
             isSelFrom ? 'dp_sel_from' : '', isSelTo ? 'dp_sel_to' : '',
-            blocked ? 'dp_disabled' : '',
+            blocked ? 'dp_disabled' : '', unerreicht ? 'dp_unreachable' : '',
             ...classes,
         ].filter(Boolean).join(' ');
 
         return `<button class="${cls}" data-date="${dateKey(date)}" type="button"`
-            + `${blocked ? ' disabled aria-disabled="true"' : ''}><span>${date.getDate()}</span></button>`;
+            + `${tot ? ' disabled aria-disabled="true"' : ''}><span>${date.getDate()}</span></button>`;
     }
 
     // ── Time-Picker ────────────────────────────────────────────────────────────
@@ -1164,13 +1287,22 @@ export class DatePicker extends PickerBase {
         if (!days || days.dataset.bound === '1') return;
         days.dataset.bound = '1';
 
-        const dayFromEvent = e => {
+        /**
+         * Den Tag unter dem Zeiger holen.
+         *
+         * Gesperrte Tage fallen immer raus. Nicht erreichbare Tage (der
+         * Zeitraum käme über etwas Gesperrtes) sind für den Klick ebenfalls
+         * nichts, dürfen aber überfahren werden – dort zeigt die Vorschau in
+         * Rot, warum es nicht geht. Deshalb der Schalter.
+         */
+        const dayFromEvent = (e, mitGesperrten = false) => {
             const btn = e.target.closest('.dp_day');
             if (!btn || !days.contains(btn)) return null;
             const date = new Date(btn.dataset.date + 'T00:00:00');
-            // Gesperrte Tage nehmen weder Klick noch Hover an
             if (btn.classList.contains('dp_disabled') || this.#isBlocked(instance, date)) return null;
-            return { btn, date };
+            const unerreichbar = btn.classList.contains('dp_unreachable');
+            if (unerreichbar && !mitGesperrten) return null;
+            return { btn, date, unerreichbar };
         };
 
         days.addEventListener('click', e => {
@@ -1192,26 +1324,40 @@ export class DatePicker extends PickerBase {
 
         days.addEventListener('mouseover', e => {
             if (!instance.isRange) return;
-            const hit = dayFromEvent(e);
+            const hit = dayFromEvent(e, true);
             if (!hit) return;
-            const anchor = instance.activeSide === 'from' ? instance.selectedTo : instance.selectedFrom;
+            const anchor = this.#hoverAnchor(instance);
             if (!anchor) return;
-            instance.hoverDate = hit.date;
+            instance.hoverDate    = hit.date;
+            instance.hoverBlocked = hit.unerreichbar;
             this.#applyHoverClasses(instance);
         });
 
         days.addEventListener('mouseleave', () => {
             if (!instance.hoverDate) return;
-            instance.hoverDate = null;
+            instance.hoverDate    = null;
+            instance.hoverBlocked = false;
             this.#applyHoverClasses(instance);
         });
+    }
+
+    /**
+     * Bezugspunkt der Hover-Vorschau.
+     *
+     * Vorschau gibt es nur zwischen dem ersten und dem zweiten Klick. Steht
+     * noch nichts an (oder ein fertiger Zeitraum), fängt der nächste Klick
+     * ohnehin von vorn an – dann wäre jede Vorschau gelogen.
+     */
+    #hoverAnchor(instance) {
+        if (!instance.isRange) return null;
+        return instance.activeSide === 'to' ? instance.selectedFrom : null;
     }
 
     #applyHoverClasses(instance) {
         const days = instance.popover?.querySelector('.dp_days');
         if (!days) return;
 
-        const anchor = instance.activeSide === 'from' ? instance.selectedTo : instance.selectedFrom;
+        const anchor = this.#hoverAnchor(instance);
         const hov    = instance.hoverDate;
         let lo = null, hi = null;
         if (anchor && hov) {
@@ -1221,11 +1367,14 @@ export class DatePicker extends PickerBase {
             hi = Math.max(a, h);
         }
 
+        // Rot statt blau, wenn der Zeitraum so nicht ginge
+        days.classList.toggle('dp_hover_bad', !!instance.hoverBlocked && lo !== null);
+
         days.querySelectorAll('.dp_day').forEach(btn => {
             const ts = new Date(btn.dataset.date + 'T00:00:00').getTime();
             btn.classList.remove('dp_hover_start', 'dp_hover_end', 'dp_hover_in');
             if (lo === null) return;
-            if (ts === lo && ts === hi) btn.classList.add('dp_hover_start', 'dp_hover_end');
+            if (ts === lo && ts === hi) { /* nichts, siehe #dayCell */ }
             else if (ts === lo)         btn.classList.add('dp_hover_start');
             else if (ts === hi)         btn.classList.add('dp_hover_end');
             else if (ts > lo && ts < hi) btn.classList.add('dp_hover_in');
@@ -1258,15 +1407,25 @@ export class DatePicker extends PickerBase {
 
         const side = instance.activeSide;
 
-        if (!instance.allowSameDay) {
+        // Im Kalender (nicht beim Tippen) beginnt jeder Klick auf der Von-Seite
+        // einen neuen Zeitraum. Sonst hängt am frischen Anfang noch das alte
+        // Ende, und man schiebt die beiden Seiten abwechselnd hin und her.
+        const neuerLauf = side === 'from' && !instance.editMode;
+
+        if (!instance.allowSameDay && !neuerLauf) {
             const otherDate = side === 'from' ? instance.selectedTo : instance.selectedFrom;
             if (otherDate && date.getTime() === otherDate.getTime()) return;
         }
 
-        if (side === 'from') instance.selectedFrom = date;
-        else                 instance.selectedTo   = date;
+        if (side === 'from') {
+            instance.selectedFrom = date;
+            if (neuerLauf) instance.selectedTo = null;
+        } else {
+            instance.selectedTo = date;
+        }
 
-        instance.hoverDate = null;
+        instance.hoverDate    = null;
+        instance.hoverBlocked = false;
 
         if (!instance.editMode) {
             instance.activeSide = side === 'from' ? 'to' : 'from';
@@ -1275,6 +1434,7 @@ export class DatePicker extends PickerBase {
         this.#normalizeRange(instance);
         this.#refreshDays(instance);
         this.#updateTrigger(instance);
+        this.#syncSave(instance);
 
         if (instance.editMode) this.#exitEditMode(instance);
     }
@@ -1289,6 +1449,39 @@ export class DatePicker extends PickerBase {
      * gleich übernommen und geschlossen, sonst steht die Auswahl nur im
      * Kalender und wartet auf "Speichern".
      */
+    /**
+     * Der längste Abschnitt innerhalb [von, bis], in dem nichts gesperrt ist.
+     *
+     * Für die Schnellwahl, wenn ein Zeitraum nichts überspringen darf: "Ganze
+     * Woche" gedrückt und der Sonntag ist schon gebucht, dann wird eben
+     * Montag bis Samstag gebucht. Gerechnet wird über die gesperrten
+     * Abschnitte, nicht Tag für Tag – "Alles" kann über Jahre gehen.
+     *
+     * Bei gleich langen Abschnitten gewinnt der frühere. Ist alles gesperrt,
+     * kommt null zurück und der Knopf tut nichts.
+     */
+    #freeSpan(instance, von, bis) {
+        const sperren = instance.disabled
+            .map(r => ({ from: Math.max(+r.from, +von), to: Math.min(+r.to, +bis) }))
+            .filter(r => r.from <= r.to)
+            .sort((a, b) => a.from - b.from);
+
+        let besteVon = null, besteBis = null, beste = -1;
+        const pruefe = (a, b) => {
+            if (b < a) return;
+            if (b - a > beste) { beste = b - a; besteVon = a; besteBis = b; }
+        };
+
+        let lauf = +von;
+        for (const r of sperren) {
+            pruefe(lauf, tagVersetzt(r.from, -1));
+            lauf = Math.max(lauf, tagVersetzt(r.to, 1));
+        }
+        pruefe(lauf, +bis);
+
+        return beste < 0 ? null : [new Date(besteVon), new Date(besteBis)];
+    }
+
     #applyQuick(instance, eintrag) {
         let bereich = rangeFromRule(eintrag?.rule ?? eintrag?.range ?? eintrag?.value, new Date());
         if (bereich === 'all') bereich = [instance.min, instance.max];
@@ -1298,6 +1491,15 @@ export class DatePicker extends PickerBase {
         if (instance.min && +von < +instance.min) von = instance.min;
         if (instance.max && +bis > +instance.max) bis = instance.max;
         if (+bis < +von) return;
+
+        // Was der Kalender nicht zulässt, darf ein Knopf auch nicht abkürzen:
+        // "Ganze Woche" endet sonst mitten in einer belegten Nacht. Genommen
+        // wird der längste freie Abschnitt aus dem Vorschlag.
+        if (!instance.spanBlocked) {
+            const frei = this.#freeSpan(instance, von, bis);
+            if (!frei) return;
+            [von, bis] = frei;
+        }
 
         instance.selectedFrom = new Date(von);
         instance.selectedTo   = instance.isRange ? new Date(bis) : null;
@@ -1322,13 +1524,15 @@ export class DatePicker extends PickerBase {
         instance.triggerElm.insertAdjacentElement('afterend', instance.popover);
         instance.popover.showPopover();
         instance.isOpen = true;
+        // Erst jetzt steht das Popover im Baum und lässt sich messen
+        this.#fitQuick(instance);
         instance.triggerElm.classList.add('dp_trigger_open');
 
         const useJs = instance.forceJsPosition || !CSS.supports('anchor-name', '--test');
         if (useJs) {
             instance.popover.setAttribute('data-jsposition', '');
             this.#positionWithJs(instance);
-            instance._reposition    = () => this.#positionWithJs(instance);
+            instance._reposition    = () => { this.#fitQuick(instance); this.#positionWithJs(instance); };
             instance._scrollParents = this.#getScrollParents(instance.triggerElm);
             instance._scrollParents.forEach(target =>
                 target.addEventListener('scroll', instance._reposition, { passive: true })
@@ -1389,7 +1593,31 @@ export class DatePicker extends PickerBase {
     }
 
     #save(instance) {
+        // Nur ein Tag angeklickt und dann gespeichert: das ist ein Zeitraum
+        // von genau diesem Tag – sonst bliebe im Bis-Feld der alte Wert stehen.
+        // Wo ein Tag nicht reicht, kommt es gar nicht so weit (der Knopf ist
+        // aus); über die Tastatur ausgelöst wird hier trotzdem abgebrochen.
+        if (this.#saveBlocked(instance)) return;
+        if (instance.isRange && instance.selectedFrom && !instance.selectedTo) {
+            instance.selectedTo = new Date(instance.selectedFrom);
+        }
+
         this.#normalizeRange(instance);
+
+        // Der Kalender lässt so einen Zeitraum gar nicht erst zu, getippt
+        // werden kann er aber trotzdem. Dann endet er vor dem ersten
+        // gesperrten Tag, statt ihn zu überspringen.
+        if (!instance.spanBlocked && instance.isRange
+            && instance.selectedFrom && instance.selectedTo) {
+            const von = +new Date(instance.selectedFrom.getFullYear(),
+                instance.selectedFrom.getMonth(), instance.selectedFrom.getDate());
+            let ende = +new Date(instance.selectedTo.getFullYear(),
+                instance.selectedTo.getMonth(), instance.selectedTo.getDate());
+            for (const r of instance.disabled) {
+                if (r.from > von && r.from <= ende) ende = Math.min(ende, tagVersetzt(r.from, -1));
+            }
+            if (ende < +instance.selectedTo) instance.selectedTo = new Date(ende);
+        }
 
         const fromDate = instance.selectedFrom ?? new Date();
         instance.fromInput.value = this.#formatOutput(fromDate, instance.fromTime, instance, instance.fromInput);
@@ -1483,11 +1711,20 @@ export class DatePicker extends PickerBase {
             top = rect.top - gap - useHeight;
         }
 
-        const popWidth = Math.min(naturalWidth, vw - margin * 2);
-        let left = rect.left;
-        if (left + popWidth > vw - margin) left = rect.right - popWidth;
-        if (left < margin || left + popWidth > vw - margin) {
-            left = Math.max(margin, (vw - popWidth) / 2);
+        // Unter 600px ist das Popover bildschirmbreit (siehe CSS) – dann gibt
+        // es nichts auszurichten, die linke Kante sitzt am Rand.
+        let left;
+        if (vw <= PHONE_MAX) {
+            left = 0;
+        } else {
+            // Linksbündig zum Trigger. Passt es rechts nicht, rechtsbündig;
+            // reicht auch das nicht, an den Rand geklemmt. Zentriert wird nie –
+            // sonst wandert das Popover, sobald der Trigger seine Breite
+            // ändert (Platzhalter wird zum Datum).
+            const popWidth = Math.min(naturalWidth, vw - margin * 2);
+            left = rect.left;
+            if (left + popWidth > vw - margin) left = rect.right - popWidth;
+            left = Math.max(margin, Math.min(left, vw - margin - popWidth));
         }
 
         pop.style.position  = 'fixed';

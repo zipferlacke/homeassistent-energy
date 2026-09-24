@@ -8,10 +8,10 @@
  */
 import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS,
   addSheet, centralConfig, asList } from './we-shared.js';
-import { DatePicker } from './datepicker_v2.1.0/datepicker_v2_1_0.js';
+import { DatePicker } from './datepicker_v2.1.1/datepicker_v2_1_1.js';
 
 /**
- * Der Kalender kommt aus datepicker_v2.1.0 im selben Ordner.
+ * Der Kalender kommt aus datepicker_v2.1.1 im selben Ordner.
  *
  * Vorher lag hier der Wähler von Home Assistant. Der ist kein offizieller
  * Baustein für eigene Karten: Auf dem Handy ging er auf, am Rechner blieb
@@ -56,7 +56,7 @@ function datePicker() {
 let dpCss = null;
 function datePickerCss() {
   if (!dpCss) {
-    dpCss = fetch(new URL('./datepicker_v2.1.0/datepicker_v2_1_0.css', import.meta.url))
+    dpCss = fetch(new URL('./datepicker_v2.1.1/datepicker_v2_1_1.css', import.meta.url))
       .then((r) => (r.ok ? r.text() : ''))
       .catch(() => '');
   }
