@@ -39,13 +39,23 @@ const MODE_KINDS = [
 
 const modeInfo = (label) => MODE_KINDS.find((m) => m.match.test(label)) ?? { icon: 'mdi:tune', kind: 'other' };
 
-/** Ein Satz je Lademodus – erscheint hinter dem "i" über den Knöpfen. */
+/**
+ * Ein Satz je Lademodus – erscheint hinter dem einen "i" über den Knöpfen.
+ *
+ * Der Hausakku hängt an der Freigabe, nicht am Modus: Ist er freigegeben,
+ * lädt er das Auto in jedem Modus bis zum Entladelimit mit. Deshalb steht
+ * das bei allen dreien und der Vorbehalt einmal darunter.
+ */
 const MODE_HELP = {
   off: 'lädt nicht',
-  solar: 'lädt nur mit Überschuss, der sonst ins Netz ginge',
-  mix: 'wie Solar, zusätzlich volle Leistung bei günstigem Börsenpreis',
-  fast: 'lädt sofort mit voller Leistung, notfalls aus dem Netz',
+  solar: 'lädt nur mit Überschuss, der sonst ins Netz ginge, Batterie wird bis Entladelimit geleert',
+  mix: 'wie Solar, zusätzlich volle Leistung bei günstigem Börsenpreis, Batterie wird bis Entladelimit geleert',
+  fast: 'lädt sofort mit voller Leistung, notfalls aus dem Netz, Batterie wird bis Entladelimit geleert',
 };
+
+// Gilt für alle Modi, die den Akku anfassen – einmal statt dreimal gesagt.
+const AKKU_HINWEIS = 'Den Hausakku nutzt die Automation nur, wenn er in den Einstellungen '
+  + 'freigegeben ist; das Entladelimit ist die dort eingestellte Reserve.';
 
 function getEntity(val) {
   if (!val) return null;
@@ -130,6 +140,7 @@ ${TOGGLE_CSS}
   & div { display: flex; flex-wrap: wrap; gap: .3rem; }
   & dt { font-weight: 600; }
   & dd { color: var(--w-text-soft); margin: 0; }
+  & .hint { color: var(--w-text-soft); margin-top: .5rem; }
 }
 .modes {
   background: var(--secondary-background-color, rgba(127, 127, 127, .12));
@@ -805,7 +816,10 @@ class WueflWallboxCard extends HTMLElement {
       box.hidden = true;
       return;
     }
-    box.innerHTML = `${icon('mdi:information-outline')}<div class="txt"><dl>${zeilen.join('')}</dl></div>`;
+    // Ohne eigenes Symbol im Kasten: das eine "i" über den Knöpfen genügt
+    const akku = options.some((opt) => ['solar', 'mix', 'fast'].includes(modeInfo(opt).kind));
+    box.innerHTML = `<div class="txt"><dl>${zeilen.join('')}</dl>`
+      + `${akku ? `<p class="hint">${esc(AKKU_HINWEIS)}</p>` : ''}</div>`;
   }
 
   #syncSlider(key, entityId, fallback) {
