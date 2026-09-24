@@ -93,12 +93,17 @@ const fmtNum = (v) => (v === null || v === undefined || !Number.isFinite(v) ? ''
  * CSV (Semikolon, Dezimalkomma – öffnet sich in Excel direkt richtig).
  *
  * Feiner als fünf Minuten gibt es nicht: So führt Home Assistant seine
- * Langzeitstatistik. Halbe Stunden fasst der Export aus den
- * Fünf-Minuten-Werten zusammen, die Summe bleibt dabei dieselbe.
+ * Langzeitstatistik. Jedes gröbere Minutenraster (10, 15, 30 …) fasst der
+ * Export aus den Fünf-Minuten-Werten zusammen, die Summe bleibt dieselbe.
  */
+const rasterMs = (period) => {
+  const m = /^(\d+)min$/.exec(period);
+  return m ? +m[1] * 60_000 : 0;
+};
+
 export async function exportCsv(hass, targets, start, end, period) {
   const ids = targets.map((t) => t.entity);
-  const bucketMs = period === '30min' ? 1_800_000 : 0;
+  const bucketMs = rasterMs(period);
   const res = ids.length
     ? await hass.callWS({
       type: 'recorder/statistics_during_period',
@@ -715,14 +720,16 @@ class WueflDataIo extends HTMLElement {
       <div class="part">
         <div class="sub">Export</div>
         <span class="note">Energie aus der Langzeitstatistik von Home Assistant als CSV-Tabelle (Excel-tauglich, kWh).
-          Feiner als fünf Minuten führt Home Assistant keine Statistik, und die
-          Fünf-Minuten-Werte hält der Recorder nur etwa zehn Tage – für ältere Zeiträume je Stunde oder gröber.</span>
+          Alles unter einer Stunde entsteht aus den Fünf-Minuten-Werten, und die hält der Recorder nur
+          etwa zehn Tage – für ältere Zeiträume je Stunde oder gröber.</span>
         <div class="line">
           <input type="date" class="from" value="${today.getFullYear()}-01-01" aria-label="Von">
           <span>bis</span>
           <input type="date" class="to" value="${iso(today)}" aria-label="Bis">
           <select class="period" aria-label="Auflösung">
             <option value="5minute">je 5 Minuten</option>
+            <option value="10min">je 10 Minuten</option>
+            <option value="15min">je 15 Minuten</option>
             <option value="30min">je 30 Minuten</option>
             <option value="hour">je Stunde</option>
             <option value="day" selected>je Tag</option>
