@@ -7,55 +7,38 @@
  * gewählten Zeitraum beibehalten (z.B. Wechsel von Jahr 2025 auf Monat -> Dezember 2025).
  */
 import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS } from './we-shared.js';
+import { DatePicker } from './datepicker_v2.0.1/datepicker_v2_0_1.js';
 
 /**
- * Home Assistant bringt einen eigenen Zeitraum-Wähler mit (derselbe wie im
- * Verlauf: Kalender plus Schnellauswahl). Er ist kein offizieller Baustein
- * für eigene Karten, deshalb wird er nur benutzt, wenn er sich laden lässt –
- * sonst bleibt es bei den beiden Datumsfeldern.
+ * Der Kalender kommt aus datepicker_v2.0.1 im selben Ordner.
  *
- * Angemeldet wird er beim Laden der Energie-Karte von HA; das stoßen wir
- * über die Karten-Helfer an.
+ * Vorher lag hier der Wähler von Home Assistant. Der ist kein offizieller
+ * Baustein für eigene Karten: Auf dem Handy ging er auf, am Rechner blieb
+ * vom Aufklapp-Fenster nur ein Scrollbalken übrig – sein Anker steckt in
+ * unserem Schatten-Baum, und daran kommt sein Fenster nicht heran. Ohne
+ * laufendes Home Assistant lässt sich das auch nicht nachstellen, also
+ * jedes Mal Raten.
+ *
+ * Dieser Kalender hängt an zwei normalen Datumsfeldern, zeichnet sich
+ * selbst in die oberste Ebene (Popover) und lässt sich hier im Test
+ * öffnen und anklicken. Die Felder liegen bewusst im hellen Baum der
+ * Karte und werden über einen Slot in die Leiste gereicht – so findet der
+ * Kalender sein Stylesheet (es hängt am Dokument) und erkennt Klicks auf
+ * seinen Auslöser, die im Schatten-Baum beim Karten-Element landen würden.
+ *
+ * Lädt er nicht, bleiben die beiden Datumsfelder sichtbar und bedienbar.
  */
-let haPickerReady = null;
-function ensureHaPicker() {
-  if (haPickerReady) return haPickerReady;
-  haPickerReady = (async () => {
-    if (customElements.get('ha-date-range-picker')) return true;
-    try {
-      const helpers = await window.loadCardHelpers?.();
-      helpers?.createCardElement?.({ type: 'energy-date-selection' });
-    } catch (err) {
-      // Energie-Dashboard nicht eingerichtet o. ä. – dann eben ohne
-    }
-    await Promise.race([
-      customElements.whenDefined('ha-date-range-picker'),
-      new Promise((done) => setTimeout(done, 3000)),
-    ]);
-    return !!customElements.get('ha-date-range-picker');
-  })();
-  return haPickerReady;
-}
+let dpSingleton = null;
+let dpZaehler = 0;
 
-/** Schnellauswahl des HA-Wählers, in unseren Zeitraum-Begriffen. */
-function quickRanges() {
-  const day = (d) => [new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0),
-    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)];
-  const now = new Date();
-  const gestern = new Date(now); gestern.setDate(now.getDate() - 1);
-  const wochenStart = new Date(now); wochenStart.setDate(now.getDate() - ((now.getDay() || 7) - 1));
-  const vorTagen = (n) => { const d = new Date(now); d.setDate(now.getDate() - n + 1); return d; };
-  const von = (d) => day(d)[0];
-  const bis = (d) => day(d)[1];
-  return {
-    Heute: day(now),
-    Gestern: day(gestern),
-    'Diese Woche': [von(wochenStart), bis(now)],
-    'Letzte 7 Tage': [von(vorTagen(7)), bis(now)],
-    'Letzte 30 Tage': [von(vorTagen(30)), bis(now)],
-    'Dieser Monat': [new Date(now.getFullYear(), now.getMonth(), 1), bis(now)],
-    'Dieses Jahr': [new Date(now.getFullYear(), 0, 1), bis(now)],
-  };
+/**
+ * Eine Instanz für die ganze Seite. Das Modul legt beim Laden selbst eine an,
+ * gibt sie aber nicht heraus – und ohne Instanz kein create() und kein
+ * Nachziehen des Zeitraums. Deshalb hier eine eigene, aber nur eine.
+ */
+function datePicker() {
+  if (!dpSingleton) dpSingleton = new DatePicker({ lang: 'de', locale: 'de-DE' });
+  return dpSingleton;
 }
 
 const PERIODS = [
@@ -103,16 +86,15 @@ const CSS = `
 .nav button.arrow-btn ha-icon { --mdc-icon-size: 22px; }
 
 .date-trigger-btn { position: relative; }
-/* Der HA-Kalender liegt deckungsgleich über dem Knopf: sein Bedienfeld ist
-   durchsichtig, behält aber die Größe des Knopfs. Nur so weiß sein
-   Aufklapp-Fenster, wie breit und wie hoch es werden darf.
-   Achtung: hier kein pointer-events: none – das Aufklapp-Fenster steckt im
-   selben Element und wäre dann nicht mehr bedienbar. Stattdessen ist nur
-   das Bedienfeld selbst für Klicks gesperrt (siehe #hideHaField). */
-.ha-picker {
+/* Der Auslöser des Kalenders liegt deckungsgleich und unsichtbar über dem
+   Knopf. Sichtbar ist unser Knopf mit dem Zeitraum; der Auslöser behält
+   aber seine volle Größe, denn daran richtet der Kalender sein Fenster aus.
+   Das Fenster selbst steckt in der obersten Ebene (Popover) und wird davon
+   nicht verdeckt. */
+.datum-slot {
   inset: 0; position: absolute;
 }
-.ha-picker ha-date-range-picker { display: block; height: 100%; width: 100%; }
+::slotted(.we-datum) { display: block; height: 100%; width: 100%; }
 .date-trigger-btn {
   align-items: center;
   background: var(--secondary-background-color, rgba(127, 127, 127, .12));
@@ -191,7 +173,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
           <button type="button" class="date-trigger-btn" title="Datum wählen">
             <ha-icon icon="mdi:calendar"></ha-icon>
             <span class="label"></span>
-            <span class="ha-picker"></span>
+            <span class="datum-slot"><slot name="datum"></slot></span>
           </button>
           <button type="button" class="arrow-btn next" title="Vor"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
         </div>
@@ -215,9 +197,9 @@ class WueflEnergyPeriodCard extends HTMLElement {
       label: card.querySelector('.label'),
       prev: card.querySelector('.prev'),
       next: card.querySelector('.next'),
-      haBox: card.querySelector('.ha-picker'),
+      slot: card.querySelector('.datum-slot'),
     };
-    this.#setupHaPicker();
+    this.#setupPicker();
 
     this.#els.selector.innerHTML = PERIODS.map((p) => `<button type="button" class="time-btn"
       data-id="${p.id}">${p.label}</button>`).join('');
@@ -245,9 +227,10 @@ class WueflEnergyPeriodCard extends HTMLElement {
     });
 
     this.#els.dateBtn.addEventListener('click', () => {
-      // Mit dem Kalender von HA öffnet der Knopf diesen, sonst die Felder
-      if (this.#openHaPicker()) return;
-      this.#els.popup.classList.toggle('hidden');
+      // Trifft der Klick den durchsichtigen Auslöser, öffnet der Kalender
+      // sich selbst. Ohne Kalender bleiben die beiden Datumsfelder.
+      if (this.#els.dp) this.#els.dp.open();
+      else this.#els.popup.classList.toggle('hidden');
     });
 
     const applyCustom = () => {
@@ -277,73 +260,81 @@ class WueflEnergyPeriodCard extends HTMLElement {
   }
 
   /**
-   * Den Wähler von HA hinter unseren Kalender-Knopf legen.
+   * Den Kalender an zwei Datumsfelder im hellen Baum hängen.
    *
-   * Er bleibt unsichtbar (nur sein Anker wird gebraucht, damit der Kalender
-   * an der richtigen Stelle aufgeht) und wird über seine open()-Methode
-   * geöffnet. Angezeigt wird weiter unser Knopf mit dem Zeitraum.
+   * Die Felder wandern per Slot an die Stelle des Kalender-Knopfs. Der
+   * Kalender versteckt sie selbst und setzt seinen eigenen Auslöser
+   * dorthin – den machen wir durchsichtig, sichtbar bleibt unser Knopf.
    */
-  async #setupHaPicker() {
-    if (!(await ensureHaPicker()) || !this.#els.haBox) return;
-    const picker = document.createElement('ha-date-range-picker');
-    picker.hass = this.#hass;
-    picker.ranges = quickRanges();
-    picker.minimal = true;      // nur ein Symbol statt Textfeld und Pfeilen
-    picker.autoApply = true;
-    picker.addEventListener('value-changed', (ev) => {
-      // HA schickt { value: { startDate, endDate } }, ältere Fassungen flach
-      const { startDate, endDate } = ev.detail?.value ?? ev.detail ?? {};
-      if (!startDate || !endDate) return;
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      // Ganze Tage, wie bei unseren eigenen Zeiträumen
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+  #setupPicker() {
+    // Erst den Kalender wecken, dann die Felder einhängen: sein Bausatz
+    // durchsucht beim Start das Dokument und würde sie sonst selbst
+    // übernehmen – wir bekämen keinen Griff auf die Instanz.
+    const dp = datePicker();
+
+    const box = document.createElement('div');
+    box.className = 'we-datum';
+    box.slot = 'datum';
+    const id = `we${(dpZaehler += 1)}`;
+    box.innerHTML = `<input type="date" data-tp-picker="${id}+" data-tp-format="iso">`
+      + `<input type="date" data-tp-picker="${id}-" data-tp-format="iso">`;
+    this.appendChild(box);
+
+    const [von, bis] = box.querySelectorAll('input');
+    this.#els.von = von;
+    this.#els.bis = bis;
+
+    const anwenden = () => {
+      if (!von.value || !bis.value) return;
+      const start = new Date(`${von.value}T00:00:00`);
+      const end = new Date(`${bis.value}T23:59:59.999`);
+      if (Number.isNaN(+start) || Number.isNaN(+end)) return;
       this.#granularity = 'custom';
       setPeriod({ period: 'custom', start, end });
       this.#syncButtons();
-    });
-    this.#els.haPicker = picker;
-    this.#els.haBox.replaceChildren(picker);
-    await picker.updateComplete?.catch?.(() => {});
-    this.#hideHaField();
-    // Eigene Datumsfelder werden nicht mehr gebraucht
-    this.#els.popup.classList.add('hidden');
-    this.#els.popup.hidden = true;
+    };
+    // Beim Speichern meldet sich erst das Von-Feld, dann das Bis-Feld. Ohne
+    // kurzes Warten liefe dazwischen ein Zeitraum aus altem Ende und neuem
+    // Anfang durch – alle Diagramme würden zweimal laden.
+    let wartet = null;
+    const uebernehmen = () => { clearTimeout(wartet); wartet = setTimeout(anwenden, 0); };
+    von.addEventListener('change', uebernehmen);
+    bis.addEventListener('change', uebernehmen);
+
+    try {
+      this.#els.dp = dp.create([von, bis], { outputFormat: 'iso', showDate: true, showTime: false });
+    } catch (err) {
+      // Ohne Kalender bleiben die beiden Datumsfelder – sichtbar und nutzbar
+      this.#els.dp = null;
+    }
+    if (this.#els.dp) {
+      // Auslöser durchsichtig über den Knopf legen; seine Größe bleibt, denn
+      // daran richtet sich das Kalender-Fenster aus.
+      Object.assign(this.#els.dp.triggerElm.style, {
+        boxSizing: 'border-box', height: '100%', inset: '0', margin: '0', minWidth: '0',
+        opacity: '0', padding: '0', position: 'absolute', width: '100%',
+      });
+      // Unsere alten Datumsfelder werden nicht mehr gebraucht
+      this.#els.popup.classList.add('hidden');
+      this.#els.popup.hidden = true;
+    }
     this.#syncButtons();
   }
 
-  /**
-   * Nur das Bedienfeld des HA-Wählers verstecken (sein Symbol bzw. Textfeld).
-   * Es bleibt als Anker im Baum, das Aufklapp-Fenster bleibt sichtbar.
-   */
-  #hideHaField() {
-    const field = this.#els.haPicker?.shadowRoot?.querySelector('#field');
-    if (!field) return;
-    Object.assign(field.style, {
-      height: '100%', inset: '0', margin: '0', opacity: '0',
-      pointerEvents: 'none', position: 'absolute', width: '100%',
-    });
-  }
-
-  /** Kalender öffnen: bevorzugt über open(), sonst per Klick auf sein Feld. */
-  #openHaPicker() {
-    const picker = this.#els.haPicker;
-    if (!picker) return false;
-    this.#hideHaField();
-    if (typeof picker.open === 'function') {
-      picker.open();
-      return true;
-    }
-    const field = picker.shadowRoot?.querySelector('#field');
-    if (field) {
-      // Versteckt reagiert es nicht auf Klicks – kurz freigeben
-      field.style.pointerEvents = 'auto';
-      field.click();
-      field.style.pointerEvents = 'none';
-      return true;
-    }
-    return false;
+  /** Den gerade gültigen Zeitraum in den Kalender schreiben. */
+  #syncPicker(range) {
+    const { von, bis, dp } = this.#els;
+    if (!von || !bis) return;
+    von.value = isoDate(new Date(range.start));
+    bis.value = isoDate(new Date(range.end));
+    // Der Kalender liest die Felder erst beim Schließen wieder ein – ist er
+    // zu, wird sein Stand hier direkt nachgezogen, damit er beim nächsten
+    // Öffnen den Zeitraum zeigt, der gerade gilt.
+    if (!dp || dp.isOpen) return;
+    dp.selectedFrom = new Date(range.start);
+    dp.selectedTo = new Date(range.end);
+    dp.viewYear = dp.selectedFrom.getFullYear();
+    dp.viewMonth = dp.selectedFrom.getMonth();
   }
 
   /** Wie viele Zeiträume der Granularität liegt `date` vor heute? */
@@ -416,11 +407,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
 
   #syncButtons() {
     const range = getPeriod();
-    if (this.#els.haPicker) {
-      this.#els.haPicker.hass = this.#hass;
-      this.#els.haPicker.startDate = new Date(range.start);
-      this.#els.haPicker.endDate = new Date(range.end);
-    }
+    this.#syncPicker(range);
     for (const btn of this.#els.selector.querySelectorAll('[data-id]')) {
       btn.classList.toggle('active', btn.dataset.id === this.#granularity && range.period !== 'custom');
     }

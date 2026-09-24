@@ -39,6 +39,14 @@ const MODE_KINDS = [
 
 const modeInfo = (label) => MODE_KINDS.find((m) => m.match.test(label)) ?? { icon: 'mdi:tune', kind: 'other' };
 
+/** Ein Satz je Lademodus – erscheint hinter dem "i" über den Knöpfen. */
+const MODE_HELP = {
+  off: 'lädt nicht',
+  solar: 'lädt nur mit Überschuss, der sonst ins Netz ginge',
+  mix: 'wie Solar, zusätzlich volle Leistung bei günstigem Börsenpreis',
+  fast: 'lädt sofort mit voller Leistung, notfalls aus dem Netz',
+};
+
 function getEntity(val) {
   if (!val) return null;
   if (typeof val === 'string') return val;
@@ -104,13 +112,33 @@ ${TOGGLE_CSS}
   & .note { color: var(--w-text-soft); font-size: var(--w-fs-sm); line-height: 1.45; }
 }
 
+.modehead {
+  align-items: center; display: flex; gap: .4rem;
+  font-size: var(--w-fs-sm); font-weight: 600; margin-top: .8rem;
+
+  & .ihelp {
+    align-items: center; background: none; border: 0; border-radius: 50%;
+    color: var(--secondary-text-color, #727272); cursor: pointer; display: flex;
+    height: 24px; justify-content: center; padding: 0; width: 24px;
+  }
+  & .ihelp:hover { background: var(--secondary-background-color, rgba(127,127,127,.12)); }
+  & .ihelp ha-icon { --mdc-icon-size: 18px; }
+}
+.modehelp {
+  margin: 0 0 .8rem;
+
+  & dl { display: grid; gap: .25rem; margin: 0; }
+  & div { display: flex; flex-wrap: wrap; gap: .3rem; }
+  & dt { font-weight: 600; }
+  & dd { color: var(--w-text-soft); margin: 0; }
+}
 .modes {
   background: var(--secondary-background-color, rgba(127, 127, 127, .12));
   border-radius: 12px;
   display: grid;
   gap: 2px;
   grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
-  margin: .8rem 0;
+  margin: .3rem 0 .8rem;
   padding: 3px;
 
   & .btn {
@@ -301,7 +329,13 @@ class WueflWallboxCard extends HTMLElement {
       </div>
       <div class="scale" hidden><span class="note"></span></div>
 
+      <div class="modehead">
+        <span>Lademodus</span>
+        <button type="button" class="ihelp" aria-expanded="false" aria-label="Was bedeuten die Lademodi?"
+          title="Was bedeuten die Lademodi?">${icon('mdi:information-outline')}</button>
+      </div>
       <div class="modes"></div>
+      <div class="info modehelp" hidden></div>
 
       <div class="target" hidden>
         <label for="tgt">Ladeziel</label>
@@ -361,6 +395,9 @@ class WueflWallboxCard extends HTMLElement {
       goalRow: q('.goalrow'), goalLeft: q('.goalrow .left'), goalRight: q('.goalrow .right'),
       scaleNote: q('.scale .note'),
       modes: q('.modes'),
+      modeHead: q('.modehead'),
+      modeHelp: q('.modehelp'),
+      iHelp: q('.ihelp'),
       target: q('.target'), targetInput: q('.target input'), targetOut: q('.target output'), full: q('.full'),
       cur: q('.slider.cur'),
       adv: q('details.adv'),
@@ -368,6 +405,12 @@ class WueflWallboxCard extends HTMLElement {
       openSettings: q('.open-settings'),
       stats: q('.stats'),
     };
+
+    this.#els.iHelp.addEventListener('click', () => {
+      const zu = this.#els.modeHelp.hidden;
+      this.#els.modeHelp.hidden = !zu;
+      this.#els.iHelp.setAttribute('aria-expanded', String(zu));
+    });
 
     this.#els.openSettings.addEventListener('click', () => navigateToView('einstellungen'));
 
@@ -702,6 +745,8 @@ class WueflWallboxCard extends HTMLElement {
   #renderModes(container, entityId) {
     if (!entityId || !this.#hass.states[entityId]) {
       container.replaceChildren();
+      this.#els.modeHead.hidden = true;
+      this.#els.modeHelp.hidden = true;
       return;
     }
     const st = this.#hass.states[entityId];
@@ -720,10 +765,27 @@ class WueflWallboxCard extends HTMLElement {
         btn.addEventListener('click', () => this.#setOption(entityId, opt));
         container.appendChild(btn);
       }
+      this.#renderModeHelp(options);
     }
     for (const btn of container.children) {
       btn.setAttribute('aria-pressed', String(btn.dataset.option === st.state));
     }
+  }
+
+  /** Erklärung zu genau den Modi, die diese Wallbox anbietet. */
+  #renderModeHelp(options) {
+    const box = this.#els.modeHelp;
+    const zeilen = options
+      .map((opt) => [opt, MODE_HELP[modeInfo(opt).kind]])
+      .filter(([, text]) => text)
+      .map(([opt, text]) => `<div><dt>${esc(opt)}</dt><dd>${esc(text)}</dd></div>`);
+    this.#els.modeHead.hidden = !options.length;
+    this.#els.iHelp.hidden = !zeilen.length;
+    if (!zeilen.length) {
+      box.hidden = true;
+      return;
+    }
+    box.innerHTML = `${icon('mdi:information-outline')}<div class="txt"><dl>${zeilen.join('')}</dl></div>`;
   }
 
   #syncSlider(key, entityId, fallback) {
