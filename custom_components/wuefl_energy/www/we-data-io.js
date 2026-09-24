@@ -370,6 +370,83 @@ export function fillGaps(hourly) {
 }
 
 /**
+ * Geschützter Zeitraum aus der Konfiguration, in Millisekunden.
+ *
+ * Beide Enden sind freiwillig: Nur "von" gesetzt schützt alles ab dem Datum
+ * (typisch: ab hier zeichnet Home Assistant selbst auf), nur "bis" schützt
+ * alles davor (typisch: ein sorgfältig aufgebauter Altbestand). Der "bis"-Tag
+ * zählt ganz dazu, sonst wäre der letzte Tag halb geschützt.
+ */
+export function protectedRange(cfg) {
+  const tag = (v, ende) => {
+    if (!v) return null;
+    const d = new Date(`${v}T00:00:00`);
+    if (Number.isNaN(+d)) return null;
+    if (ende) d.setDate(d.getDate() + 1);
+    return +d;
+  };
+  const sd = cfg?.systemdata ?? {};
+  return { von: tag(sd.import_protect_from, false), bis: tag(sd.import_protect_to, true) };
+}
+
+/** Liegt die Stunde im geschützten Zeitraum? */
+export function isProtected(start, schutz) {
+  if (!schutz) return false;
+  const { von, bis } = schutz;
+  if (von === null && bis === null) return false;
+  if (von !== null && start < von) return false;
+  if (bis !== null && start >= bis) return false;
+  return true;
+}
+
+/** Stunden, für die es schon Werte gibt, als Menge von Zeitstempeln. */
+export async function existingHours(hass, id, von, bis) {
+  try {
+    const res = await hass.callWS({
+      type: 'recorder/statistics_during_period',
+      start_time: new Date(von).toISOString(),
+      end_time: new Date(bis + HOUR).toISOString(),
+      statistic_ids: [id], period: 'hour', types: ['change'],
+    });
+    return new Set((res?.[id] ?? []).map((r) => +new Date(r.start)));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Was vom Import übrig bleibt, in zusammenhängende Blöcke zerlegt.
+ *
+ * Fällt in der Mitte etwas weg – ein geschützter Abschnitt oder, im Modus
+ * "behalten", bereits vorhandene Stunden –, zerfällt der Import in mehrere
+ * Blöcke. Jeder braucht später seinen eigenen Anschluss an die vorhandenen
+ * Summen, sonst steht an den Nahtstellen ein Sprung.
+ *
+ * modus: 'overwrite' schreibt alles außer Geschütztem, 'keep' lässt
+ * zusätzlich jede Stunde stehen, für die es schon einen Wert gibt.
+ */
+export function planBlocks(hourly, { schutz = null, vorhanden = null, modus = 'overwrite' } = {}) {
+  const bloecke = [];
+  let lauf = null;
+  let geschuetzt = 0;
+  let behalten = 0;
+  let ersetzt = 0;
+
+  for (const h of hourly) {
+    let weg = false;
+    if (isProtected(h.start, schutz)) { geschuetzt += 1; weg = true; }
+    else if (vorhanden?.has(h.start)) {
+      if (modus === 'keep') { behalten += 1; weg = true; }
+      else ersetzt += 1;
+    }
+    if (weg) { lauf = null; continue; }
+    if (!lauf || h.start !== lauf[lauf.length - 1].start + HOUR) { lauf = []; bloecke.push(lauf); }
+    lauf.push(h);
+  }
+  return { bloecke, geschuetzt, behalten, ersetzt };
+}
+
+/**
  * Statistik-Zeilen für recorder/import_statistics.
  *
  * Home Assistant speichert je Stunde eine laufende Summe; die Energie einer
@@ -550,6 +627,13 @@ class WueflDataIo extends HTMLElement {
   async #loadConfig() {
     this.#cfg = (await centralConfig(this.#hass)) ?? {};
     this.#targets = energyTargets(this.#cfg);
+    const { von, bis } = protectedRange(this.#cfg);
+    const tag = (ms) => new Date(ms).toLocaleDateString('de-DE');
+    this.#els.protect.hidden = von === null && bis === null;
+    this.#els.protect.textContent = von !== null && bis !== null
+      ? `Geschützt: ${tag(von)} bis ${tag(bis - 1)} – dort schreibt kein Import.`
+      : von !== null ? `Geschützt: alles ab ${tag(von)} – dort schreibt kein Import.`
+      : bis !== null ? `Geschützt: alles bis ${tag(bis - 1)} – dort schreibt kein Import.` : '';
     this.#els.exportBtn.disabled = !this.#targets.length;
     this.#els.exportNote.textContent = this.#targets.length
       ? `Enthält: ${this.#targets.map((t) => t.label).join(', ')}.`
@@ -600,7 +684,8 @@ class WueflDataIo extends HTMLElement {
             Meist ist sie schon vorausgewählt, Einheit und „Zählerstand / Energie je Zeitraum“ ebenso. Zähler ohne Spalte bleiben unverändert.</li>
           <li><b>Prüfen</b> – zeigt je Zähler, wie viel aus welchem Zeitraum geschrieben wird.</li>
           <li><b>Importieren</b> – landet in der Langzeitstatistik dieser Zähler; Diagramme, Kacheln und das Energie-Dashboard von HA zeigen es dann mit an.
-            Werte im Zeitraum der Datei werden ersetzt: Ein zweiter Import mit korrigierten Zahlen überschreibt den ersten. Was danach kommt, bleibt unverändert.</li>
+            Werte im Zeitraum der Datei werden ersetzt: Ein zweiter Import mit korrigierten Zahlen überschreibt den ersten. Was danach kommt, bleibt unverändert.
+            Wo schon Werte stehen, kannst du oben wählen, ob sie überschrieben werden oder stehen bleiben; ein in den Einstellungen geschützter Zeitraum wird nie angefasst.</li>
         </ol>
         <div class="line">
           <label class="btn">${icon('mdi:file-upload-outline')}<span>CSV-Datei wählen</span>
@@ -609,6 +694,13 @@ class WueflDataIo extends HTMLElement {
         </div>
         <div class="mapping" hidden>
           <div class="line"><span>Datum/Zeit steht in</span><select class="time-col"></select></div>
+          <div class="line"><span>Wo schon Werte stehen</span>
+            <select class="overlap">
+              <option value="overwrite">mit den neuen überschreiben</option>
+              <option value="keep">vorhandene behalten</option>
+            </select>
+          </div>
+          <span class="note protect" hidden></span>
           <span class="note missing" hidden></span>
           <div class="table-wrap"><table>
             <thead><tr><th>Zähler aus der Zuordnung</th><th>Spalte der Datei</th><th>Beispiel</th><th>Einheit</th><th>Art</th></tr></thead>
@@ -633,6 +725,7 @@ class WueflDataIo extends HTMLElement {
       importPart: q('.import-part'), file: q('.file'), fileName: q('.file-name'),
       mapping: q('.mapping'), timeCol: q('.time-col'), tbody: q('tbody'),
       check: q('.check'), summary: q('.summary'), go: q('.go'), confirm: q('.confirm'),
+      overlap: q('.overlap'), protect: q('.protect'),
       importMsg: q('.import-msg'),
       missing: q('.missing'),
     };
@@ -640,6 +733,12 @@ class WueflDataIo extends HTMLElement {
     this.#els.file.addEventListener('change', () => this.#readFile());
     this.#els.timeCol.addEventListener('change', () => { this.#csv.timeCol = Number(this.#els.timeCol.value); this.#renderMapping(); });
     this.#els.check.addEventListener('click', () => this.#check());
+    this.#els.overlap.addEventListener('change', () => {
+      // Die Auswahl ändert den Plan – das Geprüfte gilt nicht mehr
+      this.#els.summary.hidden = true;
+      this.#els.go.hidden = true;
+      this.#plan = null;
+    });
     this.#els.go.addEventListener('click', () => { this.#els.confirm.hidden = false; });
     q('.cancel').addEventListener('click', () => { this.#els.confirm.hidden = true; });
     q('.ok').addEventListener('click', () => this.#import());
@@ -775,6 +874,8 @@ class WueflDataIo extends HTMLElement {
       return;
     }
     const plan = [];
+    const schutz = protectedRange(this.#cfg);
+    const modus = this.#els.overlap.value;
     try {
       for (const [entity, acc] of byEntity) {
         const roh = [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([start, kwh]) => ({ start, kwh }));
@@ -783,30 +884,72 @@ class WueflDataIo extends HTMLElement {
         // werden auf 0 gesetzt, nicht stehen gelassen.
         const hourly = fillGaps(roh);
         const leer = hourly.length - roh.length;
-        const von = hourly[0].start;
-        const bis = hourly[hourly.length - 1].start;
-        const [vorher, nachher] = await Promise.all([
-          statSumBefore(this.#hass, entity, von),
-          statAfter(this.#hass, entity, bis + HOUR),
-        ]);
-        const b = buildStats(hourly, { vorher, nachher });
+        const vorhanden = await existingHours(this.#hass, entity, hourly[0].start, hourly[hourly.length - 1].start);
+        const { bloecke, geschuetzt, behalten, ersetzt } = planBlocks(hourly, { schutz, vorhanden, modus });
+
+        // Jeder Block hängt sich für sich an die vorhandenen Summen an.
+        const stats = [];
+        let kwh = 0;
+        let naht = 0;
+        for (const block of bloecke) {
+          const von = block[0].start;
+          const bis = block[block.length - 1].start;
+          const [vorher, nachher] = await Promise.all([
+            statSumBefore(this.#hass, entity, von),
+            statAfter(this.#hass, entity, bis + HOUR),
+          ]);
+          const b = buildStats(block, { vorher, nachher });
+          // Steht der Block zwischen zwei festen Summen, muss die Rechnung
+          // aufgehen. Tut sie es nicht, landet der Rest in der ersten
+          // geschriebenen Stunde – das gehört vorher gesagt.
+          if (vorher !== null && nachher) {
+            naht += ((Number(nachher.sum) || 0) - (Number(nachher.change) || 0)) - vorher - b.kwh;
+          }
+          stats.push(...b.stats);
+          kwh += b.kwh;
+        }
         const label = this.#targets.find((t) => t.entity === entity)?.label ?? entity;
-        plan.push({ entity, label, nachher, leer, ...b });
+        plan.push({
+          entity, label, stats, kwh, leer, geschuetzt, behalten, ersetzt,
+          naht: Math.abs(naht) < 0.01 ? 0 : naht,
+          from: bloecke[0]?.[0]?.start ?? null,
+          to: bloecke.length ? bloecke[bloecke.length - 1].at(-1).start : null,
+          bloecke: bloecke.length,
+        });
       }
     } catch (err) {
       setMsg(msg, 'err'); msg.textContent = `Prüfen fehlgeschlagen: ${err?.message ?? err}`;
       return;
     }
     const day = (ms) => (ms ? new Date(ms).toLocaleDateString('de-DE') : '–');
+    const zahl = (v, n = 1) => v.toLocaleString('de-DE', { maximumFractionDigits: n });
+    const std = (n) => `${n} Stunde${n === 1 ? '' : 'n'}`;
     this.#els.summary.hidden = false;
-    this.#els.summary.innerHTML = plan.map((p) => `<div><b>${esc(p.label)}</b>: ${p.stats.length
-      ? `${p.kwh.toLocaleString('de-DE', { maximumFractionDigits: 1 })} kWh vom ${day(p.from)} bis ${day(p.to)}`
-        + ' · vorhandene Werte in diesem Zeitraum werden ersetzt'
-        + `${p.leer ? `, davon ${p.leer} Stunde${p.leer === 1 ? '' : 'n'} ohne Wert auf 0` : ''}`
-      : 'nichts zu importieren'}</div>`).join('');
+    this.#els.summary.innerHTML = plan.map((p) => {
+      if (!p.stats.length) {
+        return `<div><b>${esc(p.label)}</b>: nichts zu importieren`
+          + `${p.geschuetzt ? ' – alles liegt im geschützten Zeitraum' : ''}`
+          + `${p.behalten && !p.geschuetzt ? ' – überall stehen schon Werte, die behalten werden' : ''}</div>`;
+      }
+      const teile = [];
+      if (p.ersetzt)    teile.push(`${std(p.ersetzt)} mit vorhandenen Werten werden <b>ersetzt</b>`);
+      if (p.behalten)   teile.push(`${std(p.behalten)} bleiben, weil dort schon Werte stehen`);
+      if (p.geschuetzt) teile.push(`${std(p.geschuetzt)} liegen im <b>geschützten Zeitraum</b> und bleiben unangetastet`);
+      if (p.leer)       teile.push(`${std(p.leer)} ohne Wert in der Datei werden auf 0 gesetzt`);
+      if (p.naht)       teile.push(`an der Nahtstelle bleibt eine Differenz von ${zahl(p.naht, 2)} kWh, die in der ersten geschriebenen Stunde landet`);
+      return `<div><b>${esc(p.label)}</b>: ${zahl(p.kwh)} kWh vom ${day(p.from)} bis ${day(p.to)}`
+        + `${p.bloecke > 1 ? ` in ${p.bloecke} Abschnitten` : ''}`
+        + `${teile.length ? ` · ${teile.join(' · ')}` : ''}</div>`;
+    }).join('');
     this.#plan = plan.filter((p) => p.stats.length);
     this.#els.go.hidden = !this.#plan.length;
-    msg.textContent = this.#plan.length ? '' : 'In der Datei stehen für die gewählten Spalten keine Werte.';
+    if (this.#plan.length) { msg.textContent = ''; return; }
+    // Nichts zu schreiben kann zwei Gründe haben – der Unterschied ist wichtig
+    const geblockt = plan.some((p) => p.geschuetzt || p.behalten);
+    setMsg(msg, geblockt ? '' : 'err');
+    msg.textContent = geblockt
+      ? 'Es bleibt nichts zu schreiben: Alles aus der Datei liegt im geschützten Zeitraum oder hat schon Werte, die behalten werden sollen.'
+      : 'In der Datei stehen für die gewählten Spalten keine Werte.';
   }
 
   async #import() {

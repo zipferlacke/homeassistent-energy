@@ -17,6 +17,7 @@ const percent = () => ({ entity: { filter: { device_class: 'battery' } } });
 const money = () => ({ entity: { filter: { device_class: 'monetary' } } });
 const bool = () => ({ boolean: {} });
 const number = (min, max, step) => ({ number: { min, max, step, mode: 'box' } });
+const datum = () => ({ date: {} });
 const color = () => ({ color_rgb: {} });
 
 /**
@@ -336,6 +337,8 @@ const BLOCKS = [
       { name: 'commissioned_value', selector: text() },
       { name: 'house_base_load', selector: watt() },
       { name: 'surplus_threshold_value', selector: number(50, 20000, 50) },
+      { name: 'import_protect_from', selector: datum() },
+      { name: 'import_protect_to', selector: datum() },
       { name: 'weather_entity', selector: ({ entity: { filter: { domain: 'weather' } } }) },
       { name: 'temperatures', selector: temp(true) },
       { name: 'extra_entities', selector: ({ entity: { multiple: true } }) },
@@ -428,6 +431,8 @@ const LABELS = {
     commissioned_value: 'In Betrieb seit (YYYY-MM-DD)',
     house_base_load: 'Durchschnittliche Grundlast',
     surplus_threshold_value: 'Größerer Verbraucher ab (W über Grundlast)',
+    import_protect_from: 'Import-Schutz ab',
+    import_protect_to: 'Import-Schutz bis',
     weather_entity: 'Wetterdienst',
     temperatures: 'Zusätzliche Temperaturen',
     extra_entities: 'Weitere Sensoren',
@@ -519,6 +524,8 @@ const HELPERS = {
     commissioned_value: 'Inbetriebnahmedatum im Format YYYY-MM-DD.',
     house_base_load: 'Leer = automatisch: Hausverbrauch (ohne Wallbox) der letzten 7 Tage ÷ Tage (sensor.we_house_base_load). Nur füllen, wenn du einen eigenen Sensor in Watt hast.',
     surplus_threshold_value: 'Ab wie viel freier Leistung über der Grundlast die Live-Ansicht „genug Strom für größere Verbraucher“ meldet – 1000 für die Waschmaschine, 5000 fürs Auto. Leer = 2000 W.',
+    import_protect_from: 'Ab diesem Tag rührt kein CSV-Import die Werte mehr an. Gedacht für den Tag, ab dem Home Assistant selbst aufzeichnet – so kann ein Import keine echten Messwerte überschreiben. Leer = kein Schutz.',
+    import_protect_to: 'Bis einschließlich diesem Tag rührt kein CSV-Import die Werte an. Gedacht, um einen sorgfältig aufgebauten Altbestand einzufrieren. Leer = kein Schutz.',
     weather_entity: 'Wetter-Entität für Außentemperatur und Vorhersage.',
     temperatures: 'Liste weiterer Temperatursensoren.',
     extra_entities: 'Weitere Sensoren für das Dashboard.',
