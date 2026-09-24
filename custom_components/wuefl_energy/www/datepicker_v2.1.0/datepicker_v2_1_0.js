@@ -40,7 +40,7 @@ class PickerBase {
     }
 
     injectCss() {
-        const url = new URL('./datepicker_v2_0_1.css', import.meta.url);
+        const url = new URL('./datepicker_v2_1_0.css', import.meta.url);
         if (document.querySelector(`link[href="${url.href}"]`)) return;
         document.head.insertAdjacentHTML('beforeend', `<link rel="stylesheet" href="${url.href}">`);
     }
@@ -100,6 +100,81 @@ const pad     = n => String(n).padStart(2, '0');
 const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const clamp   = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+/** Datum aus Date, "YYYY-MM-DD" oder Millisekunden – immer auf Tagesbeginn. */
+const toDay = v => {
+    if (v === null || v === undefined || v === '') return null;
+    const d = v instanceof Date ? new Date(v)
+        : typeof v === 'number' ? new Date(v)
+        : /^\d{4}-\d{2}-\d{2}$/.test(String(v).trim())
+            ? new Date(`${String(v).trim()}T00:00:00`)
+            : new Date(v);
+    return Number.isNaN(+d) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+};
+
+/**
+ * Gesperrte Abschnitte vereinheitlichen.
+ * Erlaubt: "2026-08-01", Date, { from, to } – to darf fehlen (dann ein Tag).
+ */
+const toRanges = list => (Array.isArray(list) ? list : list ? [list] : [])
+    .map(r => {
+        const von = toDay(r?.from ?? r);
+        const bis = toDay(r?.to ?? r?.from ?? r);
+        return von && bis ? { from: +von, to: +(bis > von ? bis : von) } : null;
+    })
+    .filter(Boolean);
+
+/** Erster und letzter Tag der Woche (Montag als Wochenanfang). */
+const weekStart = d => {
+    const s = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    s.setDate(s.getDate() - ((s.getDay() + 6) % 7));
+    return s;
+};
+
+/**
+ * Zeitraum aus einer Schnellwahl-Regel.
+ *
+ * Erlaubt sind ein Name ("last7", "thisMonth" …), ein Objekt
+ * ({ days: 7 } / { months: 3 } / { from, to }) oder eine Funktion, die
+ * [von, bis] zurückgibt. Alles wird auf ganze Tage gerundet.
+ */
+function rangeFromRule(rule, heute = new Date()) {
+    const tag   = new Date(heute.getFullYear(), heute.getMonth(), heute.getDate());
+    const plus  = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    const monat = (n) => new Date(tag.getFullYear(), tag.getMonth() + n, 1);
+    const letzterTag = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+
+    if (typeof rule === 'function') {
+        const r = rule(tag);
+        const von = toDay(Array.isArray(r) ? r[0] : r?.from);
+        const bis = toDay(Array.isArray(r) ? r[1] : r?.to);
+        return von && bis ? [von, bis] : null;
+    }
+
+    if (rule && typeof rule === 'object') {
+        if (Number.isFinite(rule.days))   return [plus(tag, -(rule.days - 1)), tag];
+        if (Number.isFinite(rule.months)) return [new Date(tag.getFullYear(), tag.getMonth() - rule.months, tag.getDate()), tag];
+        const von = toDay(rule.from);
+        const bis = toDay(rule.to);
+        if (von && bis) return [von, bis];
+        return null;
+    }
+
+    switch (String(rule)) {
+        case 'today':      return [tag, tag];
+        case 'yesterday':  return [plus(tag, -1), plus(tag, -1)];
+        case 'thisWeek':   return [weekStart(tag), tag];
+        case 'lastWeek':   return [plus(weekStart(tag), -7), plus(weekStart(tag), -1)];
+        case 'thisMonth':  return [monat(0), tag];
+        case 'lastMonth':  return [monat(-1), letzterTag(monat(-1))];
+        case 'thisYear':   return [new Date(tag.getFullYear(), 0, 1), tag];
+        case 'lastYear':   return [new Date(tag.getFullYear() - 1, 0, 1), new Date(tag.getFullYear() - 1, 11, 31)];
+        case 'last7':      return [plus(tag, -6), tag];
+        case 'last30':     return [plus(tag, -29), tag];
+        case 'all':        return 'all';
+        default:           return null;
+    }
+}
+
 export class DatePicker extends PickerBase {
     /** @type {DateInstance[]} */
     activePickers;
@@ -110,6 +185,12 @@ export class DatePicker extends PickerBase {
         outputFormat:    undefined, // auto: 'native'
         forceJsPosition: false,
         allowSameDay:    true,
+        min:             null,      // frühestes wählbares Datum
+        max:             null,      // spätestes wählbares Datum
+        disabled:        [],        // gesperrte Abschnitte [{from,to}|Datum]
+        limitView:       true,      // Blättern nur innerhalb min/max
+        quick:           [],        // Schnellwahl [{ name, rule }]
+        quickApply:      true,      // Schnellwahl übernimmt und schließt
     };
 
     constructor(config = {}) {
@@ -183,12 +264,19 @@ export class DatePicker extends PickerBase {
         const hasDate = types.some(t => ['date', 'datetime-local', 'datetime'].includes(t));
         const hasTime = types.some(t => ['time', 'datetime-local', 'datetime'].includes(t));
 
+        const json = (raw) => { try { return raw ? JSON.parse(raw) : null; } catch { return null; } };
         const options = {
             showDate: hasDate || (!hasDate && !hasTime), // Default: date
             showTime: hasTime,
             outputFormat:    fromInput.dataset.tpFormat || 'native',
             allowSameDay:    fromInput.dataset.tpSameDay !== 'false',
             forceJsPosition: fromInput.hasAttribute('data-tp-position'),
+            min:             fromInput.dataset.tpMin || fromInput.min || null,
+            max:             fromInput.dataset.tpMax || fromInput.max || null,
+            disabled:        json(fromInput.dataset.tpDisabled) ?? [],
+            limitView:       fromInput.dataset.tpLimitView !== 'false',
+            quick:           json(fromInput.dataset.tpQuick) ?? [],
+            quickApply:      fromInput.dataset.tpQuickApply !== 'false',
         };
 
         this.create(toInput ? [fromInput, toInput] : fromInput, options);
@@ -247,6 +335,12 @@ export class DatePicker extends PickerBase {
             outputFormat,
             forceJsPosition: opts.forceJsPosition === true,
             allowSameDay:    opts.allowSameDay !== false,
+            min:             toDay(opts.min),
+            max:             toDay(opts.max),
+            disabled:        toRanges(opts.disabled),
+            limitView:       opts.limitView !== false,
+            quick:           Array.isArray(opts.quick) ? opts.quick : [],
+            quickApply:      opts.quickApply !== false,
             viewYear:        now.getFullYear(),
             viewMonth:       now.getMonth(),
             showYearPanel:   false,
@@ -325,6 +419,35 @@ export class DatePicker extends PickerBase {
 
         this.activePickers.push(instance);
         return instance;
+    }
+
+    // ── Gesperrte Tage ─────────────────────────────────────────────────────────
+
+    /** Liegt der Tag außerhalb von min/max oder in einem gesperrten Abschnitt? */
+    #isBlocked(instance, date) {
+        const ts = +new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        if (instance.min && ts < +instance.min) return true;
+        if (instance.max && ts > +instance.max) return true;
+        return instance.disabled.some(r => ts >= r.from && ts <= r.to);
+    }
+
+    /** Gibt es im angezeigten Monat ±1 überhaupt noch etwas zu holen? */
+    #canShift(instance, dir) {
+        if (!instance.limitView) return true;
+        const ziel = new Date(instance.viewYear, instance.viewMonth + dir, 1);
+        const ende = new Date(ziel.getFullYear(), ziel.getMonth() + 1, 0);
+        if (dir < 0 && instance.min && +ende < +instance.min) return false;
+        if (dir > 0 && instance.max && +ziel > +instance.max) return false;
+        return true;
+    }
+
+    /** Angezeigten Monat in den erlaubten Bereich schieben. */
+    #clampView(instance) {
+        if (!instance.limitView) return;
+        const gezeigt = new Date(instance.viewYear, instance.viewMonth, 1);
+        const setze = (d) => { instance.viewYear = d.getFullYear(); instance.viewMonth = d.getMonth(); };
+        if (instance.min && +gezeigt < +new Date(instance.min.getFullYear(), instance.min.getMonth(), 1)) setze(instance.min);
+        if (instance.max && +gezeigt > +new Date(instance.max.getFullYear(), instance.max.getMonth(), 1)) setze(instance.max);
     }
 
     // ── Eingabe parsen ─────────────────────────────────────────────────────────
@@ -794,14 +917,16 @@ export class DatePicker extends PickerBase {
         pop.innerHTML = `
             <div class="dp_header">
                 ${instance.showDate ? `
-                    <button class="dp_btn dp_btn_prev" type="button" aria-label="Vorheriger Monat">
+                    <button class="dp_btn dp_btn_prev" type="button" aria-label="Vorheriger Monat"
+                        ${this.#canShift(instance, -1) ? '' : 'disabled'}>
                         <span class="dp_msr">chevron_left</span>
                     </button>
                     <div class="dp_month_year">
                         <span class="dp_month_lbl">${months[instance.viewMonth]}</span>
                         <button class="dp_btn dp_btn_year" type="button">${instance.viewYear}</button>
                     </div>
-                    <button class="dp_btn dp_btn_next" type="button" aria-label="Nächster Monat">
+                    <button class="dp_btn dp_btn_next" type="button" aria-label="Nächster Monat"
+                        ${this.#canShift(instance, 1) ? '' : 'disabled'}>
                         <span class="dp_msr">chevron_right</span>
                     </button>
                 ` : '<div></div>'}
@@ -818,6 +943,13 @@ export class DatePicker extends PickerBase {
             ${instance.showDate && instance.showYearPanel ? `
                 <div class="dp_year_panel">
                     <div class="dp_year_list">${this.#buildYearList(instance)}</div>
+                </div>
+            ` : ''}
+
+            ${instance.quick.length && !instance.showYearPanel ? `
+                <div class="dp_quick">
+                    ${instance.quick.map((q, i) => `<button class="dp_btn dp_btn_quick" type="button"
+                        data-quick="${i}">${this.resolveLangString(q?.name ?? q?.label ?? '')}</button>`).join('')}
                 </div>
             ` : ''}
 
@@ -845,7 +977,10 @@ export class DatePicker extends PickerBase {
     #buildYearList(instance) {
         const cur = instance.viewYear;
         const years = [];
-        for (let y = cur - 80; y <= cur + 20; y++) {
+        // Mit limitView gibt es keine Jahre, in denen ohnehin nichts wählbar ist
+        const von = instance.limitView && instance.min ? instance.min.getFullYear() : cur - 80;
+        const bis = instance.limitView && instance.max ? instance.max.getFullYear() : cur + 20;
+        for (let y = Math.min(von, cur); y <= Math.max(bis, cur); y++) {
             const active = y === cur ? ' dp_year_active' : '';
             years.push(`<button class="dp_btn dp_btn_year_item${active}" data-year="${y}" type="button">${y}</button>`);
         }
@@ -907,13 +1042,17 @@ export class DatePicker extends PickerBase {
             }
         }
 
+        const blocked = this.#isBlocked(instance, date);
+
         const cls = [
             'dp_day', faded ? 'dp_faded' : '', isToday ? 'dp_today' : '',
             isSelFrom ? 'dp_sel_from' : '', isSelTo ? 'dp_sel_to' : '',
+            blocked ? 'dp_disabled' : '',
             ...classes,
         ].filter(Boolean).join(' ');
 
-        return `<button class="${cls}" data-date="${dateKey(date)}" type="button"><span>${date.getDate()}</span></button>`;
+        return `<button class="${cls}" data-date="${dateKey(date)}" type="button"`
+            + `${blocked ? ' disabled aria-disabled="true"' : ''}><span>${date.getDate()}</span></button>`;
     }
 
     // ── Time-Picker ────────────────────────────────────────────────────────────
@@ -952,13 +1091,19 @@ export class DatePicker extends PickerBase {
         const pop = instance.popover;
 
         pop.querySelector('.dp_btn_prev')?.addEventListener('click', () => {
+            if (!this.#canShift(instance, -1)) return;
             if (--instance.viewMonth < 0) { instance.viewMonth = 11; instance.viewYear--; }
             this.#renderPopover(instance);
         });
         pop.querySelector('.dp_btn_next')?.addEventListener('click', () => {
+            if (!this.#canShift(instance, 1)) return;
             if (++instance.viewMonth > 11) { instance.viewMonth = 0; instance.viewYear++; }
             this.#renderPopover(instance);
         });
+
+        pop.querySelectorAll('.dp_btn_quick').forEach(btn =>
+            btn.addEventListener('click', () => this.#applyQuick(instance, instance.quick[+btn.dataset.quick]))
+        );
 
         pop.querySelector('.dp_btn_year')?.addEventListener('click', () => {
             instance.showYearPanel = !instance.showYearPanel;
@@ -971,6 +1116,7 @@ export class DatePicker extends PickerBase {
             btn.addEventListener('click', () => {
                 instance.viewYear      = parseInt(btn.dataset.year);
                 instance.showYearPanel = false;
+                this.#clampView(instance);
                 this.#renderPopover(instance);
             })
         );
@@ -1021,7 +1167,10 @@ export class DatePicker extends PickerBase {
         const dayFromEvent = e => {
             const btn = e.target.closest('.dp_day');
             if (!btn || !days.contains(btn)) return null;
-            return { btn, date: new Date(btn.dataset.date + 'T00:00:00') };
+            const date = new Date(btn.dataset.date + 'T00:00:00');
+            // Gesperrte Tage nehmen weder Klick noch Hover an
+            if (btn.classList.contains('dp_disabled') || this.#isBlocked(instance, date)) return null;
+            return { btn, date };
         };
 
         days.addEventListener('click', e => {
@@ -1091,6 +1240,8 @@ export class DatePicker extends PickerBase {
     }
 
     #handleDayClick(instance, date) {
+        if (this.#isBlocked(instance, date)) return;
+
         if (!instance.isRange) {
             instance.selectedFrom = date;
             if (!instance.needSave) {
@@ -1128,11 +1279,45 @@ export class DatePicker extends PickerBase {
         if (instance.editMode) this.#exitEditMode(instance);
     }
 
+    // ── Schnellwahl ────────────────────────────────────────────────────────────
+
+    /**
+     * Einen Schnellwahl-Knopf ausführen.
+     *
+     * Der Zeitraum wird auf min/max beschnitten – "letzte 30 Tage" bei nur
+     * zwölf Tagen Daten endet sonst im Leeren. Mit quickApply (Standard) wird
+     * gleich übernommen und geschlossen, sonst steht die Auswahl nur im
+     * Kalender und wartet auf "Speichern".
+     */
+    #applyQuick(instance, eintrag) {
+        let bereich = rangeFromRule(eintrag?.rule ?? eintrag?.range ?? eintrag?.value, new Date());
+        if (bereich === 'all') bereich = [instance.min, instance.max];
+        if (!bereich || !bereich[0] || !bereich[1]) return;
+
+        let [von, bis] = bereich;
+        if (instance.min && +von < +instance.min) von = instance.min;
+        if (instance.max && +bis > +instance.max) bis = instance.max;
+        if (+bis < +von) return;
+
+        instance.selectedFrom = new Date(von);
+        instance.selectedTo   = instance.isRange ? new Date(bis) : null;
+        instance.hoverDate    = null;
+        instance.activeSide   = 'from';
+        instance.viewYear     = von.getFullYear();
+        instance.viewMonth    = von.getMonth();
+        this.#clampView(instance);
+
+        if (instance.quickApply) { this.#save(instance); return; }
+        this.#renderPopover(instance);
+        this.#updateTrigger(instance);
+    }
+
     // ── Open / Close / Save / Reset ────────────────────────────────────────────
 
     #open(instance) {
         if (instance.isOpen) return;
 
+        this.#clampView(instance);
         this.#renderPopover(instance);
         instance.triggerElm.insertAdjacentElement('afterend', instance.popover);
         instance.popover.showPopover();

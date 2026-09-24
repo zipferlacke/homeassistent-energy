@@ -242,6 +242,12 @@
       appearance:         none;
       transition:         background .15s, color .15s;
 
+      /* Am Rand des erlaubten Bereichs: kein Weiterblättern */
+      &:disabled {
+        cursor:  not-allowed;
+        opacity: 0.35;
+      }
+
       /* Icon-Buttons: quadratisch */
       &.dp_btn_prev,
       &.dp_btn_next,
@@ -361,10 +367,40 @@
       }
     }
 
+    /* ── dp_quick ────────────────────────────────────────────────────────── */
+    /* Schnellwahl – nur da, wenn beim Erstellen eine Liste übergeben wurde */
+    & .dp_quick {
+      display:       flex;
+      flex-wrap:     wrap;
+      gap:           0.3rem;
+      margin-bottom: 0.55rem;
+      padding-bottom: 0.55rem;
+      border-bottom: 1px solid var(--_clr-picker-700);
+
+      & .dp_btn_quick {
+        background:    color-mix(in srgb, var(--_clr-picker-700) 55%, transparent);
+        border:        none;
+        border-radius: 999px;
+        color:         var(--_clr-picker-100);
+        cursor:        pointer;
+        font-size:     0.72rem;
+        font-weight:   500;
+        padding:       0.3rem 0.7rem;
+        white-space:   nowrap;
+
+        &:hover  { background: var(--_clr-picker-700); }
+        &:active { background: var(--_clr-picker-input-500); color: var(--_clr-picker-input-900); }
+      }
+    }
+
     /* ── dp_days ─────────────────────────────────────────────────────────── */
     & .dp_days {
       display:               grid;
       grid-template-columns: repeat(7, 1fr);
+      /* Gesperrte Tage nehmen keine Zeiger an (siehe dp_disabled). Der Zeiger
+         kommt dann von hier – deshalb steht das Verbotszeichen am Raster und
+         der Zeigefinger an den Tagen, die wirklich gehen. */
+      cursor:                not-allowed;
 
       & .dp_day {
         position:        relative;
@@ -402,6 +438,17 @@
 
         &.dp_faded {
           & span { color: var(--_clr-picker-600); }
+        }
+
+        /* Gesperrt: sichtbar, aber nicht anfassbar */
+        &.dp_disabled {
+          pointer-events: none;
+
+          & span {
+            color:      var(--_clr-picker-600);
+            opacity:    0.45;
+            text-decoration: line-through;
+          }
         }
 
         &.dp_today:not(.dp_sel_from):not(.dp_sel_to) span {
