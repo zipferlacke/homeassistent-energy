@@ -370,14 +370,15 @@ export function fillGaps(hourly) {
 }
 
 /**
- * Geschützter Zeitraum aus der Konfiguration, in Millisekunden.
+ * Geschützter Zeitraum aus zwei Datumsfeldern, in Millisekunden.
  *
- * Beide Enden sind freiwillig: Nur "von" gesetzt schützt alles ab dem Datum
- * (typisch: ab hier zeichnet Home Assistant selbst auf), nur "bis" schützt
- * alles davor (typisch: ein sorgfältig aufgebauter Altbestand). Der "bis"-Tag
- * zählt ganz dazu, sonst wäre der letzte Tag halb geschützt.
+ * Wird je Import gesetzt, nicht dauerhaft gespeichert – meist unterscheidet
+ * sich die Grenze von Datei zu Datei. Beide Enden sind freiwillig: Nur "von"
+ * schützt alles ab dem Tag (typisch: ab hier zeichnet Home Assistant selbst
+ * auf), nur "bis" schützt alles davor. Der "bis"-Tag zählt ganz dazu, sonst
+ * wäre der letzte Tag halb geschützt.
  */
-export function protectedRange(cfg) {
+export function protectRange(vonStr, bisStr) {
   const tag = (v, ende) => {
     if (!v) return null;
     const d = new Date(`${v}T00:00:00`);
@@ -385,8 +386,7 @@ export function protectedRange(cfg) {
     if (ende) d.setDate(d.getDate() + 1);
     return +d;
   };
-  const sd = cfg?.systemdata ?? {};
-  return { von: tag(sd.import_protect_from, false), bis: tag(sd.import_protect_to, true) };
+  return { von: tag(vonStr, false), bis: tag(bisStr, true) };
 }
 
 /** Liegt die Stunde im geschützten Zeitraum? */
@@ -654,13 +654,6 @@ class WueflDataIo extends HTMLElement {
   async #loadConfig() {
     this.#cfg = (await centralConfig(this.#hass)) ?? {};
     this.#targets = energyTargets(this.#cfg);
-    const { von, bis } = protectedRange(this.#cfg);
-    const tag = (ms) => new Date(ms).toLocaleDateString('de-DE');
-    this.#els.protect.hidden = von === null && bis === null;
-    this.#els.protect.textContent = von !== null && bis !== null
-      ? `Geschützt: ${tag(von)} bis ${tag(bis - 1)} – dort schreibt kein Import.`
-      : von !== null ? `Geschützt: alles ab ${tag(von)} – dort schreibt kein Import.`
-      : bis !== null ? `Geschützt: alles bis ${tag(bis - 1)} – dort schreibt kein Import.` : '';
     this.#els.exportBtn.disabled = !this.#targets.length;
     this.#els.exportNote.textContent = this.#targets.length
       ? `Enthält: ${this.#targets.map((t) => t.label).join(', ')}.`
@@ -712,7 +705,7 @@ class WueflDataIo extends HTMLElement {
           <li><b>Prüfen</b> – zeigt je Zähler, wie viel aus welchem Zeitraum geschrieben wird.</li>
           <li><b>Importieren</b> – landet in der Langzeitstatistik dieser Zähler; Diagramme, Kacheln und das Energie-Dashboard von HA zeigen es dann mit an.
             Werte im Zeitraum der Datei werden ersetzt: Ein zweiter Import mit korrigierten Zahlen überschreibt den ersten. Was danach kommt, bleibt unverändert.
-            Wo schon Werte stehen, kannst du oben wählen, ob sie überschrieben werden oder stehen bleiben; ein in den Einstellungen geschützter Zeitraum wird nie angefasst.</li>
+            Wo schon Werte stehen, kannst du wählen, ob sie überschrieben werden oder stehen bleiben, und einen Zeitraum angeben, den dieser Import gar nicht anfassen soll.</li>
         </ol>
         <div class="line">
           <label class="btn">${icon('mdi:file-upload-outline')}<span>CSV-Datei wählen</span>
@@ -727,7 +720,12 @@ class WueflDataIo extends HTMLElement {
               <option value="keep">vorhandene behalten</option>
             </select>
           </div>
-          <span class="note protect" hidden></span>
+          <div class="line"><span>Unangetastet lassen</span>
+            <input type="date" class="keep-from"><span>bis</span><input type="date" class="keep-to">
+          </div>
+          <span class="note">Nur für diesen Import. Was in diesem Zeitraum liegt, wird weder überschrieben
+            noch auf 0 gesetzt – gedacht für den Tag, ab dem Home Assistant selbst aufzeichnet
+            (dann nur das linke Feld füllen). Beide Felder leer = kein Schutz.</span>
           <span class="note missing" hidden></span>
           <div class="table-wrap"><table>
             <thead><tr><th>Zähler aus der Zuordnung</th><th>Spalte der Datei</th><th>Beispiel</th><th>Einheit</th><th>Art</th></tr></thead>
@@ -752,7 +750,7 @@ class WueflDataIo extends HTMLElement {
       importPart: q('.import-part'), file: q('.file'), fileName: q('.file-name'),
       mapping: q('.mapping'), timeCol: q('.time-col'), tbody: q('tbody'),
       check: q('.check'), summary: q('.summary'), go: q('.go'), confirm: q('.confirm'),
-      overlap: q('.overlap'), protect: q('.protect'),
+      overlap: q('.overlap'), keepFrom: q('.keep-from'), keepTo: q('.keep-to'),
       importMsg: q('.import-msg'),
       missing: q('.missing'),
     };
@@ -760,12 +758,14 @@ class WueflDataIo extends HTMLElement {
     this.#els.file.addEventListener('change', () => this.#readFile());
     this.#els.timeCol.addEventListener('change', () => { this.#csv.timeCol = Number(this.#els.timeCol.value); this.#renderMapping(); });
     this.#els.check.addEventListener('click', () => this.#check());
-    this.#els.overlap.addEventListener('change', () => {
-      // Die Auswahl ändert den Plan – das Geprüfte gilt nicht mehr
-      this.#els.summary.hidden = true;
-      this.#els.go.hidden = true;
-      this.#plan = null;
-    });
+    // Jede dieser Einstellungen ändert den Plan – das Geprüfte gilt nicht mehr
+    for (const el of [this.#els.overlap, this.#els.keepFrom, this.#els.keepTo]) {
+      el.addEventListener('change', () => {
+        this.#els.summary.hidden = true;
+        this.#els.go.hidden = true;
+        this.#plan = null;
+      });
+    }
     this.#els.go.addEventListener('click', () => { this.#els.confirm.hidden = false; });
     q('.cancel').addEventListener('click', () => { this.#els.confirm.hidden = true; });
     q('.ok').addEventListener('click', () => this.#import());
@@ -901,7 +901,7 @@ class WueflDataIo extends HTMLElement {
       return;
     }
     const plan = [];
-    const schutz = protectedRange(this.#cfg);
+    const schutz = protectRange(this.#els.keepFrom.value, this.#els.keepTo.value);
     const modus = this.#els.overlap.value;
     try {
       for (const [entity, acc] of byEntity) {
