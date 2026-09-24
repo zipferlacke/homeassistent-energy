@@ -5,6 +5,11 @@
  */
 import { registerCard, cssColor } from './we-shared.js';
 
+const STUNDE = 3_600_000;
+// Fünf-Minuten-Werte hängen an den Rohdaten des Recorders (purge_keep_days,
+// voreingestellt 10 Tage). Einen Tag Sicherheitsabstand lassen wir.
+const FEIN_MS = 9 * 86_400_000;
+
 class WueflEnergyChart extends HTMLElement {
     #config = {};
     #hass = null;
@@ -323,6 +328,19 @@ class WueflEnergyChart extends HTMLElement {
     }
 
     /**
+     * Raster, das für den Zeitraum auch Daten liefert.
+     *
+     * Unter einer Stunde gibt es nur die Fünf-Minuten-Statistik, und die
+     * reicht keine zehn Tage zurück. Für ältere Zeiträume bliebe ein feineres
+     * Raster leer – also lieber stündlich zeichnen als gar nicht.
+     */
+    #rasterMitDaten(bucketInfo, start) {
+        if (bucketInfo.ms >= STUNDE) return bucketInfo;
+        if (Date.now() - start.getTime() < FEIN_MS) return bucketInfo;
+        return { ms: STUNDE, unit: 'h', val: 1 };
+    }
+
+    /**
      * Beginn des Buckets, in den der Zeitpunkt `t` fällt.
      *
      * Ausgerichtet an der lokalen Zeit ab `origin` (Beginn des Zeitraums),
@@ -586,9 +604,10 @@ class WueflEnergyChart extends HTMLElement {
         this.#els.title.textContent = this.#config.title || '';
 
         const { start, end } = this.#calculateTimeBounds(this.#config.range, this.#config.start, this.#config.end);
-        const bucketInfo = this.#parseBucketSize(this.#config.aggregation, this.#config.range);
+        const bucketInfo = this.#rasterMitDaten(
+            this.#parseBucketSize(this.#config.aggregation, this.#config.range), start);
         const bucketMs = bucketInfo.ms;
-        const period = bucketMs >= 86400000 ? 'day' : bucketMs >= 3600000 ? 'hour' : '5minute';
+        const period = bucketMs >= 86400000 ? 'day' : bucketMs >= STUNDE ? 'hour' : '5minute';
 
         // Reihen mit fertigen Daten (z. B. Prognose) brauchen keine Statistik
         const idsToFetch = new Set(this.#config.series.filter(s => s.entity && !s.data).map(s => s.entity));
@@ -655,7 +674,7 @@ class WueflEnergyChart extends HTMLElement {
             } else if (this.#config.chip) {
                 const spanDays = (end - start) / 86400000;
                 // 5-Minuten-Werte hält der Recorder nur ~10 Tage – ältere Tage stündlich
-                const recent = Date.now() - start < 9 * 86400000;
+                const recent = Date.now() - start < FEIN_MS;
                 const chipPeriod = spanDays <= 1.05 ? (recent ? '5minute' : 'hour') : 'day';
                 let chipStats = dbStats;
                 if (chipPeriod !== period && idsToFetch.size) {
