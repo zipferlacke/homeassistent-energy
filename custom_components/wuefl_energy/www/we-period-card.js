@@ -105,9 +105,12 @@ const CSS = `
 .date-trigger-btn { position: relative; }
 /* Der HA-Kalender liegt deckungsgleich über dem Knopf: sein Bedienfeld ist
    durchsichtig, behält aber die Größe des Knopfs. Nur so weiß sein
-   Aufklapp-Fenster, wie breit und wie hoch es werden darf. */
+   Aufklapp-Fenster, wie breit und wie hoch es werden darf.
+   Achtung: hier kein pointer-events: none – das Aufklapp-Fenster steckt im
+   selben Element und wäre dann nicht mehr bedienbar. Stattdessen ist nur
+   das Bedienfeld selbst für Klicks gesperrt (siehe #hideHaField). */
 .ha-picker {
-  inset: 0; pointer-events: none; position: absolute;
+  inset: 0; position: absolute;
 }
 .ha-picker ha-date-range-picker { display: block; height: 100%; width: 100%; }
 .date-trigger-btn {
