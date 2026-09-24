@@ -1081,8 +1081,7 @@ const STATE_PATTERNS = [
  * Sensoren, die nur eine Rohzahl liefern, denn "3" ist ohne Kontext nicht
  * eindeutig. Ohne Zuordnung greift die Mustererkennung über den Text.
  */
-export function chargeState(hass, entityId, map) {
-  const raw = entityId ? hass?.states?.[entityId]?.state : null;
+export function chargeStateFrom(raw, map) {
   if (raw === null || raw === undefined || raw === 'unknown' || raw === 'unavailable') return null;
 
   const mapped = map?.[String(raw).trim()];
@@ -1093,6 +1092,51 @@ export function chargeState(hass, entityId, map) {
     if (pattern.test(text)) return state;
   }
   return null;
+}
+
+export function chargeState(hass, entityId, map) {
+  return chargeStateFrom(entityId ? hass?.states?.[entityId]?.state : null, map);
+}
+
+/**
+ * Ladevorgänge aus dem Statusverlauf.
+ *
+ * Ein Vorgang beginnt, sobald ein Fahrzeug steckt, und endet, wenn die
+ * Wallbox wieder "kein Fahrzeug" meldet. Pausen und "fertig" gehören dazu –
+ * das Auto hängt ja noch dran. Zustände, die sich nicht deuten lassen
+ * (unbekannt, nicht erreichbar), ändern nichts: Ein Modbus-Aussetzer soll
+ * keinen Vorgang zerschneiden.
+ *
+ * rows: [{ state, t }] aufsteigend. Ergebnis: [{ start, end, laeuft }].
+ */
+export function chargeSessions(rows, { map, now = Date.now() } = {}) {
+  const spans = [];
+  let offen = null;
+  for (const r of rows ?? []) {
+    const st = chargeStateFrom(r.state, map);
+    if (st === null) continue;
+    if (st !== 'frei' && !offen) offen = { start: r.t };
+    else if (st === 'frei' && offen) { spans.push({ ...offen, end: r.t, laeuft: false }); offen = null; }
+  }
+  if (offen) spans.push({ ...offen, end: now, laeuft: true });
+  return spans;
+}
+
+/**
+ * Energie (kWh) in einem Zeitfenster aus 5-Minuten-Statistik.
+ * Mit einem Zähler die Summe der Schritte, sonst das Mittel der Leistung
+ * mal Dauer – so geht es auch für Wallboxen ohne eigenen Zähler.
+ */
+export function energyInSpan(rows, from, to, { mean = false, toKwh = 1, bucketMs = 300_000 } = {}) {
+  let kwh = 0;
+  for (const row of rows ?? []) {
+    const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
+    if (Number.isNaN(t) || t < from || t >= to) continue;
+    const v = Number(mean ? row.mean : row.change);
+    if (!Number.isFinite(v)) continue;
+    kwh += mean ? Math.max(0, v) * toKwh * (bucketMs / 3_600_000) : Math.max(0, v) * toKwh;
+  }
+  return kwh;
 }
 
 /**

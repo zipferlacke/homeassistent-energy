@@ -10,6 +10,7 @@ import {
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, wallboxPower,
+  chargeSessions, energyInSpan, patchHtml,
   applyColorVars, colorOf, navigateToView, TOGGLE_CSS, isReadOnly, applyReadOnly,
   getPeriod, onPeriodChange, loadSolarForecast,
 } from './we-shared.js';
@@ -63,9 +64,15 @@ function getEntity(val) {
 const CSS = `
 ${TILE_CSS}
 ${TOGGLE_CSS}
-.history {
+details.history {
   /* Zugeklappt, damit die Karte kurz bleibt – das Diagramm kommt auf Wunsch,
-     und darin führt das Vollbild-Symbol weiter ins große Fenster. */
+     und darin führt das Vollbild-Symbol weiter ins große Fenster.
+     Ohne eigene Fläche: Ein grauer Kasten um ein Diagramm sieht nach
+     Fehler aus, die Zeile allein reicht als Aufklapper. */
+  background: none;
+  & > summary { padding-inline: 0; }
+  & > summary:hover { background: none; color: var(--w-accent); }
+  & > .body { padding-inline: 0; }
   & .hnote { color: var(--secondary-text-color); flex: 0 1 auto; font-size: .8rem; text-align: right; }
   & .plot { height: 230px; margin: 0 -8px; }
   /* Das Diagramm bringt ein eigenes ha-card mit – hier ohne zweiten Rahmen */
@@ -79,6 +86,13 @@ ${TOGGLE_CSS}
 }
 .top {
   & .head { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; }
+  & .ihelp {
+    align-items: center; background: none; border: 0; border-radius: 50%;
+    color: var(--secondary-text-color, #727272); cursor: pointer; display: flex;
+    flex: 0 0 auto; height: 28px; justify-content: center; margin-left: auto; padding: 0; width: 28px;
+    & ha-icon { --mdc-icon-size: 20px; }
+    &:hover { background: var(--secondary-background-color, rgba(127,127,127,.12)); }
+  }
   & .name { font-size: 1.35rem; font-weight: 600; line-height: 1.25; }
   & .badge {
     align-items: center;
@@ -117,18 +131,6 @@ ${TOGGLE_CSS}
   & .note { color: var(--w-text-soft); font-size: var(--w-fs-sm); line-height: 1.45; }
 }
 
-.modehead {
-  align-items: center; display: flex; gap: .4rem;
-  font-size: var(--w-fs-sm); font-weight: 600; margin-top: .8rem;
-
-  & .ihelp {
-    align-items: center; background: none; border: 0; border-radius: 50%;
-    color: var(--secondary-text-color, #727272); cursor: pointer; display: flex;
-    height: 24px; justify-content: center; padding: 0; width: 24px;
-  }
-  & .ihelp:hover { background: var(--secondary-background-color, rgba(127,127,127,.12)); }
-  & .ihelp ha-icon { --mdc-icon-size: 18px; }
-}
 .modehelp {
   margin: 0 0 .8rem;
 
@@ -143,7 +145,7 @@ ${TOGGLE_CSS}
   display: grid;
   gap: 2px;
   grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
-  margin: .3rem 0 .8rem;
+  margin: .3rem auto .8rem;
   padding: 3px;
 
   & .btn {
@@ -187,7 +189,12 @@ ${TOGGLE_CSS}
 
 .stats {
   display: grid; gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: .75rem;
+
+  /* Die erste Kachel ist der Ladevorgang und trägt die Erläuterung darunter.
+     Ab vier Kacheln bekommt sie zwei Spalten, sonst bricht ihr Text auf
+     fünf Zeilen um. */
+  & > .ha-tile:first-child:nth-last-child(n+4) { grid-column: span 2; }
 }
 
 /* Am Rechner braucht die Modus-Leiste nicht die ganze Breite: Symbol und
@@ -195,7 +202,7 @@ ${TOGGLE_CSS}
 @media (min-width: 700px) {
   .modes {
     grid-auto-columns: auto; grid-auto-flow: column; grid-template-columns: none;
-    width: fit-content;
+    margin-inline: auto; width: fit-content;
 
     & .btn {
       flex-direction: row; gap: .45rem; padding: .4rem 1rem;
@@ -215,6 +222,9 @@ class WueflWallboxCard extends HTMLElement {
   #watch = [];
   #drag = null;
   #historyKey = '';
+  #sessions = null;
+  #sessionKey = '';
+  #sessionAt = 0;
   #stopPeriod = null;
   #fc = null;         // PV-Prognose (auch aus dem Energie-Dashboard)
   #fcAt = 0;
@@ -332,6 +342,8 @@ class WueflWallboxCard extends HTMLElement {
         <div class="head">
           <div class="name"></div>
           <div class="badge" hidden><ha-icon></ha-icon><span></span></div>
+          <button type="button" class="ihelp" aria-expanded="false" aria-label="Was bedeuten die Lademodi?"
+            title="Was bedeuten die Lademodi?">${icon('mdi:information-outline')}</button>
         </div>
         <div class="state"></div>
       </div>
@@ -348,11 +360,6 @@ class WueflWallboxCard extends HTMLElement {
       </div>
       <div class="scale" hidden><span class="note"></span></div>
 
-      <div class="modehead">
-        <span>Lademodus</span>
-        <button type="button" class="ihelp" aria-expanded="false" aria-label="Was bedeuten die Lademodi?"
-          title="Was bedeuten die Lademodi?">${icon('mdi:information-outline')}</button>
-      </div>
       <div class="modes"></div>
       <div class="info modehelp" hidden></div>
 
@@ -416,7 +423,6 @@ class WueflWallboxCard extends HTMLElement {
       goalRow: q('.goalrow'), goalLeft: q('.goalrow .left'), goalRight: q('.goalrow .right'),
       scaleNote: q('.scale .note'),
       modes: q('.modes'),
-      modeHead: q('.modehead'),
       modeHelp: q('.modehelp'),
       iHelp: q('.ihelp'),
       target: q('.target'), targetInput: q('.target input'), targetOut: q('.target output'), full: q('.full'),
@@ -428,6 +434,11 @@ class WueflWallboxCard extends HTMLElement {
     };
 
     this.#els.history.addEventListener('toggle', () => this.#renderHistory());
+
+    this.#els.stats.addEventListener('click', (ev) => {
+      const btn = ev.target?.closest?.('[data-entity]');
+      if (btn?.dataset.entity) moreInfo(this, btn.dataset.entity);
+    });
 
     this.#els.iHelp.addEventListener('click', () => {
       const zu = this.#els.modeHelp.hidden;
@@ -707,6 +718,7 @@ class WueflWallboxCard extends HTMLElement {
     // Aufklapper nur zeigen, wenn es darin etwas einzustellen gibt
     this.#els.adv.hidden = this.#els.cur.hidden;
 
+    this.#maybeLoadSessions();
     this.#renderStats();
     this.#renderHistory();
   }
@@ -771,7 +783,7 @@ class WueflWallboxCard extends HTMLElement {
   #renderModes(container, entityId) {
     if (!entityId || !this.#hass.states[entityId]) {
       container.replaceChildren();
-      this.#els.modeHead.hidden = true;
+      this.#els.iHelp.hidden = true;
       this.#els.modeHelp.hidden = true;
       return;
     }
@@ -805,7 +817,6 @@ class WueflWallboxCard extends HTMLElement {
       .map((opt) => [opt, MODE_HELP[modeInfo(opt).kind]])
       .filter(([, text]) => text)
       .map(([opt, text]) => `<div><dt>${esc(opt)}</dt><dd>${esc(text)}</dd></div>`);
-    this.#els.modeHead.hidden = !options.length;
     this.#els.iHelp.hidden = !zeilen.length;
     if (!zeilen.length) {
       box.hidden = true;
@@ -834,13 +845,111 @@ class WueflWallboxCard extends HTMLElement {
     box.querySelector('output').textContent = this.#sliderText(key, v);
   }
 
+  /**
+   * Ladevorgänge der letzten zwei Tage aus dem Verlauf.
+   *
+   * Die Wallbox kennt nur "heute geladen" – das schneidet einen Vorgang um
+   * Mitternacht durch und wirft mehrere Vorgänge eines Tages zusammen.
+   * Deshalb hier: aus dem Statusverlauf, wann ein Fahrzeug steckte, und aus
+   * der 5-Minuten-Statistik, wie viel in genau diesen Fenstern geflossen
+   * ist. Ohne Gesamtzähler wird aus der mittleren Leistung gerechnet.
+   */
+  async #loadSessions() {
+    const c = this.#config;
+    const h = this.#hass;
+    const quelle = c.total_energy_entity || c.power_entity;
+    if (!c.status_entity || !quelle) { this.#sessions = null; return; }
+
+    const now = Date.now();
+    const von = new Date(now - 48 * 3_600_000);
+    let hist, stats;
+    try {
+      [hist, stats] = await Promise.all([
+        h.callWS({
+          type: 'history/history_during_period',
+          start_time: von.toISOString(), end_time: new Date(now).toISOString(),
+          entity_ids: [c.status_entity], minimal_response: true, no_attributes: true,
+          significant_changes_only: false,
+        }),
+        h.callWS({
+          type: 'recorder/statistics_during_period',
+          start_time: von.toISOString(), end_time: new Date(now).toISOString(),
+          statistic_ids: [quelle], period: '5minute', types: ['change', 'mean'],
+        }),
+      ]);
+    } catch {
+      this.#sessions = null;
+      return;
+    }
+
+    // Verlauf: erster Eintrag vollständig, danach nur noch Änderungen
+    const rows = asList(hist?.[c.status_entity]).map((r) => ({
+      state: r.s ?? r.state,
+      t: typeof r.lu === 'number' ? r.lu * 1000 : Date.parse(r.last_updated ?? r.last_changed ?? 0),
+    })).filter((r) => r.state !== undefined && Number.isFinite(r.t));
+
+    const spans = chargeSessions(rows, { map: c.status_map, now });
+    const mean = !c.total_energy_entity;
+    const einheit = (h.states[quelle]?.attributes?.unit_of_measurement ?? '').toLowerCase();
+    const toKwh = mean ? (einheit === 'kw' ? 1 : 0.001) : (einheit === 'wh' ? 0.001 : einheit === 'mwh' ? 1000 : 1);
+    const zeilen = stats?.[quelle] ?? [];
+
+    const mitternacht = new Date(); mitternacht.setHours(0, 0, 0, 0);
+    const kwh = (a, b) => energyInSpan(zeilen, a, b, { mean, toKwh });
+    this.#sessions = {
+      heute: kwh(+mitternacht, now),
+      spans: spans.map((sp) => ({
+        ...sp,
+        kwh: kwh(sp.start, sp.end),
+        // Was vom Vorgang noch auf gestern entfällt
+        vortag: sp.start < +mitternacht ? kwh(sp.start, Math.min(sp.end, +mitternacht)) : 0,
+      })),
+      heuteAnzahl: spans.filter((sp) => sp.end > +mitternacht).length,
+    };
+  }
+
+  /** Neu laden, wenn sich der Status ändert – sonst höchstens jede Minute. */
+  #maybeLoadSessions() {
+    const status = this.#hass?.states?.[this.#config.status_entity]?.state ?? '';
+    const key = `${this.#config.status_entity}|${status}`;
+    if (key === this.#sessionKey && Date.now() - this.#sessionAt < 60_000) return;
+    this.#sessionKey = key;
+    this.#sessionAt = Date.now();
+    this.#loadSessions().then(() => this.#renderStats());
+  }
+
   #renderStats() {
     const c = this.#config;
     const h = this.#hass;
     const items = [];
 
     const wbColor = cssColor(this, '--w-wallbox', '#7f77dd');
-    const today = energy(h, c.today_energy_entity);
+    const s = this.#sessions;
+    const heuteStr = new Date().toDateString();
+    // "gestern 22:10" statt nur "22:10" – sonst liest sich ein Vorgang über
+    // Nacht wie einer von heute Abend.
+    const uhr = (t) => (new Date(t).toDateString() === heuteStr ? '' : 'gestern ')
+      + new Date(t).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+    // Aktueller (oder letzter) Ladevorgang, über Mitternacht hinweg gerechnet
+    const span = s?.spans?.[s.spans.length - 1];
+    if (span) {
+      const teile = [span.laeuft ? `seit ${uhr(span.start)}` : `${uhr(span.start)} – ${uhr(span.end)}`];
+      if (span.vortag > 0.01) teile.push(`davon ${fmtEnergy(span.vortag)} am Vortag`);
+      if (s.heuteAnzahl > 1) teile.push(`heute ${s.heuteAnzahl} Vorgänge, zusammen ${fmtEnergy(s.heute)}`);
+      items.push({
+        e: c.total_energy_entity ?? c.power_entity,
+        icon: span.laeuft ? 'mdi:ev-station' : 'mdi:history',
+        color: wbColor,
+        k: span.laeuft ? 'Aktueller Ladevorgang' : 'Letzter Ladevorgang',
+        v: fmtEnergy(span.kwh),
+        sub: teile.join(' · '),
+      });
+    }
+
+    // "Heute geladen" aus denselben Daten wie das Diagramm; erst wenn die
+    // fehlen, der Tageszähler der Wallbox.
+    const today = s ? s.heute : energy(h, c.today_energy_entity);
     if (today !== null) items.push({ e: c.today_energy_entity, icon: 'mdi:calendar-today', color: wbColor, k: 'Heute geladen', v: fmtEnergy(today) });
     const total = energy(h, c.total_energy_entity);
     if (total !== null) items.push({ e: c.total_energy_entity, icon: 'mdi:counter', color: wbColor, k: 'Gesamt', v: fmtEnergy(total) });
@@ -860,12 +969,14 @@ class WueflWallboxCard extends HTMLElement {
     const price = priceInfo(h, c, 'import').now;
     if (price !== null) items.push({ e: c.price_entity, icon: 'mdi:currency-eur', color: cssColor(this, '--w-price', '#fbaa00'), k: 'Strompreis', v: `${fmtPrice(price)}/kWh` });
 
-    this.#els.stats.innerHTML = items
-      .map((i) => tileHtml({ icon: i.icon, color: i.color, title: i.k, value: i.v, entity: i.e ?? '' }))
-      .join('');
-    for (const btn of this.#els.stats.querySelectorAll('[data-entity]')) {
-      btn.addEventListener('click', () => moreInfo(this, btn.dataset.entity));
-    }
+    // Nur geänderte Kacheln tauschen – die Karte wird sonst bei jedem
+    // Zustandswechsel neu aufgebaut und die Seite springt.
+    patchHtml(this.#els.stats, items
+      .map((i) => tileHtml({
+        icon: i.icon, color: i.color, title: i.k, value: i.v, entity: i.e ?? '',
+        ...(i.sub ? { subtitle: `<span class="sub-item">${esc(i.sub)}</span>` } : {}),
+      }))
+      .join(''));
   }
 }
 
