@@ -597,6 +597,19 @@ export async function importStats(hass, entity, stats) {
   }
 }
 
+/**
+ * Die gesamte Langzeitstatistik dieser Zähler löschen.
+ *
+ * Nur für den Neuanfang: Liegen in einer Kette Sprünge aus verunglückten
+ * Importen, lässt sich das nicht mehr stückweise heilen – ein Import
+ * überschreibt immer nur seinen eigenen Bereich, die falschen Versätze
+ * daneben bleiben. Nach dem Leeren baut ein Import von vorn eine saubere
+ * Kette auf.
+ */
+export async function clearStats(hass, ids) {
+  await hass.callWS({ type: 'recorder/clear_statistics', statistic_ids: ids });
+}
+
 /** Faktor kWh → Einheit der Statistik (kWh, Wh, MWh). */
 export function toStatUnit(unit) {
   const u = String(unit ?? 'kWh').toLowerCase();
@@ -640,6 +653,11 @@ td.ex { color: var(--w-text-soft); font-variant-numeric: tabular-nums; max-width
   border-radius: var(--w-radius); display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; padding: .6rem .75rem;
 }
 .confirm .txt { flex: 1; font-size: var(--w-fs-sm); min-width: 12rem; }
+details.wipe { border-top: 1px solid var(--w-line); margin-top: 1rem; padding-top: .6rem; }
+details.wipe > summary { color: var(--w-text-soft); cursor: pointer; font-size: var(--w-fs-sm); }
+details.wipe .list { display: flex; flex-direction: column; gap: .25rem; margin: .5rem 0; }
+details.wipe label { align-items: center; display: flex; font-size: var(--w-fs-sm); gap: .4rem; }
+details.wipe .danger { color: var(--error-color, #db4437); }
 [hidden] { display: none !important; }
 `;
 
@@ -672,6 +690,10 @@ class WueflDataIo extends HTMLElement {
   async #loadConfig() {
     this.#cfg = (await centralConfig(this.#hass)) ?? {};
     this.#targets = energyTargets(this.#cfg);
+    this.#els.wipeList.innerHTML = this.#targets.map((t) =>
+      `<label><input type="checkbox" value="${esc(t.entity)}"> ${esc(t.label)}`
+      + `<span class="ent">${esc(t.entity)}</span></label>`).join('')
+      || '<span class="note">In der Zuordnung sind noch keine Gesamtzähler eingetragen.</span>';
     this.#els.exportBtn.disabled = !this.#targets.length;
     this.#els.exportNote.textContent = this.#targets.length
       ? `Enthält: ${this.#targets.map((t) => t.label).join(', ')}.`
@@ -759,6 +781,25 @@ class WueflDataIo extends HTMLElement {
           </div>
         </div>
         <div class="msg import-msg"></div>
+
+        <details class="wipe">
+          <summary>Statistik eines Zählers leeren (Neuanfang)</summary>
+          <span class="note">Löscht die <b>gesamte</b> Langzeitstatistik der gewählten Zähler – auch das,
+            was Home Assistant selbst aufgezeichnet hat. Gedacht für den Fall, dass in der Summenkette
+            Sprünge aus früheren Importen stecken: Die lassen sich nicht stückweise heilen, weil ein Import
+            immer nur seinen eigenen Bereich überschreibt. Danach alles in einem Zug neu importieren,
+            ältestes Jahr zuerst.</span>
+          <span class="note danger">Vorher exportieren! Was hier gelöscht wird, ist weg –
+            der Export oben ist die einzige Sicherung.</span>
+          <div class="list wipe-list"></div>
+          <button type="button" class="btn wipe-go">${icon('mdi:delete-sweep-outline')}<span>Ausgewählte leeren</span></button>
+          <div class="confirm wipe-confirm" hidden>
+            <span class="txt">Langzeitstatistik der ausgewählten Zähler vollständig löschen? Das lässt sich nicht rückgängig machen.</span>
+            <button type="button" class="btn wipe-cancel">Abbrechen</button>
+            <button type="button" class="btn primary wipe-ok">Ja, leeren</button>
+          </div>
+          <div class="msg wipe-msg"></div>
+        </details>
       </div>
     `;
     const q = (s) => root.querySelector(s);
@@ -769,6 +810,8 @@ class WueflDataIo extends HTMLElement {
       mapping: q('.mapping'), timeCol: q('.time-col'), tbody: q('tbody'),
       check: q('.check'), summary: q('.summary'), go: q('.go'), confirm: q('.confirm'),
       overlap: q('.overlap'), keepFrom: q('.keep-from'), keepTo: q('.keep-to'),
+      wipeList: q('.wipe-list'), wipeGo: q('.wipe-go'), wipeConfirm: q('.wipe-confirm'),
+      wipeMsg: q('.wipe-msg'),
       importMsg: q('.import-msg'),
       missing: q('.missing'),
     };
@@ -786,6 +829,15 @@ class WueflDataIo extends HTMLElement {
     }
     this.#els.go.addEventListener('click', () => { this.#els.confirm.hidden = false; });
     q('.cancel').addEventListener('click', () => { this.#els.confirm.hidden = true; });
+    this.#els.wipeGo.addEventListener('click', () => {
+      this.#els.wipeConfirm.hidden = !this.#wipeAuswahl().length;
+      if (!this.#wipeAuswahl().length) {
+        setMsg(this.#els.wipeMsg, 'err');
+        this.#els.wipeMsg.textContent = 'Kein Zähler ausgewählt.';
+      }
+    });
+    q('.wipe-cancel').addEventListener('click', () => { this.#els.wipeConfirm.hidden = true; });
+    q('.wipe-ok').addEventListener('click', () => this.#wipe());
     q('.ok').addEventListener('click', () => this.#import());
   }
 
@@ -1011,6 +1063,33 @@ class WueflDataIo extends HTMLElement {
     msg.textContent = geblockt
       ? 'Es bleibt nichts zu schreiben: Alles aus der Datei liegt im geschützten Zeitraum oder hat schon Werte, die behalten werden sollen.'
       : 'In der Datei stehen für die gewählten Spalten keine Werte.';
+  }
+
+  /** Die angehakten Zähler. */
+  #wipeAuswahl() {
+    return [...this.#els.wipeList.querySelectorAll('input:checked')].map((c) => c.value);
+  }
+
+  async #wipe() {
+    this.#els.wipeConfirm.hidden = true;
+    const msg = this.#els.wipeMsg;
+    const ids = this.#wipeAuswahl();
+    if (!ids.length || isReadOnly()) return;
+    const namen = ids.map((id) => this.#targets.find((t) => t.entity === id)?.label ?? id);
+    setMsg(msg, ''); msg.textContent = 'Wird geleert …';
+    try {
+      await clearStats(this.#hass, ids);
+      // Ein geprüfter Plan gehört jetzt zu einem Stand, den es nicht mehr gibt
+      this.#plan = null;
+      this.#els.summary.hidden = true;
+      this.#els.go.hidden = true;
+      this.#els.wipeList.querySelectorAll('input:checked').forEach((c) => { c.checked = false; });
+      setMsg(msg, 'ok');
+      msg.textContent = `Geleert: ${namen.join(', ')}. Jetzt neu importieren, ältestes Jahr zuerst.`;
+    } catch (err) {
+      setMsg(msg, 'err');
+      msg.textContent = `Leeren fehlgeschlagen: ${err?.message ?? err}`;
+    }
   }
 
   async #import() {
