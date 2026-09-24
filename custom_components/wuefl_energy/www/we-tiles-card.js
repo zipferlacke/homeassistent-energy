@@ -167,7 +167,7 @@ class WueflEnergyTilesCard extends HTMLElement {
         icon: 'mdi:cash-multiple', color: cssColor(this, '--primary-color', '#03a9f4'),
         title: 'Bilanz', value: fmtEuro((earned ?? 0) - (paid ?? 0)), click: 'geld:bilanz',
         subtitle: [
-          earned !== null ? `<span class="sub-item" style="color: ${colorOf('battery', asList(c.battery)[0])}">${esc(fmtEuro(earned))} eingespeist</span>` : '',
+          earned !== null ? `<span class="sub-item" style="color: var(--w-batt-out)">${esc(fmtEuro(earned))} eingespeist</span>` : '',
           paid !== null ? `<span class="sub-item" style="color: var(--error-color, #db4437)">${esc(fmtEuro(-paid))} bezogen</span>` : '',
         ].join(''),
       }));
@@ -177,13 +177,13 @@ class WueflEnergyTilesCard extends HTMLElement {
     const beitrag = (saved ?? 0) + (earned ?? 0);
     if (Number.isFinite(cost) && cost > 0) {
       tiles.push(tileHtml({
-        icon: 'mdi:cash-clock', color: colorOf('solar', asList(c.solar)[0]),
+        icon: 'mdi:cash-clock', color: cssColor(this, '--w-batt-out', '#2BB673'),
         title: 'Zur Amortisation', value: fmtEuro(beitrag, { signed: false }), click: 'geld:amortisation',
         subtitle: `<span class="sub-item">${esc(fmtShare(beitrag, cost))}</span>`,
       }));
     } else if (saved !== null) {
       tiles.push(tileHtml({
-        icon: 'mdi:solar-power', color: colorOf('solar', asList(c.solar)[0]),
+        icon: 'mdi:solar-power', color: cssColor(this, '--w-solar', '#ff9800'),
         title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }), click: 'geld:gespart',
         subtitle: `<span class="sub-item">${esc('Anschaffungskosten in den Einstellungen ergänzen für die Amortisation')}</span>`,
       }));

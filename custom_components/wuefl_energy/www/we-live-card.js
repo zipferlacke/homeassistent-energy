@@ -11,7 +11,7 @@ import {
   statesChanged, todayTotals, todaySum,
   fetchStats, fetchPriceMeans, moneyRows, moneySums, fmtShare,
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, applyColorVars,
-  loadSolarForecast, forecastFactor, surplusWindow, roundQuarter, fmtClock,
+  loadSolarForecast, forecastFactor, surplusWindows, roundQuarter, fmtClock, patchHtml,
 } from './we-shared.js';
 
 /*
@@ -433,6 +433,13 @@ class WueflEnergyLiveCard extends HTMLElement {
       this.#els.dialog.showModal();
     });
     card.querySelector('.close').addEventListener('click', () => this.#els.dialog.close());
+
+    // Einmal am Behälter, nicht je Kachel: die Kacheln werden beim
+    // Aktualisieren getauscht, ein Zuhörer je Kachel käme doppelt.
+    this.#els.money.addEventListener('click', (ev) => {
+      const btn = ev.target?.closest?.('[data-click]');
+      if (btn) this.#toggleExplain(btn.dataset.click);
+    });
 
     this.#built = true;
     this.#loadSvg();
@@ -869,11 +876,8 @@ class WueflEnergyLiveCard extends HTMLElement {
       }));
     }
 
-    this.#els.money.innerHTML = tiles.join('');
-
-    for (const btn of this.#els.money.querySelectorAll('[data-click]')) {
-      btn.addEventListener('click', () => this.#toggleExplain(btn.dataset.click));
-    }
+    // Nur die geänderten Kacheln tauschen – sonst springt die Scroll-Position
+    patchHtml(this.#els.money, tiles.join(''));
     this.#renderExplain();
   }
 
@@ -898,9 +902,9 @@ class WueflEnergyLiveCard extends HTMLElement {
     const el = this.#els.explainBox;
     if (!el) return;
     el.hidden = !this.#explain;
-    el.innerHTML = this.#explain
+    patchHtml(el, this.#explain
       ? `${icon('mdi:information-outline')}<div class="txt">${texts[this.#explain] ?? ''}</div>`
-      : '';
+      : '');
   }
 
   /* ---------------- Überschuss für größere Verbraucher -------------- */
@@ -941,33 +945,45 @@ class WueflEnergyLiveCard extends HTMLElement {
     const fc = this.#pv;
     const hasFc = !!fc?.rows?.length;
     const factor = hasFc ? forecastFactor(fc, this.#samples.map((x) => ({ t: x.t, kw: x.pvKw }))) : 1;
-    const win = hasFc
-      ? surplusWindow(fc, { now: new Date(now), baseKw: baseW / 1000, thresholdKw: thresholdW / 1000, factor })
-      : null;
+    const fenster = hasFc
+      ? surplusWindows(fc, { now: new Date(now), baseKw: baseW / 1000, thresholdKw: thresholdW / 1000, factor })
+      : [];
+    // Heute zählt zuerst – ein größeres Fenster morgen darf das nicht verdecken
+    const heuteStr = new Date(now).toDateString();
+    const heute = fenster.filter((w) => w.start.toDateString() === heuteStr);
+    const morgen = fenster.find((w) => w.start.toDateString() !== heuteStr);
+    const heuteKwh = heute.reduce((a, w) => a + w.kwh, 0);
+    const ende = heute.length ? roundQuarter(heute[heute.length - 1].end) : null;
 
     let html = '';
     let go = false;
     const zahl = (v) => v.toFixed(1).replace('.', ',');
+    // Ein Abschnitt: "frei bis ca. 17:00". Mehrere: alle Zeiten einzeln,
+    // damit eine Wolkenlücke am Nachmittag nicht als Dauerfreigabe gilt.
+    const zeiten = heute.slice(0, 4)
+      .map((w) => `${fmtClock(roundQuarter(w.start))}–${fmtClock(roundQuarter(w.end))}`);
+    if (heute.length > 4) zeiten.push('…');
+    const abschnitte = heute.length > 1
+      ? ` · ${zeiten.join(' · ')}`
+      : ende ? ` bis ca. ${fmtClock(ende)}` : '';
+
     if (this.#surplusNow) {
       go = true;
-      // Jetzt zählt die gemessene Leistung; wie viel daraus noch wird, sagt
-      // die Prognose – aber nur, wenn das Fenster wirklich gerade läuft.
-      const laeuft = win && +win.start <= now + 30 * 60_000;
-      const rest = laeuft
-        ? ` · noch <b>ca. ${zahl(win.kwh)} kWh</b> bis ca. ${fmtClock(roundQuarter(win.end))}`
-        : '';
+      // Jetzt zählt die gemessene Leistung, die Menge kommt aus der Prognose
+      const rest = heute.length ? ` · heute noch <b>ca. ${zahl(heuteKwh)} kWh</b>${abschnitte}` : '';
       html = `<b>Jetzt</b> genug Strom für größere Verbraucher · <b>ca. ${zahl(mean / 1000)} kW</b> frei${rest}`;
-    } else if (win) {
-      const today = new Date(now).toDateString() === win.start.toDateString();
+    } else if (heute.length) {
+      go = true;
       // Laut Prognose schon jetzt, aber noch nicht lange genug gemessen → "gleich"
-      const start = +win.start <= now ? roundQuarter(new Date(now + 10 * 60_000), true) : roundQuarter(win.start);
-      const range = `<b>ca. ${zahl(win.kwh)} kWh</b> frei bis ca. ${fmtClock(roundQuarter(win.end))}`;
-      if (today) {
-        go = true;
-        html = `Ab <b>ca. ${fmtClock(start)}</b> genug Strom für größere Verbraucher · ${range}`;
-      } else {
-        html = `Heute kein größerer Überschuss mehr erwartet <span class="sub">· morgen ab ca. ${fmtClock(start)}</span>`;
-      }
+      const start = +heute[0].start <= now
+        ? roundQuarter(new Date(now + 10 * 60_000), true)
+        : roundQuarter(heute[0].start);
+      html = `Ab <b>ca. ${fmtClock(start)}</b> genug Strom für größere Verbraucher`
+        + ` · <b>ca. ${zahl(heuteKwh)} kWh</b> frei${abschnitte}`;
+    } else if (morgen) {
+      html = 'Heute kein größerer Überschuss mehr erwartet'
+        + ` <span class="sub">· morgen ab ca. ${fmtClock(roundQuarter(morgen.start))}`
+        + ` (ca. ${zahl(morgen.kwh)} kWh)</span>`;
     } else if (hasFc) {
       html = 'Heute und morgen kein größerer Überschuss erwartet';
     }
@@ -978,7 +994,7 @@ class WueflEnergyLiveCard extends HTMLElement {
     const ico = go ? 'mdi:white-balance-sunny' : 'mdi:weather-cloudy';
     const hint = factor < 0.85 ? ' · Prognose wegen weniger Sonne nach unten korrigiert'
       : factor > 1.15 ? ' · Prognose wegen mehr Sonne nach oben korrigiert' : '';
-    box.innerHTML = `${icon(ico)}<div>${html}${hint ? `<span class="sub">${hint}</span>` : ''}</div>`;
+    patchHtml(box, `${icon(ico)}<div>${html}${hint ? `<span class="sub">${hint}</span>` : ''}</div>`);
   }
 
   /* ------------------------------ Wetter ---------------------------- */

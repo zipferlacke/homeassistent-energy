@@ -723,23 +723,21 @@ export function forecastFactor(fc, samples) {
   return Math.min(1.5, Math.max(0.2, actual / expected));
 }
 
-// Eine Wolke von höchstens einer Dreiviertelstunde trennt kein Fenster.
-const DIP_MS = 45 * 60_000;
+// Eine Wolke von höchstens einer halben Stunde trennt kein Fenster.
+const DIP_MS = 30 * 60_000;
 
 /**
- * Das beste Zeitfenster ab jetzt, in dem PV minus Grundlast mindestens
- * thresholdKw übrig lässt. Die Abweichung von jetzt (factor) wirkt auf die
- * nächsten Stunden und läuft danach zur reinen Prognose aus.
+ * Alle Zeitfenster ab jetzt, in denen PV minus Grundlast mindestens
+ * thresholdKw übrig lässt – chronologisch, jedes mit seiner Energie.
  *
- * Eine einzelne Wolke beendet das Fenster nicht: Kurze Einbrüche (bis DIP_MS)
- * gehören dazu, solange danach wieder genug übrig ist. Sonst meldete die
- * Karte "frei bis 12:45", obwohl die Prognose noch bis in den Nachmittag
- * reicht und nur eine Viertelstunde dazwischen knapp darunter liegt.
- * Von mehreren Fenstern gewinnt das mit der meisten Energie.
+ * Die Abweichung von jetzt (factor) wirkt auf die nächsten Stunden und läuft
+ * danach zur reinen Prognose aus. Eine einzelne Wolke beendet ein Fenster
+ * nicht: kurze Einbrüche (bis DIP_MS) gehören dazu. Alles darüber trennt,
+ * damit die Karte die Abschnitte einzeln nennen kann.
  *
- * Ergebnis: { start, end, kw, kwh } oder null.
+ * Ergebnis: [{ start, end, kw, kwh }, …]
  */
-export function surplusWindow(fc, { now = new Date(), baseKw = 0.4, thresholdKw = 2, factor = 1, untilDays = 2 } = {}) {
+export function surplusWindows(fc, { now = new Date(), baseKw = 0.4, thresholdKw = 2, factor = 1, untilDays = 2 } = {}) {
   const stepH = fc?.stepH ?? 1;
   const stepMs = stepH * 3_600_000;
   const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + untilDays);
@@ -771,14 +769,35 @@ export function surplusWindow(fc, { now = new Date(), baseKw = 0.4, thresholdKw 
     }
   }
   schliessen();
-  if (!fenster.length) return null;
 
-  const bewerten = (l) => {
+  return fenster.map((l) => {
     const kwh = l.reduce((a, x) => a + Math.max(0, x.free) * (x.to - x.from) / 3_600_000, 0);
-    return { start: new Date(l[0].from), end: new Date(l[l.length - 1].to), kwh,
-             kw: kwh / ((l[l.length - 1].to - l[0].from) / 3_600_000) };
-  };
-  return fenster.map(bewerten).reduce((a, b) => (b.kwh > a.kwh ? b : a));
+    const stunden = (l[l.length - 1].to - l[0].from) / 3_600_000;
+    return { start: new Date(l[0].from), end: new Date(l[l.length - 1].to), kwh, kw: kwh / stunden };
+  });
+}
+
+/**
+ * HTML ersetzen, ohne unveränderte Knoten anzufassen.
+ *
+ * `innerHTML = …` bei jeder Aktualisierung baut den ganzen Block neu auf.
+ * Die Seite wird dabei kurz kürzer, und der Browser zieht die Scroll-Position
+ * mit nach oben – in der Live-Ansicht sprang die Ansicht alle paar Sekunden.
+ * Deshalb werden nur die Kinder getauscht, die sich wirklich geändert haben.
+ */
+const letzterInhalt = new WeakMap();
+export function patchHtml(el, html) {
+  if (!el || letzterInhalt.get(el) === html) return;
+  letzterInhalt.set(el, html);
+  const vorlage = document.createElement('div');
+  vorlage.innerHTML = html;
+  const neu = [...vorlage.children];
+  const alt = [...el.children];
+  for (let i = 0; i < neu.length; i += 1) {
+    if (alt[i] === undefined) el.appendChild(neu[i]);
+    else if (alt[i].outerHTML !== neu[i].outerHTML) el.replaceChild(neu[i], alt[i]);
+  }
+  for (let i = neu.length; i < alt.length; i += 1) alt[i].remove();
 }
 
 /** Auf die Viertelstunde runden – die Prognose ist ohnehin nur ungefähr. */

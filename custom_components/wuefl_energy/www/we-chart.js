@@ -717,7 +717,13 @@ class WueflEnergyChart extends HTMLElement {
             const chartType = s.type || this.#config.type || 'line';
             let areaStyle = undefined;
             if (chartType === 'line') {
-                if (s.fill === 'gradient') {
+                if (s.fill === 'gradient' && s.stack) {
+                    // Gestapelt sind die Flächen Schichten übereinander. Mit
+                    // einem Verlauf ins Durchsichtige verschwimmen sie und das
+                    // Bild sieht aus, als lägen alle Reihen auf der Nulllinie –
+                    // deshalb hier eine glatte Füllung mit klarer Kante.
+                    areaStyle = { color: this.#toRgba(s.resolvedColor, 0.45) };
+                } else if (s.fill === 'gradient') {
                     areaStyle = {
                         color: {
                             type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
