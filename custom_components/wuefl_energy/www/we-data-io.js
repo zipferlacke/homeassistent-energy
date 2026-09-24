@@ -4,10 +4,11 @@
  *
  * Export: Energie je Stunde/Tag/Monat für alle Gesamtzähler der Zuordnung.
  * Import: CSV aus anderen Systemen (clever-PV, 1KOMMA5°, SMA, Fronius
- * Solar.web …) oder aus dem eigenen Export. Ergänzt wird nur, was VOR dem
- * ersten eigenen Wert in HA liegt – vorhandene Statistik bleibt unangetastet.
- * Die Summen der ergänzten Stunden laufen dafür rückwärts auf 0 zu, so
- * passt der Übergang zu den vorhandenen Werten ohne Sprung.
+ * Solar.web …) oder aus dem eigenen Export. Der Zeitraum der Datei wird
+ * geschrieben, auch wenn dort schon Werte stehen – ein zweiter Import mit
+ * korrigierten Zahlen ersetzt also den ersten. Damit die vorhandene
+ * Statistik danach weiterläuft, hängen sich die Summen an die erste Stunde
+ * an, die nach dem Zeitraum schon Daten hat.
  */
 import { adoptSheet, asList, esc, icon, centralConfig, isReadOnly } from './we-shared.js';
 
@@ -264,9 +265,13 @@ export function guessMode(values) {
 }
 
 /**
- * Energie je Stunde (kWh) aus einer Spalte. Tages- und Monatswerte landen
- * mittags auf dem ersten Tag – in Tages- und Monatsansichten stimmt die
- * Summe, in der Stundenansicht alter Tage steht der Wert als ein Balken.
+ * Energie je Stunde (kWh) aus einer Spalte.
+ *
+ * Steht in der Datei nur ein Tages- oder Monatswert, wird er gleichmäßig auf
+ * alle Stunden des Zeitraums verteilt. In der Tagesansicht ergibt das eine
+ * waagerechte Linie statt eines einzelnen Balkens um zwölf; Tages-, Wochen-
+ * und Monatssummen bleiben gleich. Nur Stunden, die noch nicht vorbei sind,
+ * fallen weg – in die Zukunft lässt sich nichts schreiben.
  */
 export function toHourly(rows, timeCol, col, { mode = 'interval', factor = 1, parse, now = Date.now() } = {}) {
   const num = parse ?? numberParser(rows.map((r) => r[col] ?? ''));
@@ -275,13 +280,25 @@ export function toHourly(rows, timeCol, col, { mode = 'interval', factor = 1, pa
     .filter((p) => p.t && Number.isFinite(p.v))
     .sort((a, b) => a.t.date - b.t.date);
   const out = new Map();
-  const place = (p, kwh) => {
-    const d = new Date(p.t.date);
-    if (p.t.grain === 'hour') d.setMinutes(0, 0, 0);
-    else d.setHours(12, 0, 0, 0);
-    const key = +d;
+  const setze = (key, kwh) => {
     if (key + HOUR > now) return;
     out.set(key, (out.get(key) ?? 0) + kwh);
+  };
+  const place = (p, kwh) => {
+    const d = new Date(p.t.date);
+    if (p.t.grain === 'hour') {
+      d.setMinutes(0, 0, 0);
+      setze(+d, kwh);
+      return;
+    }
+    d.setHours(0, 0, 0, 0);
+    // Tag: 24 Stunden. Monat: alle Stunden bis zum gleichen Tag im Folgemonat.
+    const bis = new Date(d);
+    if (p.t.grain === 'month') bis.setMonth(bis.getMonth() + 1);
+    else bis.setDate(bis.getDate() + 1);
+    const stunden = Math.round((bis - d) / HOUR);
+    const anteil = kwh / stunden;
+    for (let i = 0; i < stunden; i += 1) setze(+d + i * HOUR, anteil);
   };
   if (mode === 'meter') {
     for (let i = 0; i + 1 < pts.length; i += 1) {
@@ -295,53 +312,85 @@ export function toHourly(rows, timeCol, col, { mode = 'interval', factor = 1, pa
 }
 
 /**
- * Statistik-Zeilen für recorder/import_statistics. Nur Stunden vor
- * firstStart (erster vorhandener Wert in HA). Mit vorhandenen Werten laufen
- * die Summen auf 0 zu – so bleibt der Übergang stimmig.
+ * Statistik-Zeilen für recorder/import_statistics.
+ *
+ * Home Assistant speichert je Stunde eine laufende Summe; die Energie einer
+ * Stunde ist die Differenz zur Stunde davor. Ein Import muss sich deshalb an
+ * die vorhandenen Werte anhängen, sonst steht an der Nahtstelle ein Sprung.
+ *
+ * Gibt es nach dem Zeitraum schon Werte, rechnen wir rückwärts: Die letzte
+ * importierte Stunde bekommt genau die Summe, die die erste vorhandene
+ * Stunde erwartet (ihre Summe minus ihrem eigenen Verbrauch). Damit bleibt
+ * alles Spätere unverändert richtig – auch beim zweiten Import über
+ * denselben Zeitraum. Gibt es nur davor Werte, wird vorwärts weitergezählt.
+ *
+ * anchor: { vorher: Summe davor | null, nachher: { sum, change } | null }
  */
-export function buildStats(hourly, firstStart, toUnit = 1) {
-  const rows = firstStart ? hourly.filter((h) => h.start < firstStart) : hourly;
+export function buildStats(hourly, anchor = {}, toUnit = 1) {
+  const rows = hourly;
   const sums = new Array(rows.length);
-  let base = 0; // Summe vor der ersten Zeile
-  if (firstStart) {
-    let acc = 0;
-    for (let i = rows.length - 1; i >= 0; i -= 1) { sums[i] = acc; acc -= rows[i].kwh; }
-    base = acc;
-  } else {
-    let acc = 0;
-    rows.forEach((r, i) => { acc += r.kwh; sums[i] = acc; });
-  }
+  const gesamt = rows.reduce((a, r) => a + r.kwh, 0);
+  const { vorher = null, nachher = null } = anchor ?? {};
+
+  const base = nachher
+    ? (Number(nachher.sum) || 0) - (Number(nachher.change) || 0) - gesamt
+    : (Number(vorher) || 0);
+
+  let acc = base;
+  rows.forEach((r, i) => { acc += r.kwh; sums[i] = acc; });
+
   const round = (v) => Math.round(v * toUnit * 1000) / 1000;
-  // HA rechnet die Energie einer Stunde als Differenz zur vorigen Summe –
-  // ohne Ankerzeile davor ginge der erste Wert verloren.
-  const anchor = rows.length ? [{ start: new Date(rows[0].start - HOUR).toISOString(), sum: round(base) }] : [];
+  // Ankerzeile davor, damit die erste Stunde ihre Differenz bekommt – aber
+  // nur, wenn dort nichts Echtes steht, das wir sonst überschreiben würden.
+  const anker = rows.length && vorher === null
+    ? [{ start: new Date(rows[0].start - HOUR).toISOString(), sum: round(base) }]
+    : [];
   return {
-    stats: [...anchor, ...rows.map((r, i) => ({ start: new Date(r.start).toISOString(), sum: round(sums[i]) }))],
-    skipped: hourly.length - rows.length,
-    kwh: rows.reduce((a, r) => a + r.kwh, 0),
+    stats: [...anker, ...rows.map((r, i) => ({ start: new Date(r.start).toISOString(), sum: round(sums[i]) }))],
+    kwh: gesamt,
     from: rows[0]?.start ?? null,
     to: rows.length ? rows[rows.length - 1].start : null,
   };
 }
 
-/** Erster vorhandener Stundenwert einer Statistik (ms) oder null. */
-export async function firstStatStart(hass, id) {
-  const month = await hass.callWS({
-    type: 'recorder/statistics_during_period',
-    start_time: new Date(2000, 0, 1).toISOString(),
-    statistic_ids: [id], period: 'month', types: ['sum'],
-  });
-  const m0 = month?.[id]?.[0];
-  if (!m0) return null;
-  const from = +new Date(m0.start);
-  const hours = await hass.callWS({
-    type: 'recorder/statistics_during_period',
-    start_time: new Date(from).toISOString(),
-    end_time: new Date(from + 32 * 24 * HOUR).toISOString(),
-    statistic_ids: [id], period: 'hour', types: ['sum'],
-  });
-  const h0 = hours?.[id]?.[0];
-  return h0 ? +new Date(h0.start) : from;
+/** Summe der letzten Stunde mit Daten vor `bis` (ms) oder null. */
+export async function statSumBefore(hass, id, bis) {
+  try {
+    const res = await hass.callWS({
+      type: 'recorder/statistics_during_period',
+      start_time: new Date(bis - 32 * 24 * HOUR).toISOString(),
+      end_time: new Date(bis).toISOString(),
+      statistic_ids: [id], period: 'hour', types: ['sum'],
+    });
+    const rows = res?.[id] ?? [];
+    return rows.length ? Number(rows[rows.length - 1].sum) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Erste Stunde mit Daten ab `ab` (ms) samt Summe und Verbrauch, oder null. */
+export async function statAfter(hass, id, ab) {
+  try {
+    const month = await hass.callWS({
+      type: 'recorder/statistics_during_period',
+      start_time: new Date(ab).toISOString(),
+      statistic_ids: [id], period: 'month', types: ['sum'],
+    });
+    const m0 = month?.[id]?.[0];
+    if (!m0) return null;
+    const von = Math.max(ab, +new Date(m0.start));
+    const hours = await hass.callWS({
+      type: 'recorder/statistics_during_period',
+      start_time: new Date(von).toISOString(),
+      end_time: new Date(von + 32 * 24 * HOUR).toISOString(),
+      statistic_ids: [id], period: 'hour', types: ['sum', 'change'],
+    });
+    const h0 = (hours?.[id] ?? []).find((r) => +new Date(r.start) >= ab);
+    return h0 ? { start: +new Date(h0.start), sum: Number(h0.sum), change: Number(h0.change) } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** In HA importieren – neuere HA-Versionen wollen mean_type/unit_class, ältere kennen sie nicht. */
@@ -488,12 +537,12 @@ class WueflDataIo extends HTMLElement {
         <span class="note">Alte Daten beim Umstieg übernehmen – als CSV aus clever-PV, 1KOMMA5°, SMA, Fronius Solar.web,
           dem Wechselrichter-Portal oder aus dem Export oben.</span>
         <ol class="steps">
-          <li><b>Datei wählen</b> – jede CSV mit einer Datums-Spalte geht.</li>
+          <li><b>Datei wählen</b> – jede CSV mit einer Datums-Spalte geht. Stehen dort nur Tages- oder Monatswerte, verteilt der Import sie gleichmäßig über den Zeitraum.</li>
           <li><b>Spalten wählen</b> – für jeden deiner Zähler aus der Zuordnung (PV, Netzbezug, Einspeisung, Akku, Wallbox …) die passende Spalte der Datei.
             Meist ist sie schon vorausgewählt, Einheit und „Zählerstand / Energie je Zeitraum“ ebenso. Zähler ohne Spalte bleiben unverändert.</li>
-          <li><b>Prüfen</b> – zeigt je Zähler, wie viel aus welchem Zeitraum ergänzt wird.</li>
+          <li><b>Prüfen</b> – zeigt je Zähler, wie viel aus welchem Zeitraum geschrieben wird.</li>
           <li><b>Importieren</b> – landet in der Langzeitstatistik dieser Zähler; Diagramme, Kacheln und das Energie-Dashboard von HA zeigen es dann mit an.
-            Ergänzt wird nur die Zeit vor dem ersten eigenen Wert in Home Assistant – vorhandene Daten bleiben unangetastet.</li>
+            Werte im Zeitraum der Datei werden ersetzt: Ein zweiter Import mit korrigierten Zahlen überschreibt den ersten. Was danach kommt, bleibt unverändert.</li>
         </ol>
         <div class="line">
           <label class="btn">${icon('mdi:file-upload-outline')}<span>CSV-Datei wählen</span>
@@ -671,10 +720,16 @@ class WueflDataIo extends HTMLElement {
     try {
       for (const [entity, acc] of byEntity) {
         const hourly = [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([start, kwh]) => ({ start, kwh }));
-        const first = await firstStatStart(this.#hass, entity);
-        const b = buildStats(hourly, first);
+        if (!hourly.length) continue;
+        const von = hourly[0].start;
+        const bis = hourly[hourly.length - 1].start;
+        const [vorher, nachher] = await Promise.all([
+          statSumBefore(this.#hass, entity, von),
+          statAfter(this.#hass, entity, bis + HOUR),
+        ]);
+        const b = buildStats(hourly, { vorher, nachher });
         const label = this.#targets.find((t) => t.entity === entity)?.label ?? entity;
-        plan.push({ entity, label, first, ...b });
+        plan.push({ entity, label, nachher, ...b });
       }
     } catch (err) {
       setMsg(msg, 'err'); msg.textContent = `Prüfen fehlgeschlagen: ${err?.message ?? err}`;
@@ -684,10 +739,11 @@ class WueflDataIo extends HTMLElement {
     this.#els.summary.hidden = false;
     this.#els.summary.innerHTML = plan.map((p) => `<div><b>${esc(p.label)}</b>: ${p.stats.length
       ? `${p.kwh.toLocaleString('de-DE', { maximumFractionDigits: 1 })} kWh vom ${day(p.from)} bis ${day(p.to)}`
-      : 'nichts zu ergänzen'}${p.skipped ? ` · ${p.skipped} ${p.skipped === 1 ? 'Wert' : 'Werte'} übersprungen (ab ${day(p.first)} hat HA schon eigene Daten)` : ''}</div>`).join('');
+        + `${p.nachher ? ' · vorhandene Werte in diesem Zeitraum werden ersetzt' : ''}`
+      : 'nichts zu importieren'}</div>`).join('');
     this.#plan = plan.filter((p) => p.stats.length);
     this.#els.go.hidden = !this.#plan.length;
-    msg.textContent = this.#plan.length ? '' : 'Für den Zeitraum der Datei hat Home Assistant bereits eigene Werte – es gibt nichts zu ergänzen.';
+    msg.textContent = this.#plan.length ? '' : 'In der Datei stehen für die gewählten Spalten keine Werte.';
   }
 
   async #import() {
