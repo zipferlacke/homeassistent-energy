@@ -9,7 +9,7 @@ import {
   fmtPower, fmtEnergy, fmtPercent, fmtPrice, fmtDuration, moreInfo,
   registerCard, priceInfo, centralConfig, mergeConfig, entityIds, statesChanged, pvOutlook, solarEta, fmtWhen,
   chargeState, CHARGE_STATES,
-  esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS,
+  esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, wallboxPower,
   applyColorVars, colorOf, navigateToView, TOGGLE_CSS, isReadOnly, applyReadOnly,
   getPeriod, onPeriodChange, loadSolarForecast,
 } from './we-shared.js';
@@ -58,11 +58,10 @@ const CSS = `
 ${TILE_CSS}
 ${TOGGLE_CSS}
 .history {
-  margin-top: 1rem;
-  & .hhead { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; }
-  & .htitle { font-weight: 600; }
-  & .hnote { color: var(--secondary-text-color); font-size: .8rem; }
-  & .plot { height: 230px; margin: .3rem -8px 0; }
+  /* Zugeklappt, damit die Karte kurz bleibt – das Diagramm kommt auf Wunsch,
+     und darin führt das Vollbild-Symbol weiter ins große Fenster. */
+  & .hnote { color: var(--secondary-text-color); flex: 0 1 auto; font-size: .8rem; text-align: right; }
+  & .plot { height: 230px; margin: 0 -8px; }
   /* Das Diagramm bringt ein eigenes ha-card mit – hier ohne zweiten Rahmen */
   & we-chart {
     --ha-card-background: transparent; --ha-card-border-width: 0; --ha-card-box-shadow: none;
@@ -183,6 +182,20 @@ ${TOGGLE_CSS}
 .stats {
   display: grid; gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: .75rem;
+}
+
+/* Am Rechner braucht die Modus-Leiste nicht die ganze Breite: Symbol und
+   Text nebeneinander, damit sie auch flacher wird. */
+@media (min-width: 700px) {
+  .modes {
+    grid-auto-columns: auto; grid-auto-flow: column; grid-template-columns: none;
+    width: fit-content;
+
+    & .btn {
+      flex-direction: row; gap: .45rem; padding: .4rem 1rem;
+      & ha-icon { --mdc-icon-size: 19px; }
+    }
+  }
 }
 `;
 
@@ -344,13 +357,15 @@ class WueflWallboxCard extends HTMLElement {
         <button type="button" class="btn full" aria-pressed="false">Einmalig 100 %</button>
       </div>
 
-      <div class="history" hidden>
-        <div class="hhead">
-          <span class="htitle">Verlauf</span>
+      <details class="fold history" hidden>
+        <summary>
+          <span class="ico">${icon('mdi:chart-line')}</span>
+          <span>Verlauf</span>
           <span class="hnote">Zeitraum oben auf der Seite wählen</span>
-        </div>
-        <div class="plot"><we-chart></we-chart></div>
-      </div>
+          ${icon('mdi:chevron-down', 'class="chev"')}
+        </summary>
+        <div class="body"><div class="plot"><we-chart></we-chart></div></div>
+      </details>
 
       <details class="fold adv" hidden>
         <summary>
@@ -405,6 +420,8 @@ class WueflWallboxCard extends HTMLElement {
       openSettings: q('.open-settings'),
       stats: q('.stats'),
     };
+
+    this.#els.history.addEventListener('toggle', () => this.#renderHistory());
 
     this.#els.iHelp.addEventListener('click', () => {
       const zu = this.#els.modeHelp.hidden;
@@ -594,7 +611,8 @@ class WueflWallboxCard extends HTMLElement {
     const isIgnored = this.#isLimitIgnored();
     const baseTarget = this.#getTargetSoc();
     const goal = isIgnored ? 100 : (baseTarget ?? 100);
-    const pw = power(h, c.power_entity) ?? 0;
+    // Ohne angestecktes Auto zählt ein hängengebliebener Messwert nicht
+    const pw = wallboxPower(h, c.power_entity, c.status_entity, c.status_map) ?? 0;
 
     const modeState = c.mode_entity ? h.states[c.mode_entity] : null;
     const kind = modeState ? modeInfo(modeState.state).kind : 'other';
@@ -700,7 +718,9 @@ class WueflWallboxCard extends HTMLElement {
     const box = this.#els.history;
     if (!box) return;
     box.hidden = !live && !total;
-    if (box.hidden) return;
+    // Zugeklappt hat das Diagramm keine Größe – ECharts zeichnete dann ins
+    // Leere. Es wird beim Aufklappen gebaut (siehe toggle im Aufbau).
+    if (box.hidden || !box.open) return;
 
     const range = getPeriod();
     const start = new Date(range.start), end = new Date(range.end);

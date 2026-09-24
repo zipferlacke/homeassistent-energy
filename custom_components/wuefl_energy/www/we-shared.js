@@ -1095,6 +1095,20 @@ export function chargeState(hass, entityId, map) {
   return null;
 }
 
+/**
+ * Ladeleistung einer Wallbox – ohne Fahrzeug immer 0.
+ *
+ * Manche Wallboxen (Mennekes) halten nach dem Laden den letzten Messwert
+ * fest. Ohne angestecktes Auto fließt aber nichts. Ungefiltert stünde der
+ * alte Wert als Dauerverbrauch im Energiefluss und würde beim Haushalt
+ * abgezogen, obwohl ihn niemand verbraucht.
+ */
+export function wallboxPower(hass, powerEntity, statusEntity, statusMap, options) {
+  const watt = power(hass, powerEntity, options);
+  if (watt === null) return null;
+  return chargeState(hass, statusEntity, statusMap) === 'frei' ? 0 : watt;
+}
+
 /* ------------------------------------------------------------------ *
  * Zentrale Zuordnung aus der Integration
  * ------------------------------------------------------------------ */

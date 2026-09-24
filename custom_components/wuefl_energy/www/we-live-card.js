@@ -8,7 +8,7 @@ import {
   adoptSheet, asList, power, energy, num, breakdown,
   fmtPower, fmtEnergy, fmtPercent, fmtEuro, esc, icon, registerCard,
   weatherIcon, WEEKDAYS, centralConfig, mergeConfig,
-  statesChanged, todayTotals, todaySum,
+  statesChanged, todayTotals, todaySum, wallboxPower,
   fetchStats, fetchPriceMeans, moneyRows, moneySums, fmtShare,
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, applyColorVars,
   loadSolarForecast, forecastFactor, surplusWindows, roundQuarter, fmtClock, patchHtml,
@@ -503,6 +503,8 @@ class WueflEnergyLiveCard extends HTMLElement {
         const liveEnt = getEntity(wb.live);
         return {
           power_entity: liveEnt,
+          status_entity: getEntity(wb.status),
+          status_map: wb.status_map,
           today_energy_entity: getEntity(wb.total),
           car_soc_entity: getEntity(wb.car_percent),
           name: wb.name || (this.#hass?.states?.[liveEnt]?.attributes?.friendly_name ?? `Auto ${i + 1}`),
@@ -551,8 +553,10 @@ class WueflEnergyLiveCard extends HTMLElement {
       }, 0);
     }
 
+    // Ohne angestecktes Auto zählt ein hängengebliebener Messwert als 0 –
+    // sonst stünde er im Fluss und würde beim Haushalt abgezogen.
     const wallbox = this.#wallboxes().reduce(
-      (acc, wb) => acc + Math.abs(power(h, wb.power_entity) ?? 0), 0
+      (acc, wb) => acc + Math.abs(wallboxPower(h, wb.power_entity, wb.status_entity, wb.status_map) ?? 0), 0
     );
 
     let heatpump = 0;
