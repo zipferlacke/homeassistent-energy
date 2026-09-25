@@ -185,3 +185,74 @@
 /* Scharf geschaltetes Diagramm: Zoomen per Geste ist aktiv. Dezent, aber
    sichtbar – sonst rätselt man, warum das Wischen mal scrollt und mal zoomt. */
 .dg.dg_aktiv .dg_plot { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent); border-radius: 8px; }
+
+/* ==========================================================================
+   Zeitraum-Picker
+   ========================================================================== */
+
+.dgp {
+  --dgp-ov-height: 64px;
+  background: var(--dg-bg, light-dark(#fff, #1c1f24));
+  box-sizing: border-box;
+  color: var(--dg-text, light-dark(#1c1c1c, #e7e7e7));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+.dgp *, .dgp *::before, .dgp *::after { box-sizing: inherit; }
+
+.dgp_leiste {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: space-between;
+}
+
+.dgp_stufen { display: flex; gap: 2px; }
+.dgp_stufe {
+  background: none;
+  border: 1px solid var(--dg-line, #e0e0e0);
+  color: var(--dg-text-soft, #5f6368);
+  cursor: pointer;
+  font: inherit;
+  font-size: .875rem;
+  padding: 5px 12px;
+}
+.dgp_stufe:first-child { border-radius: 999px 0 0 999px; }
+.dgp_stufe:last-child { border-radius: 0 999px 999px 0; }
+.dgp_stufe + .dgp_stufe { border-left: 0; }
+.dgp_stufe:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.dgp_stufe[aria-pressed="true"] {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  color: var(--dg-text, #1c1c1c);
+  font-weight: 600;
+}
+
+.dgp_nav { align-items: center; display: flex; gap: 2px; }
+.dgp_btn {
+  background: none; border: 0; border-radius: 50%; color: var(--dg-text-soft, #5f6368);
+  cursor: pointer; font: inherit; font-size: 1.25rem; height: 32px; line-height: 1; width: 32px;
+}
+.dgp_btn:hover:not(:disabled) { background: color-mix(in srgb, currentColor 12%, transparent); }
+.dgp_btn:disabled { cursor: default; opacity: .3; }
+
+.dgp_label {
+  background: none; border: 0; border-radius: 8px; color: inherit; cursor: pointer;
+  font: inherit; font-weight: 600; min-width: 12ch; padding: 5px 10px; text-align: center;
+}
+.dgp_label:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+
+.dgp_felder { align-items: center; display: flex; gap: 6px; }
+.dgp_felder input {
+  background: none; border: 1px solid var(--dg-line, #e0e0e0); border-radius: 8px;
+  color: inherit; font: inherit; font-size: .875rem; padding: 4px 8px;
+}
+.dgp_bis { color: var(--dg-text-soft, #5f6368); }
+/* Hängt der Kalender aus wuefl-libs daran, versteckt er die Felder selbst.
+   Ohne ihn bleiben sie sichtbar – schlicht, aber vollständig bedienbar. */
+
+.dgp_ov { height: var(--dgp-ov-height); width: 100%; }
+.dgp_ov[hidden] { display: none; }
+.dgp_ov .dg_canvas { height: 100%; width: 100%; }

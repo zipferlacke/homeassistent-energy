@@ -52,6 +52,8 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
+import { onPicker } from './picker_v1_1_0.js';
+
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
    ══════════════════════════════════════════════════════════════════════════ */
@@ -530,7 +532,12 @@ export function buildOption(reihen, achsen, start, end, raster, cfg, host, zusta
     animation: false,
     // Oben Platz für den Namen der Y-Achse – ohne den schneidet ECharts ihn
     // an der Gitterkante ab und aus "kWh" wird "kWn".
-    grid: { left: 8, right: 8, top: achsen.some((a) => a.unit) ? 28 : 12, bottom: 4, containLabel: true },
+    // Mit `axis_width` bekommt die Y-Achse eine feste Breite. Nur so stehen
+    // mehrere gekoppelte Diagramme untereinander wirklich bündig – sonst
+    // richtet sich jedes nach der Breite seiner eigenen Zahlen.
+    grid: cfg.axis_width
+      ? { left: cfg.axis_width, right: 8, top: achsen.some((a) => a.unit) ? 28 : 12, bottom: 22 }
+      : { left: 8, right: 8, top: achsen.some((a) => a.unit) ? 28 : 12, bottom: 4, containLabel: true },
     xAxis: [{
       type: 'time', min: +start, max: +end,
       axisLine: { lineStyle: { color: linienFarbe } },
@@ -616,6 +623,7 @@ export class Diagramm {
   #host; #renderer; #source; #els = {}; #griff = null;
   #cfg = {}; #reihen = []; #aus = new Set(); #seq = 0; #ro = null; #fs = null; #heimat = null;
   #voll = false; #zoomAn = false; #ausserhalb = null;
+  #pickerAb = null; #pickerRange = null;
 
   /**
    * @param {Element} host      Element, in das gezeichnet wird
@@ -677,8 +685,30 @@ export class Diagramm {
     this.#cfg = parseConfig(cfg);
     this.#aus.clear();
     this.#kopf();
-    this.refresh();
+    this.#anPicker();
+    // Hängt es an einem Picker, kommt der Zeitraum von dort – und mit ihm
+    // sofort ein refresh(). Zweimal laden muss deshalb niemand.
+    if (!this.#cfg.picker) this.refresh();
     return this;
+  }
+
+  /**
+   * An einen Zeitraum-Picker hängen.
+   *
+   * Steht `picker: '<id>'` in der Konfiguration, kommt der Zeitraum von dort
+   * und `range`/`start`/`end` werden übergangen. Mehrere Diagramme mit
+   * derselben id folgen demselben Picker, ohne voneinander zu wissen; die
+   * Reihenfolge beim Bauen ist egal.
+   */
+  #anPicker() {
+    this.#pickerAb?.();
+    this.#pickerAb = null;
+    this.#pickerRange = null;
+    if (!this.#cfg.picker) return;
+    this.#pickerAb = onPicker(this.#cfg.picker, (r) => {
+      this.#pickerRange = r;
+      this.refresh();
+    });
   }
 
   get config() { return this.#cfg; }
@@ -693,7 +723,7 @@ export class Diagramm {
     const cfg = this.#cfg;
     if (!cfg?.series?.length) return;
 
-    const { start, end } = zeitraum(cfg.range, cfg.start, cfg.end);
+    const { start, end } = this.#pickerRange ?? zeitraum(cfg.range, cfg.start, cfg.end);
     const wunsch = rasterAus(cfg.aggregation, cfg.range);
     const achsen = Array.isArray(cfg.y_axes) && cfg.y_axes.length
       ? cfg.y_axes : [{ unit: cfg.y_axis_unit || '' }];
@@ -721,6 +751,8 @@ export class Diagramm {
       this.#renderer.draw(this.#griff,
         buildOption(this.#reihen, achsen, start, end, raster, cfg, this.#host,
         { voll: this.#voll, zoom: this.#zoomBereit() }));
+      // Gekoppelte Diagramme teilen Fadenkreuz, Tooltip und Zoom
+      if (cfg.group) this.#renderer.link?.(this.#griff, cfg.group);
       this.#renderer.resize?.(this.#griff);
     } catch (err) {
       if (alt()) return;
@@ -742,6 +774,7 @@ export class Diagramm {
     this.#seq += 1;
     this.#ro?.disconnect();
     if (this.#ausserhalb) window.removeEventListener('pointerdown', this.#ausserhalb);
+    this.#pickerAb?.();
     this.#renderer.destroy?.(this.#griff);
     this.#fs?.remove();
     this.#host.replaceChildren();

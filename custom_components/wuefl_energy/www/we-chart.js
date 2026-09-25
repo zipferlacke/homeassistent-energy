@@ -5,7 +5,7 @@
  * Hier steht nur noch, was Home Assistant von einer Karte erwartet: setConfig,
  * getCardSize, hass, Registrierung im Kartenkatalog. Alles Fachliche – Titel,
  * Chips, Legende, Vollbild, Auflösung, Töpfe, Einheiten, Tooltip – kommt aus
- * diagramm_v1.0.0 und ist Zeichen für Zeichen dasselbe wie in der Bibliothek.
+ * diagramm_v1.1.0 und ist Zeichen für Zeichen dasselbe wie in der Bibliothek.
  *
  * Vorher lagen dieselben 1000 Zeilen hier und nirgends sonst. Jede Korrektur
  * musste doppelt gemacht werden, sobald etwas davon auch auf einer Webseite
@@ -13,7 +13,7 @@
  * und Chips fehlten und das seine Höhe nie neu maß.
  */
 import { registerCard } from './we-shared.js';
-import { Diagramm, setIcons } from './diagramm_v1.0.0/diagramm_v1_0_0.js';
+import { Diagramm, setIcons } from './diagramm_v1.1.0/diagramm_v1_1_0.js';
 import { haRenderer, haSource, HA_ICONS, toDiagrammConfig } from './we-chart-ha.js';
 
 setIcons(HA_ICONS);
@@ -22,7 +22,7 @@ let cssPromise = null;
 /** Das Stilblatt des Pakets einmal holen und in jeden Schatten-Baum legen. */
 function diagrammCss() {
   if (!cssPromise) {
-    cssPromise = fetch(new URL('./diagramm_v1.0.0/diagramm_v1_0_0.css', import.meta.url))
+    cssPromise = fetch(new URL('./diagramm_v1.1.0/diagramm_v1_1_0.css', import.meta.url))
       .then((r) => (r.ok ? r.text() : ''))
       .catch(() => '');
   }
