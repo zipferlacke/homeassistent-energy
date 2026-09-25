@@ -18,9 +18,9 @@
 import { registerCard, setPeriod, WueflFormEditor, sel, GRID_CSS,
   addSheet, centralConfig, energyTargets } from './we-shared.js';
 import { DatePicker } from './datepicker_v2.1.3/datepicker_v2_1_3.js';
-import { Zeitpicker } from './diagramm_v1.3.0/picker_v1_3_0.js';
+import { Zeitpicker } from './diagramm_v1.4.0/picker_v1_4_0.js';
 import { haRenderer, haSource, HA_ICONS } from './we-chart-ha.js';
-import { setIcons } from './diagramm_v1.3.0/diagramm_v1_3_0.js';
+import { setIcons } from './diagramm_v1.4.0/diagramm_v1_4_0.js';
 
 setIcons(HA_ICONS);
 
@@ -34,7 +34,7 @@ const holen = (pfad, cache) => {
   return cache.p;
 };
 const datePickerCss = () => holen('./datepicker_v2.1.3/datepicker_v2_1_3.css', dpCss ??= {});
-const diagrammCss = () => holen('./diagramm_v1.3.0/diagramm_v1_3_0.css', dgCss ??= {});
+const diagrammCss = () => holen('./diagramm_v1.4.0/diagramm_v1_4_0.css', dgCss ??= {});
 
 /**
  * Schnellwahl im Kalender. Beim Daten-Ansehen sind das andere Vorschläge als
@@ -57,10 +57,12 @@ const CSS = `
 :host { display: block; }
 .card { ${GRID_CSS} }
 .dgp {
-  --dg-text: var(--primary-text-color);
-  --dg-text-soft: var(--secondary-text-color);
+  color-scheme: inherit;
+  --dg-text: var(--primary-text-color, light-dark(#000, #fff));
+  --dg-text-soft: var(--secondary-text-color, light-dark(#5f6368, #a5a8ad));
   --dg-bg: transparent;
   --dg-line: var(--divider-color, #e0e0e0);
+  --dg-grid: color-mix(in srgb, var(--divider-color, #e0e0e0) 55%, transparent);
   --bg-input: var(--secondary-background-color, rgba(127,127,127,.12));
   --br-input: 10px;
   --fs-input: 13px;

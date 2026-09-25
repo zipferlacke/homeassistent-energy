@@ -7,10 +7,19 @@
    ========================================================================== */
 
 .dg {
-  --dg-text: light-dark(#1c1c1c, #e7e7e7);
+  /* Ohne color-scheme entscheidet light-dark() gar nicht, sondern nimmt immer
+     den hellen Wert. Die Variablen hier sind also nur wirksam, weil diese
+     Zeile steht. Wer ein Thema erzwingen will, setzt color-scheme selbst. */
+  color-scheme: light dark;
+
+  --dg-text: light-dark(#000, #fff);
   --dg-text-soft: light-dark(#5f6368, #a5a8ad);
   --dg-bg: light-dark(#fff, #1c1f24);
-  --dg-line: light-dark(#e0e0e0, #3a3f46);
+  /* Rand und Trennlinien … */
+  --dg-line: light-dark(#d4d6d9, #3a3f46);
+  /* … und getrennt davon das Gitter im Diagramm: hell genug, um hinter den
+     Kurven zu verschwinden, dunkel genug, um Werte ablesen zu können. */
+  --dg-grid: light-dark(#e8eaed, #2c3036);
   --dg-radius: 12px;
   --dg-gap: 8px;
   --dg-title-size: 1.25rem;
@@ -129,10 +138,15 @@
 
 .dg_item {
   align-items: center;
+  background: none;
+  border: 0;
+  color: var(--dg-text);
   cursor: pointer;
   display: inline-flex;
+  font: inherit;
   font-size: var(--dg-legend-size);
   gap: 6px;
+  padding: 0;
   transition: opacity .2s;
 }
 .dg_item[aria-pressed="false"] { opacity: .35; text-decoration: line-through; }
@@ -191,6 +205,7 @@
    ========================================================================== */
 
 .dgp {
+  color-scheme: light dark;
   --dgp-ov-height: 64px;
   background: var(--dg-bg, light-dark(#fff, #1c1f24));
   box-sizing: border-box;

@@ -5,7 +5,7 @@
  * Hier steht nur noch, was Home Assistant von einer Karte erwartet: setConfig,
  * getCardSize, hass, Registrierung im Kartenkatalog. Alles Fachliche – Titel,
  * Chips, Legende, Vollbild, Auflösung, Töpfe, Einheiten, Tooltip – kommt aus
- * diagramm_v1.3.0 und ist Zeichen für Zeichen dasselbe wie in der Bibliothek.
+ * diagramm_v1.4.0 und ist Zeichen für Zeichen dasselbe wie in der Bibliothek.
  *
  * Vorher lagen dieselben 1000 Zeilen hier und nirgends sonst. Jede Korrektur
  * musste doppelt gemacht werden, sobald etwas davon auch auf einer Webseite
@@ -13,7 +13,7 @@
  * und Chips fehlten und das seine Höhe nie neu maß.
  */
 import { registerCard } from './we-shared.js';
-import { Diagramm, setIcons } from './diagramm_v1.3.0/diagramm_v1_3_0.js';
+import { Diagramm, setIcons } from './diagramm_v1.4.0/diagramm_v1_4_0.js';
 import { haRenderer, haSource, HA_ICONS, toDiagrammConfig } from './we-chart-ha.js';
 
 setIcons(HA_ICONS);
@@ -22,7 +22,7 @@ let cssPromise = null;
 /** Das Stilblatt des Pakets einmal holen und in jeden Schatten-Baum legen. */
 function diagrammCss() {
   if (!cssPromise) {
-    cssPromise = fetch(new URL('./diagramm_v1.3.0/diagramm_v1_3_0.css', import.meta.url))
+    cssPromise = fetch(new URL('./diagramm_v1.4.0/diagramm_v1_4_0.css', import.meta.url))
       .then((r) => (r.ok ? r.text() : ''))
       .catch(() => '');
   }
@@ -35,10 +35,17 @@ const CARD_CSS = `
 :host { display: flex; flex-direction: column; height: 100%; }
 ha-card { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
 .dg {
-  --dg-text: var(--primary-text-color);
-  --dg-text-soft: var(--secondary-text-color);
+  /* Nicht der Systemeinstellung folgen, sondern dem Thema von Home Assistant:
+     Wer dort dunkel wählt, soll das Diagramm dunkel sehen, auch wenn das
+     Betriebssystem hell steht. Deshalb alle Farben aus HA-Variablen – dann
+     kommt light-dark() gar nicht erst zum Zug. */
+  color-scheme: inherit;
+  --dg-text: var(--primary-text-color, light-dark(#000, #fff));
+  --dg-text-soft: var(--secondary-text-color, light-dark(#5f6368, #a5a8ad));
   --dg-bg: var(--card-background-color, var(--primary-background-color));
   --dg-line: var(--divider-color, #e0e0e0);
+  /* Das Gitter eine Spur blasser als die Trennlinien */
+  --dg-grid: color-mix(in srgb, var(--divider-color, #e0e0e0) 55%, transparent);
   --dg-title-size: var(--ha-card-header-font-size, 20px);
   background: none;
 }
