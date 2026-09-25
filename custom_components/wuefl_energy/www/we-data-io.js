@@ -576,6 +576,60 @@ export async function importStats(hass, entity, stats) {
 }
 
 /**
+ * Nahtstellen suchen: Stellen, an denen die Summenkette Unsinn erzählt.
+ *
+ * Ein Zählerstand läuft nur vorwärts. Fällt er zurück, steht dort ein
+ * negativer Verbrauch – genau das hinterlässt ein Import, der sich nicht an
+ * seine Nachbarn angehängt hat. Ein unerklärlich großer Sprung nach vorn ist
+ * dieselbe Naht von der anderen Seite.
+ *
+ * Zwei Durchgänge: erst je Tag über den ganzen Zeitraum – eine Abfrage für
+ * alle Zähler zusammen –, dann nur an den auffälligen Tagen je Stunde. So
+ * bleibt die Suche auch über zehn Jahre schnell.
+ */
+export async function findSeams(hass, ids, von, bis, maxTage = 40) {
+  const tage = await hass.callWS({
+    type: 'recorder/statistics_during_period',
+    start_time: new Date(von).toISOString(), end_time: new Date(bis).toISOString(),
+    statistic_ids: ids, period: 'day', types: ['change'],
+  });
+
+  const out = {};
+  for (const id of ids) {
+    // Die erste Zeile hat nichts davor, woran sie sich messen könnte
+    const rows = (tage?.[id] ?? []).slice(1);
+    if (!rows.length) { out[id] = { zeilen: 0, funde: [], abgeschnitten: false }; continue; }
+    const pos = rows.map((r) => Number(r.change)).filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+    // Maßstab: was dieser Zähler an einem guten Tag schafft
+    const grenze = pos.length >= 4 ? pos[Math.floor(pos.length * 0.9)] * 5 : Infinity;
+    const auffaellig = (v) => Number.isFinite(v) && (v < -0.001 || v > grenze);
+
+    const verdacht = rows.filter((r) => auffaellig(Number(r.change)));
+    const funde = [];
+    for (const tag of verdacht.slice(0, maxTage)) {
+      const ab = +new Date(tag.start);
+      const res = await hass.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: new Date(ab).toISOString(),
+        end_time: new Date(ab + 24 * HOUR).toISOString(),
+        statistic_ids: [id], period: 'hour', types: ['change'],
+      });
+      const stunden = (res?.[id] ?? []).filter((r) => auffaellig(Number(r.change)));
+      // Findet die Feinsuche nichts – etwa weil der Sprung genau auf der
+      // Tagesgrenze liegt –, bleibt der Tag selbst der Fund
+      if (stunden.length) {
+        for (const h of stunden) funde.push({ start: +new Date(h.start), kwh: Number(h.change), grob: false });
+      } else {
+        funde.push({ start: ab, kwh: Number(tag.change), grob: true });
+      }
+    }
+    funde.sort((a, b) => Math.abs(b.kwh) - Math.abs(a.kwh));
+    out[id] = { zeilen: rows.length, funde, abgeschnitten: verdacht.length > maxTage };
+  }
+  return out;
+}
+
+/**
  * Die gesamte Langzeitstatistik dieser Zähler löschen.
  *
  * Nur für den Neuanfang: Liegen in einer Kette Sprünge aus verunglückten
@@ -631,11 +685,16 @@ td.ex { color: var(--w-text-soft); font-variant-numeric: tabular-nums; max-width
   border-radius: var(--w-radius); display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; padding: .6rem .75rem;
 }
 .confirm .txt { flex: 1; font-size: var(--w-fs-sm); min-width: 12rem; }
-details.wipe { border-top: 1px solid var(--w-line); margin-top: 1rem; padding-top: .6rem; }
-details.wipe > summary { color: var(--w-text-soft); cursor: pointer; font-size: var(--w-fs-sm); }
+details.wipe, details.diag { border-top: 1px solid var(--w-line); margin-top: 1rem; padding-top: .6rem; }
+details.wipe > summary, details.diag > summary { color: var(--w-text-soft); cursor: pointer; font-size: var(--w-fs-sm); }
 details.wipe .list { display: flex; flex-direction: column; gap: .25rem; margin: .5rem 0; }
 details.wipe label { align-items: center; display: flex; font-size: var(--w-fs-sm); gap: .4rem; }
 details.wipe .danger { color: var(--error-color, #db4437); }
+.seams { font-size: var(--w-fs-sm); line-height: 1.6; margin: .5rem 0; }
+.seams b { font-weight: 600; }
+.seams ul { list-style: none; margin: .15rem 0 .6rem; padding: 0 0 0 .9rem; }
+.seams .bad { color: var(--error-color, #db4437); font-variant-numeric: tabular-nums; }
+.seams .good { color: var(--success-color, #2e7d32); }
 [hidden] { display: none !important; }
 `;
 
@@ -762,6 +821,17 @@ class WueflDataIo extends HTMLElement {
         </div>
         <div class="msg import-msg"></div>
 
+        <details class="diag">
+          <summary>Nahtstellen suchen</summary>
+          <span class="note">Durchsucht die gesamte Statistik der Zähler nach Stellen, an denen der
+            Zählerstand zurückfällt oder unerklärlich weit vorspringt. Genau das hinterlässt ein Import,
+            der sich nicht an seine Nachbarn angehängt hat – und genau das macht die Diagramme dahinter
+            kaputt. Es wird nur gelesen, nichts verändert.</span>
+          <button type="button" class="btn seek">${icon('mdi:magnify-scan')}<span>Suchen</span></button>
+          <div class="seams" hidden></div>
+          <div class="msg seek-msg"></div>
+        </details>
+
         <details class="wipe">
           <summary>Statistik eines Zählers leeren (Neuanfang)</summary>
           <span class="note">Löscht die <b>gesamte</b> Langzeitstatistik der gewählten Zähler – auch das,
@@ -792,6 +862,7 @@ class WueflDataIo extends HTMLElement {
       overlap: q('.overlap'), keepFrom: q('.keep-from'), keepTo: q('.keep-to'),
       wipeList: q('.wipe-list'), wipeGo: q('.wipe-go'), wipeConfirm: q('.wipe-confirm'),
       wipeMsg: q('.wipe-msg'),
+      seek: q('.seek'), seams: q('.seams'), seekMsg: q('.seek-msg'),
       importMsg: q('.import-msg'),
       missing: q('.missing'),
     };
@@ -809,6 +880,7 @@ class WueflDataIo extends HTMLElement {
     }
     this.#els.go.addEventListener('click', () => { this.#els.confirm.hidden = false; });
     q('.cancel').addEventListener('click', () => { this.#els.confirm.hidden = true; });
+    this.#els.seek.addEventListener('click', () => this.#seek());
     this.#els.wipeGo.addEventListener('click', () => {
       this.#els.wipeConfirm.hidden = !this.#wipeAuswahl().length;
       if (!this.#wipeAuswahl().length) {
@@ -1043,6 +1115,52 @@ class WueflDataIo extends HTMLElement {
     msg.textContent = geblockt
       ? 'Es bleibt nichts zu schreiben: Alles aus der Datei liegt im geschützten Zeitraum oder hat schon Werte, die behalten werden sollen.'
       : 'In der Datei stehen für die gewählten Spalten keine Werte.';
+  }
+
+  /** Nahtstellen über die ganze Statistik suchen und auflisten. */
+  async #seek() {
+    const msg = this.#els.seekMsg;
+    const box = this.#els.seams;
+    const ids = this.#targets.map((t) => t.entity);
+    if (!ids.length) {
+      setMsg(msg, 'err'); msg.textContent = 'Keine Zähler in der Zuordnung.';
+      return;
+    }
+    this.#els.seek.disabled = true;
+    box.hidden = true;
+    setMsg(msg, ''); msg.textContent = 'Wird durchsucht …';
+    try {
+      const von = new Date(2000, 0, 1);
+      const bis = new Date();
+      const res = await findSeams(this.#hass, ids, von, bis);
+      const kwh = (v) => v.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+      const zeit = (ms, grob) => new Date(ms).toLocaleString('de-DE', grob
+        ? { day: '2-digit', month: '2-digit', year: 'numeric' }
+        : { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      let gesamt = 0;
+      box.innerHTML = this.#targets.map((t) => {
+        const r = res[t.entity] ?? { zeilen: 0, funde: [] };
+        if (!r.zeilen) return `<div><b>${esc(t.label)}</b>: keine Statistik vorhanden</div>`;
+        if (!r.funde.length) return `<div><b>${esc(t.label)}</b>: <span class="good">sauber</span> (${r.zeilen} Tage geprüft)</div>`;
+        gesamt += r.funde.length;
+        const zeilen = r.funde.slice(0, 10).map((f) =>
+          `<li><span class="bad">${kwh(f.kwh)} kWh</span> · ${zeit(f.start, f.grob)}${f.grob ? ' (ganzer Tag)' : ''}</li>`).join('');
+        const rest = r.funde.length > 10 ? `<li>… und ${r.funde.length - 10} weitere</li>` : '';
+        const mehr = r.abgeschnitten ? '<li>Suche abgebrochen – es sind mehr als 40 auffällige Tage</li>' : '';
+        return `<div><b>${esc(t.label)}</b>: ${r.funde.length} Stelle${r.funde.length === 1 ? '' : 'n'}`
+          + ` (${r.zeilen} Tage geprüft)</div><ul>${zeilen}${rest}${mehr}</ul>`;
+      }).join('');
+      box.hidden = false;
+      setMsg(msg, gesamt ? 'err' : 'ok');
+      msg.textContent = gesamt
+        ? 'Jede Stelle ist eine Naht. Heilen lässt sie sich nur, indem der Zähler geleert und in einem Zug neu importiert wird – ein Import über einen Teilbereich setzt die Naht nur an seinen eigenen Rand.'
+        : 'Keine Nahtstellen gefunden. Fehlt trotzdem etwas im Diagramm, liegt es nicht an der Summenkette.';
+    } catch (err) {
+      setMsg(msg, 'err');
+      msg.textContent = `Suche fehlgeschlagen: ${err?.message ?? err}`;
+    } finally {
+      this.#els.seek.disabled = false;
+    }
   }
 
   /** Die angehakten Zähler. */
