@@ -1,0 +1,187 @@
+/* ==========================================================================
+   diagramm.css – Rahmen um die Zeichenfläche
+   --------------------------------------------------------------------------
+   Alles Sichtbare hängt an CSS-Variablen mit Rückfallwert. Wer nichts setzt,
+   bekommt ein neutrales helles/dunkles Bild; wer sein Design hat, überschreibt
+   die Variablen und muss keine Regel anfassen.
+   ========================================================================== */
+
+.dg {
+  --dg-text: light-dark(#1c1c1c, #e7e7e7);
+  --dg-text-soft: light-dark(#5f6368, #a5a8ad);
+  --dg-bg: light-dark(#fff, #1c1f24);
+  --dg-line: light-dark(#e0e0e0, #3a3f46);
+  --dg-radius: 12px;
+  --dg-gap: 8px;
+  --dg-title-size: 1.25rem;
+  --dg-chip-size: .875rem;
+  --dg-legend-size: .75rem;
+  --dg-min-height: 180px;
+
+  background: var(--dg-bg);
+  box-sizing: border-box;
+  color: var(--dg-text);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: var(--dg-min-height);
+  overflow: hidden;
+}
+
+.dg *, .dg *::before, .dg *::after { box-sizing: inherit; }
+
+/* ── Kopf: Titel links, Chips und Vollbild rechts ─────────────────────────── */
+
+.dg_head {
+  align-items: flex-start;
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--dg-gap);
+  justify-content: space-between;
+  padding: 12px 16px 0;
+}
+.dg_head:empty, .dg_head[hidden] { display: none; }
+
+.dg_title {
+  font-size: var(--dg-title-size);
+  font-weight: 500;
+  line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dg_title:empty { display: none; }
+
+.dg_tools {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+/* Chips: beliebig viele, jeder in seiner Farbe */
+.dg_chip {
+  --_c: var(--dg-chip-color, var(--dg-text-soft));
+  align-items: center;
+  background: color-mix(in srgb, var(--_c) 12%, transparent);
+  border: 1px solid var(--_c);
+  border-radius: 999px;
+  color: var(--_c);
+  display: inline-flex;
+  font-size: var(--dg-chip-size);
+  font-weight: 600;
+  gap: .35em;
+  line-height: 1.4;
+  padding: 3px 11px;
+  white-space: nowrap;
+}
+.dg_chip_label { font-weight: 500; opacity: .85; }
+
+.dg_btn {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  color: var(--dg-text-soft);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  height: 32px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+}
+.dg_btn:hover { background: color-mix(in srgb, currentColor 12%, transparent); color: var(--dg-text); }
+.dg_btn:focus-visible { outline: 2px solid var(--_c, currentColor); outline-offset: 2px; }
+.dg_glyph { display: inline-flex; font-size: 1.25rem; line-height: 1; }
+
+/* ── Legende ──────────────────────────────────────────────────────────────── */
+
+.dg_legend {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 6px 16px;
+  user-select: none;
+}
+.dg_legend:empty { display: none; }
+.dg_legend[data-pos*="center"] { justify-content: center; }
+.dg_legend[data-pos*="right"] { justify-content: flex-end; }
+
+.dg_legend.dg_inner {
+  backdrop-filter: blur(4px);
+  background: color-mix(in srgb, var(--dg-bg) 85%, transparent);
+  border: 1px solid var(--dg-line);
+  border-radius: 8px;
+  padding: 6px 12px;
+  pointer-events: auto;
+  position: absolute;
+  z-index: 2;
+}
+.dg_legend.dg_inner[data-pos*="top"] { top: 8px; }
+.dg_legend.dg_inner[data-pos*="bottom"] { bottom: 8px; }
+.dg_legend.dg_inner[data-pos*="left"] { left: 12px; }
+.dg_legend.dg_inner[data-pos*="right"] { right: 12px; }
+
+.dg_item {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--dg-legend-size);
+  gap: 6px;
+  transition: opacity .2s;
+}
+.dg_item[aria-pressed="false"] { opacity: .35; text-decoration: line-through; }
+.dg_dot { border-radius: 50%; flex-shrink: 0; height: 10px; width: 10px; }
+
+/* ── Zeichenfläche ────────────────────────────────────────────────────────── */
+
+.dg_plot {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 8px 4px;
+  position: relative;
+}
+.dg_canvas { flex: 1; min-height: 0; width: 100%; }
+
+.dg_note {
+  color: var(--dg-text-soft);
+  font-size: var(--dg-legend-size);
+  padding: 4px 16px 8px;
+}
+.dg_note:empty { display: none; }
+.dg_error { color: light-dark(#c5221f, #f28b82); padding: 16px; }
+
+/* ── Vollbild ─────────────────────────────────────────────────────────────── */
+
+.dg_fs {
+  background: var(--dg-bg);
+  border: 0;
+  color: var(--dg-text);
+  display: none;
+  flex-direction: column;
+  height: 100dvh;
+  margin: 0;
+  max-height: none;
+  max-width: none;
+  padding: 0;
+  width: 100vw;
+}
+.dg_fs[open] { display: flex; }
+.dg_fs::backdrop { background: rgb(0 0 0 / .5); }
+
+/* Im Vollbild steckt dasselbe Diagramm – es soll die Höhe wirklich ausfüllen.
+   Darum hier eine feste Kette aus Flex-Elementen bis zur Zeichenfläche und
+   keine Prozenthöhe, die sich an einer unbekannten Elternhöhe misst. */
+.dg_fs > .dg { border-radius: 0; flex: 1; height: auto; min-height: 0; }
+.dg_fs > .dg .dg_plot { padding-bottom: 12px; }
+
+/* Scharf geschaltetes Diagramm: Zoomen per Geste ist aktiv. Dezent, aber
+   sichtbar – sonst rätselt man, warum das Wischen mal scrollt und mal zoomt. */
+.dg.dg_aktiv .dg_plot { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent); border-radius: 8px; }
