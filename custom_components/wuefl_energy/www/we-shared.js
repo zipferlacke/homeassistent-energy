@@ -661,6 +661,43 @@ let forecastCache = { key: '', at: 0, value: null, pending: null };
 
 const entityOfValue = (v) => (typeof v === 'string' ? v : v?.entity ?? null);
 
+/**
+ * Alle Gesamtzähler der Zuordnung – die eine Liste, an der sich Import,
+ * Export und die Grenzen des Kalenders ausrichten.
+ *
+ * Wer hier fehlt, wird weder importiert noch beim Suchen nach dem ersten
+ * Wert berücksichtigt; darum steht die Liste an einer Stelle.
+ */
+export function energyTargets(cfg) {
+  const out = [];
+  const add = (kind, label, value) => {
+    for (const entity of asList(value).map(entityOfValue).filter(Boolean)) {
+      if (!out.some((t) => t.entity === entity)) out.push({ kind, label, entity });
+    }
+  };
+  const named = (base, x, i, n) => (n > 1 || x?.name ? `${base} ${x?.name || i + 1}` : base);
+  const solar = asList(cfg?.solar);
+  solar.forEach((s, i) => add('solar', named('PV', s, i, solar.length), s?.total));
+  add('grid_import', 'Netzbezug', cfg?.grid?.import_total);
+  add('grid_export', 'Einspeisung', cfg?.grid?.export_total);
+  const batt = asList(cfg?.battery);
+  batt.forEach((b, i) => {
+    const suffix = batt.length > 1 ? ` ${b?.name || i + 1}` : '';
+    add('battery_in', `Akku geladen${suffix}`, b?.in_total);
+    add('battery_out', `Akku entladen${suffix}`, b?.out_total);
+  });
+  add('consumers', 'Hausverbrauch', cfg?.consumers?.total);
+  const wbs = asList(cfg?.wallboxes);
+  wbs.forEach((w, i) => add('wallbox', named('Wallbox', w, i, wbs.length), w?.total));
+  const hps = asList(cfg?.heatpump);
+  hps.forEach((h, i) => add('heatpump', named('Wärmepumpe', h, i, hps.length), h?.total));
+  // Gleiche Beschriftung (z. B. zwei Netzbezug-Zähler) eindeutig machen
+  for (const t of out) {
+    if (out.filter((x) => x.label === t.label).length > 1) t.label = `${t.label} (${t.entity})`;
+  }
+  return out;
+}
+
 export async function loadSolarForecast(hass, config, maxAgeMs = 15 * 60_000) {
   const ids = asList(config?.solar).flatMap((s) => asList(s?.forecast)).map(entityOfValue).filter(Boolean);
   const key = ids.join('|');

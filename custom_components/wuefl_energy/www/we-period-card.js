@@ -7,7 +7,7 @@
  * gewählten Zeitraum beibehalten (z.B. Wechsel von Jahr 2025 auf Monat -> Dezember 2025).
  */
 import { registerCard, getPeriod, setPeriod, WueflFormEditor, sel, GRID_CSS,
-  addSheet, centralConfig, asList } from './we-shared.js';
+  addSheet, centralConfig, energyTargets } from './we-shared.js';
 import { DatePicker } from './datepicker_v2.1.3/datepicker_v2_1_3.js';
 
 /**
@@ -386,10 +386,10 @@ class WueflEnergyPeriodCard extends HTMLElement {
     this.#bis = new Date(); this.#bis.setHours(23, 59, 59, 999);
     try {
       const cfg = await centralConfig(this.#hass);
-      const ids = [...new Set([
-        ...asList(cfg.grid?.import_total), ...asList(cfg.grid?.export_total),
-        ...asList(cfg.solar).map((x) => x?.total), ...asList(cfg.consumers?.total),
-      ].map((v) => (typeof v === 'string' ? v : v?.entity)).filter(Boolean))];
+      // Dieselben Zähler wie beim Import: Wer dort beschrieben wird, muss
+      // hier auch gefunden werden – sonst reicht der Kalender nicht bis an
+      // importierte Jahre heran. Vorher fehlten Akku, Wallbox und Wärmepumpe.
+      const ids = [...new Set(energyTargets(cfg).map((t) => t.entity))];
       if (!ids.length) return;
       const res = await this.#hass.callWS({
         type: 'recorder/statistics_during_period',
