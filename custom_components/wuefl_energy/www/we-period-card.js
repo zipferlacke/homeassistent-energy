@@ -18,8 +18,11 @@
 import { registerCard, setPeriod, WueflFormEditor, sel, GRID_CSS,
   addSheet, centralConfig, energyTargets } from './we-shared.js';
 import { DatePicker } from './datepicker_v2.1.3/datepicker_v2_1_3.js';
-import { Zeitpicker } from './diagramm_v1.2.0/picker_v1_2_0.js';
-import { haRenderer, haSource } from './we-chart-ha.js';
+import { Zeitpicker } from './diagramm_v1.3.0/picker_v1_3_0.js';
+import { haRenderer, haSource, HA_ICONS } from './we-chart-ha.js';
+import { setIcons } from './diagramm_v1.3.0/diagramm_v1_3_0.js';
+
+setIcons(HA_ICONS);
 
 let dpCss = null;
 let dgCss = null;
@@ -31,7 +34,7 @@ const holen = (pfad, cache) => {
   return cache.p;
 };
 const datePickerCss = () => holen('./datepicker_v2.1.3/datepicker_v2_1_3.css', dpCss ??= {});
-const diagrammCss = () => holen('./diagramm_v1.2.0/diagramm_v1_2_0.css', dgCss ??= {});
+const diagrammCss = () => holen('./diagramm_v1.3.0/diagramm_v1_3_0.css', dgCss ??= {});
 
 /**
  * Schnellwahl im Kalender. Beim Daten-Ansehen sind das andere Vorschläge als
@@ -106,6 +109,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
     this.#picker = new Zeitpicker(this.#box, {
       id: this.#own.picker_id ?? 'we',
       granularity: this.#own.granularity ?? 'day',
+      granularities: this.#own.granularities,
       datePicker: DatePicker,
       datePickerOptions: { quick: SCHNELLWAHL, forceJsPosition: true },
       ...(this.#own.overview === false ? {} : {
@@ -173,8 +177,11 @@ const SCHEMA = [
     { value: 'month', label: 'Monat' }, { value: 'year', label: 'Jahr' }] } } },
   { name: 'overview', selector: sel.bool() },
   { name: 'overview_height', selector: sel.number(32, 160, 4) },
+  { name: 'granularities', selector: { select: { multiple: true, options: [
+    { value: 'day', label: 'Tag' }, { value: 'week', label: 'Woche' },
+    { value: 'month', label: 'Monat' }, { value: 'year', label: 'Jahr' }] } } },
 ];
-const LABELS = { granularity: 'Stufe beim Laden', overview: 'Übersicht anzeigen', overview_height: 'Höhe der Übersicht (px)' };
+const LABELS = { granularity: 'Stufe beim Laden', overview: 'Übersicht anzeigen', overview_height: 'Höhe der Übersicht (px)', granularities: 'Sichtbare Stufen' };
 class WueflEnergyPeriodCardEditor extends WueflFormEditor { schema = SCHEMA; labels = LABELS; }
 customElements.define('we-period-card-editor', WueflEnergyPeriodCardEditor);
 

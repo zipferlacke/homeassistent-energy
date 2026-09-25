@@ -76,10 +76,13 @@ export function haSource(getHass, types = ['change', 'mean', 'max', 'min']) {
   };
 }
 
-/** Icons des Diagramms als mdi – wie im Rest der Integration. */
+/** Icons des Diagramms und des Pickers als mdi – wie im Rest der Integration. */
 export const HA_ICONS = {
   fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>',
   fullscreenExit: '<ha-icon icon="mdi:fullscreen-exit"></ha-icon>',
+  kalender: '<ha-icon icon="mdi:calendar"></ha-icon>',
+  zurueck: '<ha-icon icon="mdi:chevron-left"></ha-icon>',
+  vor: '<ha-icon icon="mdi:chevron-right"></ha-icon>',
 };
 
 /**

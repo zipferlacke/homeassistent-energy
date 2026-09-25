@@ -26,7 +26,7 @@
  * folgen alle angehängten Diagramme.
  */
 
-import { getData, mitAlpha } from './diagramm_v1_2_0.js';
+import { getData, mitAlpha, getIcons } from './diagramm_v1_3_0.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Verzeichnis: wer hört auf welche id
@@ -94,6 +94,39 @@ export function verschiebe(stufe, datum, n) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 }
 
+/** Gesperrte Bereiche auf Tagesgrenzen normieren und sortieren. */
+function normSperren(liste) {
+  return (liste ?? [])
+    .map((r) => ({ from: new Date(r.from ?? r.start), to: new Date(r.to ?? r.end ?? r.from ?? r.start) }))
+    .filter((r) => !Number.isNaN(+r.from) && !Number.isNaN(+r.to))
+    .map((r) => {
+      const a = new Date(r.from); a.setHours(0, 0, 0, 0);
+      const b = new Date(r.to); b.setHours(23, 59, 59, 999);
+      return { from: a, to: b };
+    })
+    .sort((a, b) => a.from - b.from);
+}
+
+/**
+ * Ist der ganze Zeitraum gesperrt?
+ *
+ * Nur dann wird er beim Blättern übersprungen. In der Tagesansicht reicht
+ * dafür ein gesperrter Tag; in der Wochenansicht muss die ganze Woche
+ * gesperrt sein, sonst gäbe es dort ja noch etwas zu sehen. Dasselbe für
+ * Monat und Jahr – es ist immer dieselbe Frage, nur mit größerer Spanne.
+ */
+export function ganzGesperrt(sperren, start, end) {
+  if (!sperren?.length) return false;
+  let lauf = +start;
+  for (const r of sperren) {
+    if (+r.to < lauf) continue;
+    if (+r.from > lauf) return false;      // Lücke – hier ist etwas frei
+    lauf = +r.to + 1;
+    if (lauf > +end) return true;
+  }
+  return lauf > +end;
+}
+
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /** Beschriftung des aktuellen Zeitraums. */
@@ -128,7 +161,7 @@ export class Zeitpicker {
 
   #host; #els = {}; #hoerer = new Set();
   #stufe = 'day'; #anker = new Date(); #start; #end;
-  #min = null; #max = null;
+  #min = null; #max = null; #sperren = []; #stufenListe = STUFEN_NAMEN;
   #dp = null; #datePicker = null; #dpOpts = null;
   #ov = null; #ovGriff = null; #ovCfg = null; #renderer = null; #source = null;
   #id = null; #seq = 0;
@@ -143,6 +176,9 @@ export class Zeitpicker {
    *        etwa eine eigene Schnellwahl (`quick`)
    * @param {string}  [opts.granularity]     day | week | month | year
    * @param {Date}    [opts.min] [opts.max]  Grenzen der Auswahl
+   * @param {Array}   [opts.disabled]        gesperrte Bereiche [{from, to}]
+   * @param {Array}   [opts.granularities]   welche Stufen zu sehen sind,
+   *        z. B. ['day','month'] – Vorgabe alle vier
    * @param {object}  [opts.overview]        { keys, renderer, source, height, color }
    */
   constructor(host, opts = {}) {
@@ -154,6 +190,10 @@ export class Zeitpicker {
     this.#stufe = opts.granularity ?? 'day';
     this.#min = opts.min ? new Date(opts.min) : null;
     this.#max = opts.max ? new Date(opts.max) : null;
+    this.#sperren = normSperren(opts.disabled);
+    this.#stufenListe = (opts.granularities?.length
+      ? STUFEN_NAMEN.filter((x) => opts.granularities.includes(x.key))
+      : STUFEN_NAMEN);
     this.#ovCfg = opts.overview ?? null;
     this.#renderer = opts.overview?.renderer ?? null;
     this.#source = opts.overview?.source ?? null;
@@ -209,6 +249,18 @@ export class Zeitpicker {
     this.#uebersicht();
   }
 
+  /**
+   * Gesperrte Bereiche nachreichen.
+   *
+   * Sie gelten für das Blättern (ganz gesperrte Zeiträume werden übersprungen)
+   * und werden an den Kalender weitergereicht, der sie dort ausgraut.
+   */
+  setDisabled(liste) {
+    this.#sperren = normSperren(liste);
+    if (this.#dp) { try { this.#dp.disabled = this.#sperren; } catch { /* ältere Fassung */ } }
+    this.#zeichnen();
+  }
+
   /** Grenzen nachreichen, z. B. sobald bekannt ist, ab wann es Daten gibt. */
   setBounds(min, max) {
     this.#min = min ? new Date(min) : null;
@@ -238,20 +290,29 @@ export class Zeitpicker {
     el.classList.add('dgp');
     el.innerHTML = `
       <div class="dgp_leiste">
-        <div class="dgp_stufen" role="group" aria-label="Zeitraum">
-          ${STUFEN_NAMEN.map((s) => `<button type="button" class="dgp_stufe" data-stufe="${s.key}">${html(s.name)}</button>`).join('')}
+        <div class="dgp_stufen" role="group" aria-label="Zeitraum"${this.#stufenListe.length < 2 ? ' hidden' : ''}>
+          ${this.#stufenListe.map((s) => `<button type="button" class="dgp_stufe" data-stufe="${s.key}">${html(s.name)}</button>`).join('')}
         </div>
         <div class="dgp_nav">
-          <button type="button" class="dgp_btn dgp_zurueck" aria-label="Zeitraum zurück">‹</button>
-          <button type="button" class="dgp_label" aria-label="Zeitraum wählen"></button>
-          <button type="button" class="dgp_btn dgp_vor" aria-label="Zeitraum vor">›</button>
+          <button type="button" class="dgp_btn dgp_zurueck" aria-label="Zeitraum zurück"><span data-dg-ico="zurueck"></span></button>
+          <span class="dgp_ausloeser">
+            <button type="button" class="dgp_label" aria-label="Zeitraum wählen">
+              <span class="dgp_glyph" data-dg-ico="kalender"></span><span class="dgp_text"></span>
+            </button>
+            <span class="dgp_felder"></span>
+          </span>
+          <button type="button" class="dgp_btn dgp_vor" aria-label="Zeitraum vor"><span data-dg-ico="vor"></span></button>
         </div>
-        <div class="dgp_felder"></div>
       </div>
       <div class="dgp_ov" hidden></div>`;
     const q = (s) => el.querySelector(s);
     this.#els = { stufen: q('.dgp_stufen'), nav: q('.dgp_nav'), label: q('.dgp_label'),
+      text: q('.dgp_text'), ausloeser: q('.dgp_ausloeser'),
       zurueck: q('.dgp_zurueck'), vor: q('.dgp_vor'), felder: q('.dgp_felder'), ov: q('.dgp_ov') };
+    // Icons aus dem gemeinsamen Satz des Diagramms – setIcons() wirkt damit
+    // auch hier, und HA kann mdi-Icons einsetzen.
+    const ico = getIcons();
+    for (const sp of el.querySelectorAll('[data-dg-ico]')) sp.innerHTML = ico[sp.dataset.dgIco] ?? '';
 
     this.#els.stufen.addEventListener('click', (e) => {
       const b = e.target.closest('.dgp_stufe');
@@ -305,24 +366,46 @@ export class Zeitpicker {
         this.#dp = bausatz.create([von, zu], {
           outputFormat: 'iso', showDate: true, showTime: false,
           min: this.#min, max: this.#max,
+          disabled: this.#sperren,
           ...this.#dpOpts,
         });
       } catch { this.#dp = null; }   // dann eben die Felder des Browsers
     }
     box.classList.toggle('dgp_schlicht', !this.#dp);
+    // Der Kalender bringt seinen eigenen Auslöser mit. Er wird durchsichtig
+    // über unseren Knopf gelegt – sichtbar bleibt unserer, angeklickt wird
+    // seiner. Ohne das säße neben der Beschriftung ein zweites Bedienelement.
+    if (this.#dp?.triggerElm) {
+      Object.assign(this.#dp.triggerElm.style, {
+        boxSizing: 'border-box', cursor: 'pointer', height: '100%', inset: '0',
+        margin: '0', minWidth: '0', opacity: '0', padding: '0', position: 'absolute', width: '100%',
+      });
+      this.#els.ausloeser.appendChild(box);
+    }
   }
 
   /* ── Bewegen ────────────────────────────────────────────────────────────── */
 
+  /**
+   * Einen Zeitraum weiter – über vollständig gesperrte hinweg.
+   *
+   * Ist der nächste Zeitraum ganz gesperrt, wird der übernächste genommen und
+   * so fort, bis etwas Freies kommt oder die Grenze erreicht ist. Wer alles
+   * sperrt, bekommt nichts – deshalb die Obergrenze an Versuchen.
+   */
   #schritt(n) {
-    if (this.#stufe === 'custom') {
-      // Freier Zeitraum: um die eigene Länge weiterschieben
-      const laenge = +this.#end - +this.#start;
-      this.#start = new Date(+this.#start + n * (laenge + 1));
-      this.#end = new Date(+this.#end + n * (laenge + 1));
-    } else {
-      this.#anker = verschiebe(this.#stufe, this.#anker, n);
-      ({ start: this.#start, end: this.#end } = spanne(this.#stufe, this.#anker));
+    const grenzeOben = this.#max ?? new Date();
+    for (let i = 0; i < 400; i += 1) {
+      if (this.#stufe === 'custom') {
+        const laenge = +this.#end - +this.#start;
+        this.#start = new Date(+this.#start + n * (laenge + 1));
+        this.#end = new Date(+this.#end + n * (laenge + 1));
+      } else {
+        this.#anker = verschiebe(this.#stufe, this.#anker, n);
+        ({ start: this.#start, end: this.#end } = spanne(this.#stufe, this.#anker));
+      }
+      if (this.#start > grenzeOben || (this.#min && this.#end < this.#min)) break;
+      if (!ganzGesperrt(this.#sperren, this.#start, this.#end)) break;
     }
     this.#klemmen();
     this.#zeichnen();
@@ -345,8 +428,8 @@ export class Zeitpicker {
   }
 
   #zeichnen() {
-    const { label, von, zu, stufen, vor, zurueck } = this.#els;
-    label.textContent = beschriftung(this.#stufe, this.#start, this.#end);
+    const { von, zu, stufen, vor, zurueck } = this.#els;
+    this.#els.text.textContent = beschriftung(this.#stufe, this.#start, this.#end);
     if (von) von.value = iso(this.#start);
     if (zu) zu.value = iso(this.#end);
     for (const b of stufen.querySelectorAll('.dgp_stufe')) {
@@ -354,9 +437,23 @@ export class Zeitpicker {
     }
     // Kein Blättern in die Zukunft und nicht vor den ersten Wert
     const obergrenze = this.#max ?? new Date();
-    vor.disabled = this.#end >= obergrenze;
-    zurueck.disabled = !!this.#min && this.#start <= this.#min;
+    vor.disabled = this.#end >= obergrenze || !this.#gibtFreies(1);
+    zurueck.disabled = (!!this.#min && this.#start <= this.#min) || !this.#gibtFreies(-1);
     this.#fenster();
+  }
+
+  /** Gibt es in dieser Richtung überhaupt noch einen freien Zeitraum? */
+  #gibtFreies(n) {
+    if (!this.#sperren.length || this.#stufe === 'custom') return true;
+    const grenzeOben = this.#max ?? new Date();
+    let anker = this.#anker;
+    for (let i = 0; i < 400; i += 1) {
+      anker = verschiebe(this.#stufe, anker, n);
+      const { start, end } = spanne(this.#stufe, anker);
+      if (start > grenzeOben || (this.#min && end < this.#min)) return false;
+      if (!ganzGesperrt(this.#sperren, start, end)) return true;
+    }
+    return false;
   }
 
   #melden() {

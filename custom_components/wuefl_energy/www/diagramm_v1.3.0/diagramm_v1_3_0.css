@@ -238,7 +238,11 @@
 }
 .dgp_stufe[aria-pressed="true"]:hover { background-color: var(--clr-primary-300, color-mix(in srgb, currentColor 24%, transparent)); }
 
-.dgp_nav { align-items: center; display: flex; gap: 2px; }
+.dgp_nav { align-items: center; display: flex; flex: 1; gap: 4px; justify-content: center; }
+
+/* Der Auslöser sitzt zwischen den Pfeilen. Der Kalender legt seinen eigenen
+   durchsichtig darüber – deshalb braucht es hier die Bezugsposition. */
+.dgp_ausloeser { display: inline-flex; position: relative; }
 .dgp_btn {
   background: none; border: 0; border-radius: 50%; color: var(--dg-text-soft, #5f6368);
   cursor: pointer; font: inherit; font-size: 1.25rem; height: 32px; line-height: 1; width: 32px;
@@ -247,13 +251,33 @@
 .dgp_btn:disabled { cursor: default; opacity: .3; }
 
 .dgp_label {
-  background: none; border: 0; border-radius: var(--br-input, 8px); color: inherit;
-  cursor: pointer; font: inherit; font-weight: 600; min-width: 12ch;
-  padding: .25rem .6rem; text-align: center;
+  align-items: center;
+  appearance: none;
+  background-color: var(--bg-input, color-mix(in srgb, currentColor 7%, transparent));
+  border: 0;
+  border-radius: var(--br-input, 999px);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--fs-input, .9375rem);
+  font-weight: 600;
+  gap: .5em;
+  justify-content: center;
+  min-width: 14ch;
+  padding: .35rem 1rem;
+  white-space: nowrap;
 }
-.dgp_label:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.dgp_label:hover { background-color: var(--clr-primary-100, color-mix(in srgb, currentColor 14%, transparent)); }
+.dgp_glyph { display: inline-flex; font-size: 1.1em; line-height: 1; opacity: .8; }
+.dgp_glyph:empty { display: none; }
 
+/* Ohne Kalender stehen hier zwei Datumsfelder, mit Kalender nur sein
+   unsichtbarer Auslöser über dem Knopf. */
 .dgp_felder { align-items: center; display: flex; gap: 6px; }
+.dgp_felder:not(.dgp_schlicht) { inset: 0; position: absolute; }
+.dgp_felder:not(.dgp_schlicht) input { display: none; }
+.dgp_stufen[hidden] { display: none; }
 .dgp_felder input {
   appearance: none;
   background-color: var(--bg-input, color-mix(in srgb, currentColor 7%, transparent));
@@ -287,3 +311,8 @@
 .dg.dg_nackt > .dg_legend { padding: 4px 0; }
 .dg.dg_nackt > .dg_plot { padding: 0; }
 .dg.dg_nackt > .dg_note { padding: 4px 0 0; }
+
+/* Icon im Chip – als Markup übergeben, damit auch eine Icon-Schrift oder ein
+   eigenes Element hineinpasst. */
+.dg_chip_icon { align-items: center; display: inline-flex; font-size: 1.15em; line-height: 1; }
+.dg_chip_icon:empty { display: none; }

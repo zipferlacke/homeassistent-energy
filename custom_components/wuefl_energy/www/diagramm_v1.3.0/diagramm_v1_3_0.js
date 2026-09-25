@@ -52,21 +52,27 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
-import { onPicker } from './picker_v1_2_0.js';
+import { onPicker } from './picker_v1_3_0.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** Verwendete Schlüssel: fullscreen fullscreenExit */
+/** Verwendete Schlüssel: fullscreen fullscreenExit kalender zurueck vor */
 export const ICON_SETS = {
   'default-utf8': {
     fullscreen: '⛶',
     fullscreenExit: '✕',
+    kalender: '🗓',
+    zurueck: '‹',
+    vor: '›',
   },
   'default-msr': {
     fullscreen: '<span class="msr">fullscreen</span>',
     fullscreenExit: '<span class="msr">fullscreen_exit</span>',
+    kalender: '<span class="msr">calendar_month</span>',
+    zurueck: '<span class="msr">chevron_left</span>',
+    vor: '<span class="msr">chevron_right</span>',
   },
 };
 
@@ -834,7 +840,12 @@ export class Diagramm {
       el.style.setProperty('--dg-chip-color', farbe(this.#host, c.color, reihe?.farbe ?? ''));
       const einheit = c.unit ?? reihe?.einheit ?? achsen[0]?.unit ?? '';
       el.hidden = false;
-      el.innerHTML = (c.label ? `<span class="dg_chip_label">${html(c.label)}</span>` : '')
+      // `icon` wird als Markup eingesetzt – ein UTF-8-Zeichen genauso wie
+      // <span class="msr">bolt</span> oder <ha-icon icon="mdi:flash">. Die
+      // Beschriftung bleibt Text, damit ein Name aus den Daten nichts
+      // ausführen kann.
+      el.innerHTML = (c.icon ? `<span class="dg_chip_icon">${c.icon}</span>` : '')
+        + (c.label ? `<span class="dg_chip_label">${html(c.label)}</span>` : '')
         + `${html(nf(wert, c.decimals ?? 2))}${einheit ? ` ${html(einheit)}` : ''}`;
     });
   }
