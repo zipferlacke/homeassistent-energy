@@ -789,7 +789,17 @@ class WueflEnergyChart extends HTMLElement {
                 // Erzeugung und Verbrauch sind zwei Stapel. Ohne barGap stellt
                 // ECharts sie nebeneinander – sie sollen aber übereinander
                 // stehen, oben die Erzeugung, unten der Verbrauch.
-                ...(chartType === 'bar' ? { barCategoryGap: '25%', barMaxWidth: 48, barGap: '-100%' } : {}),
+                //
+                // Wo die Reihen dagegen nebeneinander gehören – etwa die
+                // Gesamterzeugung neben dem Stapel ihrer Dächer –, schaltet
+                // `bar_overlap: false` das ab.
+                ...(chartType === 'bar'
+                    ? {
+                        barCategoryGap: '25%',
+                        barMaxWidth: 48,
+                        ...(this.#config.bar_overlap === false ? {} : { barGap: '-100%' }),
+                    }
+                    : {}),
             };
         });
 

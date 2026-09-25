@@ -68,10 +68,10 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
           name: plant.name || (solarPlants.length > 1 ? `Anlage ${plantIdx + 1}` : 'Gesamt'),
           color: colorOf('solar', plant, plantIdx),
           stat_type: 'mean',
-          // Stehen die einzelnen Dächer gestapelt darunter, ergeben sie schon
-          // die volle Fläche – die Gesamtlinie liegt dann nur als Linie oben
-          // drauf, sonst deckt sie den Stapel zu.
-          fill: strings.length ? false : 'gradient',
+          fill: 'gradient',
+          // Die gelbe Fläche der Gesamterzeugung liegt hinter dem Stapel der
+          // Dächer, nicht darüber – sonst deckt sie ihn zu.
+          background: strings.length > 0,
           type: range.overMonth ? 'bar' : 'line',
         });
 
@@ -117,6 +117,9 @@ class WueflEnergySolarChartCard extends WueflChartWrapper {
 
     return {
       aggregation: this._aggregation(range),
+      // Als Balken gehört die Gesamterzeugung neben den Stapel ihrer Dächer,
+      // nicht dahinter – sonst ist von ihr nur der überstehende Rand zu sehen.
+      bar_overlap: false,
       y_axes: [{ unit: 'kW' }],
       legend: [{ hidden: false, position: 'top-right' }],
       series,
