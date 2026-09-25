@@ -18,9 +18,9 @@
 import { registerCard, setPeriod, WueflFormEditor, sel, GRID_CSS,
   addSheet, centralConfig, energyTargets } from './we-shared.js';
 import { DatePicker } from './datepicker_v2.1.3/datepicker_v2_1_3.js';
-import { Zeitpicker } from './diagramm_v1.4.0/picker_v1_4_0.js';
+import { Zeitpicker } from './diagramm_v1.5.0/picker_v1_5_0.js';
 import { haRenderer, haSource, HA_ICONS } from './we-chart-ha.js';
-import { setIcons } from './diagramm_v1.4.0/diagramm_v1_4_0.js';
+import { setIcons } from './diagramm_v1.5.0/diagramm_v1_5_0.js';
 
 setIcons(HA_ICONS);
 
@@ -34,7 +34,7 @@ const holen = (pfad, cache) => {
   return cache.p;
 };
 const datePickerCss = () => holen('./datepicker_v2.1.3/datepicker_v2_1_3.css', dpCss ??= {});
-const diagrammCss = () => holen('./diagramm_v1.4.0/diagramm_v1_4_0.css', dgCss ??= {});
+const diagrammCss = () => holen('./diagramm_v1.5.0/diagramm_v1_5_0.css', dgCss ??= {});
 
 /**
  * Schnellwahl im Kalender. Beim Daten-Ansehen sind das andere Vorschläge als
@@ -85,10 +85,8 @@ class WueflEnergyPeriodCard extends HTMLElement {
   getCardSize() { return 1; }
 
   set hass(hass) {
-    const ersteMal = !this.#hass;
     this.#hass = hass;
     if (!this.#built) this.#build();
-    if (ersteMal) this.#grenzen();
   }
 
   async #build() {
@@ -112,6 +110,10 @@ class WueflEnergyPeriodCard extends HTMLElement {
       id: this.#own.picker_id ?? 'we',
       granularity: this.#own.granularity ?? 'day',
       granularities: this.#own.granularities,
+      // Von wann bis wann es Daten gibt, fragt der Picker selbst – einmal
+      // beim Start und danach in Abständen. Kommt über Nacht ein neuer Tag
+      // dazu, merkt er das ohne Neuladen der Seite.
+      bounds: () => this.#grenzen(),
       datePicker: DatePicker,
       datePickerOptions: { quick: SCHNELLWAHL, forceJsPosition: true },
       ...(this.#own.overview === false ? {} : {
@@ -144,6 +146,7 @@ class WueflEnergyPeriodCard extends HTMLElement {
     const bis = new Date();
     bis.setHours(23, 59, 59, 999);
     let ids = [];
+    if (!this.#hass) return { min: null, max: bis };
     try {
       const cfg = await centralConfig(this.#hass);
       ids = [...new Set(energyTargets(cfg).map((t) => t.entity))];
@@ -160,8 +163,10 @@ class WueflEnergyPeriodCard extends HTMLElement {
     } catch {
       // Ohne Auskunft bleibt nur die Grenze nach vorn
     }
-    this.#picker?.setOverviewKeys?.(ids.slice(0, 3));
-    this.#picker?.setBounds(von, bis);
+    // Die Übersicht zeigt ohnehin, was die angehängten Diagramme melden –
+    // ohne solche bleiben die Hauptzähler als Rückfall.
+    if (!this.#picker?.hatReihen?.()) this.#picker?.setOverviewKeys?.(ids.slice(0, 3));
+    return { min: von, max: bis };
   }
 
   disconnectedCallback() {

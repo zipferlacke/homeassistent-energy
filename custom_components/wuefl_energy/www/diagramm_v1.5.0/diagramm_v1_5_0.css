@@ -27,7 +27,11 @@
   --dg-legend-size: .75rem;
   --dg-min-height: 180px;
 
+  /* Die Kachel: Hintergrund, Rand, Radius. `card: false` nimmt alles davon
+     weg – dann sitzt das Diagramm nackt in dem, was es umgibt. */
   background: var(--dg-bg);
+  border: 1px solid var(--dg-line);
+  border-radius: var(--dg-radius);
   box-sizing: border-box;
   color: var(--dg-text);
   display: flex;
@@ -319,9 +323,12 @@
 .dgp_ov[hidden] { display: none; }
 .dgp_ov .dg_canvas { height: 100%; width: 100%; }
 
-/* Ohne Kachel: kein Hintergrund, kein Rand, kein Innenabstand – das Diagramm
-   sitzt dann nackt in dem, was es umgibt (`card: false`). */
-.dg.dg_nackt { background: none; }
+/* Ohne Kachel: kein Hintergrund, kein Rand, kein Radius, kein Innenabstand. */
+.dg.dg_nackt {
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
 .dg.dg_nackt > .dg_head { padding: 0 0 4px; }
 .dg.dg_nackt > .dg_legend { padding: 4px 0; }
 .dg.dg_nackt > .dg_plot { padding: 0; }

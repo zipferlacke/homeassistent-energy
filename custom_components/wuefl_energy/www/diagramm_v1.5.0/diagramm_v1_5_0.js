@@ -52,7 +52,7 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
-import { onPicker } from './picker_v1_4_0.js';
+import { onPicker } from './picker_v1_5_0.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
@@ -668,7 +668,7 @@ export class Diagramm {
   #host; #renderer; #source; #els = {}; #griff = null;
   #cfg = {}; #reihen = []; #aus = new Set(); #seq = 0; #ro = null; #fs = null; #heimat = null;
   #voll = false; #zoomAn = false; #ausserhalb = null;
-  #pickerAb = null; #pickerRange = null;
+  #pickerAb = null; #pickerRange = null; #picker = null;
 
   /**
    * @param {Element} host      Element, in das gezeichnet wird
@@ -750,8 +750,12 @@ export class Diagramm {
     this.#pickerAb = null;
     this.#pickerRange = null;
     if (!this.#cfg.picker) return;
-    this.#pickerAb = onPicker(this.#cfg.picker, (r) => {
+    this.#pickerAb = onPicker(this.#cfg.picker, (r, picker) => {
       this.#pickerRange = r;
+      // Dem Picker sagen, was dieses Diagramm zeigt – seine Übersicht
+      // zeichnet dieselben Kurven in denselben Farben.
+      this.#picker = picker;
+      this.#meldeReihen();
       this.refresh();
     });
   }
@@ -819,6 +823,7 @@ export class Diagramm {
     this.#seq += 1;
     this.#ro?.disconnect();
     if (this.#ausserhalb) window.removeEventListener('pointerdown', this.#ausserhalb);
+    this.#picker?.meldeReihen?.(this, null);
     this.#pickerAb?.();
     this.#renderer.destroy?.(this.#griff);
     this.#fs?.remove();
@@ -1024,6 +1029,15 @@ export class Diagramm {
       btn.onclick = () => this.toggleFullscreen(true);
     }
     this.#nachmessen();
+  }
+
+  /** Die eigenen Reihen an den Picker melden, für dessen Übersicht. */
+  #meldeReihen() {
+    if (!this.#picker?.meldeReihen) return;
+    const liste = (this.#cfg.series ?? [])
+      .filter((x) => (x.key ?? x.entity) && !x.data && !x.background)
+      .map((x) => ({ key: x.key ?? x.entity, name: x.name, color: farbe(this.#host, x.color) }));
+    this.#picker.meldeReihen(this, liste);
   }
 
   /**

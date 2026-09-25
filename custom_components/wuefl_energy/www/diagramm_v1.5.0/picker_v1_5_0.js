@@ -26,7 +26,7 @@
  * folgen alle angehängten Diagramme.
  */
 
-import { getData, mitAlpha, getIcons } from './diagramm_v1_4_0.js';
+import { getData, mitAlpha, getIcons } from './diagramm_v1_5_0.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Verzeichnis: wer hört auf welche id
@@ -162,6 +162,8 @@ export class Zeitpicker {
   #host; #els = {}; #hoerer = new Set();
   #stufe = 'day'; #anker = new Date(); #start; #end;
   #min = null; #max = null; #sperren = []; #stufenListe = STUFEN_NAMEN;
+  #fremdReihen = new Map(); #ovDaten = null; #ovSpanne = '';
+  #grenzenFn = null; #grenzenAbstand = 0; #grenzenTimer = null;
   #dp = null; #datePicker = null; #dpOpts = null;
   #ov = null; #ovGriff = null; #ovCfg = null; #renderer = null; #source = null;
   #id = null; #seq = 0;
@@ -180,6 +182,12 @@ export class Zeitpicker {
    * @param {Array}   [opts.granularities]   welche Stufen zu sehen sind,
    *        z. B. ['day','month'] – Vorgabe alle vier
    * @param {object}  [opts.overview]        { keys, renderer, source, height, color }
+   * @param {Function} [opts.bounds]         async () => ({ min, max }) – von
+   *        wann bis wann es überhaupt Daten gibt. Wird einmal beim Start
+   *        gefragt und danach in Abständen erneut, denn während man zusieht
+   *        kommen neue dazu.
+   * @param {number}  [opts.boundsInterval]  Abstand in ms, Vorgabe 5 Minuten,
+   *        0 schaltet das Nachfragen ab
    */
   constructor(host, opts = {}) {
     if (!host) throw new Error('[picker] Ohne Host-Element geht es nicht.');
@@ -195,6 +203,8 @@ export class Zeitpicker {
       ? STUFEN_NAMEN.filter((x) => opts.granularities.includes(x.key))
       : STUFEN_NAMEN);
     this.#ovCfg = opts.overview ?? null;
+    this.#grenzenFn = typeof opts.bounds === 'function' ? opts.bounds : null;
+    this.#grenzenAbstand = opts.boundsInterval ?? 300_000;
     this.#renderer = opts.overview?.renderer ?? null;
     this.#source = opts.overview?.source ?? null;
 
@@ -207,6 +217,7 @@ export class Zeitpicker {
       WARTEND.delete(this.#id);
     }
     if (this.#ovCfg) this.#uebersicht();
+    if (this.#grenzenFn) this.#grenzenHolen();
   }
 
   /* ── Schnittstelle ──────────────────────────────────────────────────────── */
@@ -235,6 +246,24 @@ export class Zeitpicker {
     this.#klemmen();
     this.#zeichnen();
     this.#melden();
+  }
+
+  /**
+   * Reihen eines angehängten Diagramms melden.
+   *
+   * Die Übersicht zeigt damit von selbst alles, was dieser Picker steuert –
+   * in denselben Farben wie unten im Großen. Ohne diese Meldung bliebe sie
+   * auf die Bezeichner angewiesen, die beim Bauen bekannt waren.
+   */
+  meldeReihen(besitzer, liste) {
+    if (!liste?.length) this.#fremdReihen.delete(besitzer);
+    else this.#fremdReihen.set(besitzer, liste);
+    if (this.#ovCfg && !this.#ovCfg.keys?.length) this.#uebersicht();
+  }
+
+  /** Hat sich schon ein Diagramm mit seinen Reihen gemeldet? */
+  hatReihen() {
+    return [...this.#fremdReihen.values()].some((l) => l?.length);
   }
 
   /**
@@ -276,6 +305,8 @@ export class Zeitpicker {
   }
 
   destroy() {
+    clearTimeout(this.#grenzenTimer);
+    this.#grenzenTimer = null;
     if (this.#id && REGISTER.get(this.#id) === this) REGISTER.delete(this.#id);
     this.#hoerer.clear();
     if (this.#ovGriff) this.#renderer?.destroy?.(this.#ovGriff);
@@ -461,6 +492,32 @@ export class Zeitpicker {
     for (const cb of this.#hoerer) { try { cb(r, this); } catch { /* ein Hörer darf nicht alle blockieren */ } }
   }
 
+  /**
+   * Die Grenzen beim Hintergrund erfragen – einmal und dann immer wieder.
+   *
+   * Alles auf einmal zu laden wäre bei Jahren an Daten unsinnig. Gefragt wird
+   * nur, von wann bis wann es überhaupt etwas gibt; was davon gezeichnet
+   * wird, entscheidet danach der Ausschnitt. Wer die Seite lange offen
+   * lässt, bekommt neu hinzugekommene Daten so trotzdem mit – solange der
+   * Tab sichtbar ist, sonst wäre es Arbeit für niemanden.
+   */
+  async #grenzenHolen() {
+    clearTimeout(this.#grenzenTimer);
+    if (!this.#grenzenFn || !this.#host.isConnected) return;
+    try {
+      if (document.visibilityState !== 'hidden') {
+        const g = await this.#grenzenFn();
+        const min = g?.min ? new Date(g.min) : null;
+        const max = g?.max ? new Date(g.max) : null;
+        const anders = +(min ?? 0) !== +(this.#min ?? 0) || +(max ?? 0) !== +(this.#max ?? 0);
+        if (anders) this.setBounds(min, max);
+      }
+    } catch { /* beim nächsten Mal wieder */ }
+    if (this.#grenzenAbstand > 0 && this.#host.isConnected) {
+      this.#grenzenTimer = setTimeout(() => this.#grenzenHolen(), this.#grenzenAbstand);
+    }
+  }
+
   /* ── Übersicht ──────────────────────────────────────────────────────────── */
 
   /**
@@ -478,54 +535,88 @@ export class Zeitpicker {
     const seq = ++this.#seq;
     const von = this.#min ?? new Date(Date.now() - 365 * 86_400_000);
     const bis = this.#max ?? new Date();
-    // Ohne Bezeichner gibt es nichts zu zeigen – dann auch keinen leeren
-    // Streifen, der nur Platz wegnimmt.
-    if (!cfg.keys?.length) { this.#els.ov.hidden = true; return; }
-    this.#els.ov.hidden = false;
     if (cfg.height) this.#els.ov.style.setProperty('--dgp-ov-height', `${cfg.height}px`);
 
     if (!this.#ovGriff) {
       this.#ovGriff = this.#renderer.mount(this.#els.ov);
       this.#renderer.on?.(this.#ovGriff, 'datazoom', () => this.#ausFenster());
     }
-    const keys = cfg.keys;
-    const daten = await getData(this.#source, keys, von, bis, 86_400_000);
-    if (seq !== this.#seq) return;
+    // Entweder die fest angegebenen Bezeichner oder alles, was die
+    // angehängten Diagramme gemeldet haben.
+    const reihen = cfg.keys?.length
+      ? cfg.keys.map((k) => ({ key: k, color: cfg.color ?? '#888' }))
+      : [...this.#fremdReihen.values()].flat();
+    const keys = [...new Set(reihen.map((r) => r.key))];
+    if (!keys.length) { this.#els.ov.hidden = true; return; }
 
-    const punkte = [];
-    for (const k of keys) {
-      for (const r of daten?.zeilen?.[k] ?? []) {
-        const t = typeof r.start === 'number' ? r.start : Date.parse(r.start);
-        const v = Number(r.change ?? r.mean);
-        if (Number.isFinite(t) && Number.isFinite(v)) punkte.push([t, v]);
-      }
+    // Nur neu holen, wenn sich Zeitraum oder Reihen geändert haben. Das
+    // Verschieben des Fensters allein ändert an der groben Kurve nichts.
+    const kennung = `${+von}|${+bis}|${keys.join(',')}`;
+    if (kennung !== this.#ovSpanne) {
+      const daten = await getData(this.#source, keys, von, bis, 86_400_000);
+      if (seq !== this.#seq) return;
+      this.#ovDaten = daten?.zeilen ?? {};
+      this.#ovSpanne = kennung;
     }
-    punkte.sort((a, b) => a[0] - b[0]);
 
-    const hoehe = cfg.height ?? 64;
-    const f = cfg.color ?? '#888';
+    const linien = reihen.map((r) => {
+      const punkte = [];
+      for (const z of this.#ovDaten?.[r.key] ?? []) {
+        const t = typeof z.start === 'number' ? z.start : Date.parse(z.start);
+        const v = Number(z.change ?? z.mean);
+        if (Number.isFinite(t) && Number.isFinite(v)) punkte.push([t, Math.abs(v)]);
+      }
+      punkte.sort((a, b) => a[0] - b[0]);
+      return { name: r.name ?? r.key, farbe: r.color ?? cfg.color ?? '#888', punkte };
+    }).filter((l) => l.punkte.length);
+    if (!linien.length) { this.#els.ov.hidden = true; return; }
+    this.#els.ov.hidden = false;
+
+    const hoehe = cfg.height ?? 72;
+    const f = linien[0].farbe;
+    const achse = 16;                     // Platz für die Zeitskala unten
+    const textFarbe = cfg.text_color ?? '#8a8f96';
+    // Der Regler liegt über den Kurven, nicht daneben: So sieht man, welcher
+    // Ausschnitt gerade unten im Großen steht, und kann ihn direkt darin
+    // verschieben. Sein eigener Kurvenschatten wäre dann doppelt gemoppelt.
     this.#renderer.draw(this.#ovGriff, {
       animation: false,
-      grid: { left: 0, right: 0, top: 0, bottom: 0, height: 0 },
-      xAxis: [{ type: 'time', min: +von, max: +bis, show: false }],
+      grid: { left: 0, right: 0, top: 2, bottom: achse },
+      xAxis: [
+        {
+          // Die sichtbare Achse: fest auf den ganzen Zeitraum. Grob
+          // beschriftet, damit man sieht, von wann bis wann es überhaupt
+          // Daten gibt.
+          type: 'time', min: +von, max: +bis,
+          axisLine: { show: false }, axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: { color: textFarbe, fontSize: 10, hideOverlap: true, margin: 6 },
+        },
+        {
+          // Eine zweite Achse nur für den Regler. Ohne sie würde er die
+          // sichtbare Achse mitzoomen – dann zeigt die Übersicht genau den
+          // Ausschnitt, den sie eigentlich einordnen soll.
+          type: 'time', min: +von, max: +bis, show: false, gridIndex: 0,
+        },
+      ],
       yAxis: [{ type: 'value', show: false, min: 0 }],
       tooltip: { show: false },
       dataZoom: [{
-        type: 'slider', xAxisIndex: 0, showDetail: false, brushSelect: false,
-        showDataShadow: true, top: 2, height: hoehe - 4,
-        borderColor: 'transparent', backgroundColor: 'transparent',
-        fillerColor: mitAlpha(f, 0.22),
-        dataBackground: { lineStyle: { color: f, width: 1, opacity: .7 },
-          areaStyle: { color: f, opacity: .22 } },
-        selectedDataBackground: { lineStyle: { color: f, width: 1.5 },
-          areaStyle: { color: f, opacity: .5 } },
+        type: 'slider', xAxisIndex: 1, showDetail: false, brushSelect: false,
+        showDataShadow: false,
+        top: 0, bottom: achse, borderColor: 'transparent', backgroundColor: 'transparent',
+        fillerColor: mitAlpha(f, 0.18),
         handleStyle: { color: f, borderColor: f },
-        moveHandleStyle: { color: f, opacity: .5 },
+        moveHandleStyle: { color: f, opacity: .6 },
+        emphasis: { handleStyle: { color: f, borderColor: f } },
         startValue: +this.#start, endValue: +this.#end,
       }],
-      // Unsichtbar – sie liefert nur die Zahlen für den Schatten im Regler
-      series: [{ type: 'line', data: punkte, symbol: 'none', silent: true,
-        lineStyle: { opacity: 0 }, itemStyle: { opacity: 0 } }],
+      series: linien.map((l) => ({
+        type: 'line', name: l.name, data: l.punkte, symbol: 'none', smooth: true, silent: true,
+        xAxisIndex: 0,
+        lineStyle: { width: 1, color: l.farbe },
+        areaStyle: { color: mitAlpha(l.farbe, .18) },
+      })),
     });
     this.#renderer.resize?.(this.#ovGriff);
   }
