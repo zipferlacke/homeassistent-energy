@@ -4,11 +4,10 @@
  * kalendergenauen Zeiträumen, HTML-Legende und Bucket-Zeitspannen im Tooltip.
  */
 import { registerCard, cssColor } from './we-shared.js';
+import { getData, haStats } from './we-data-source.js';
 
 const STUNDE = 3_600_000;
-// Fünf-Minuten-Werte hängen an den Rohdaten des Recorders (purge_keep_days,
-// voreingestellt 10 Tage). Einen Tag Sicherheitsabstand lassen wir.
-const FEIN_MS = 9 * 86_400_000;
+const TAG = 86_400_000;
 
 class WueflEnergyChart extends HTMLElement {
     #config = {};
@@ -328,16 +327,18 @@ class WueflEnergyChart extends HTMLElement {
     }
 
     /**
-     * Raster, das für den Zeitraum auch Daten liefert.
+     * Wunschraster auf das anheben, was die Quelle hergibt.
      *
-     * Unter einer Stunde gibt es nur die Fünf-Minuten-Statistik, und die
-     * reicht keine zehn Tage zurück. Für ältere Zeiträume bliebe ein feineres
-     * Raster leer – also lieber stündlich zeichnen als gar nicht.
+     * Für einen Tag sind 10-Minuten-Balken gewünscht; liegen für diesen Tag
+     * aber nur Stundenwerte vor – weil der Recorder die feinen Werte längst
+     * aufgeräumt hat oder weil sie importiert wurden –, dann sind Stunden das
+     * Feinste, was es zu zeigen gibt. Leere Balken helfen niemandem.
      */
-    #rasterMitDaten(bucketInfo, start) {
-        if (bucketInfo.ms >= STUNDE) return bucketInfo;
-        if (Date.now() - start.getTime() < FEIN_MS) return bucketInfo;
-        return { ms: STUNDE, unit: 'h', val: 1 };
+    #rasterAusQuelle(bucketInfo, stufeMs) {
+        if (!stufeMs || stufeMs <= bucketInfo.ms) return bucketInfo;
+        if (stufeMs <= STUNDE) return { ms: STUNDE, unit: 'h', val: 1 };
+        if (stufeMs <= TAG) return { ms: TAG, unit: 'd', val: 1 };
+        return { ms: stufeMs, unit: 'm', val: 1 };
     }
 
     /**
@@ -636,10 +637,7 @@ class WueflEnergyChart extends HTMLElement {
         this.#els.title.textContent = this.#config.title || '';
 
         const { start, end } = this.#calculateTimeBounds(this.#config.range, this.#config.start, this.#config.end);
-        const bucketInfo = this.#rasterMitDaten(
-            this.#parseBucketSize(this.#config.aggregation, this.#config.range), start);
-        const bucketMs = bucketInfo.ms;
-        const period = bucketMs >= 86400000 ? 'day' : bucketMs >= STUNDE ? 'hour' : '5minute';
+        const wunsch = this.#parseBucketSize(this.#config.aggregation, this.#config.range);
 
         // Reihen mit fertigen Daten (z. B. Prognose) brauchen keine Statistik
         const idsToFetch = new Set(this.#config.series.filter(s => s.entity && !s.data).map(s => s.entity));
@@ -650,14 +648,11 @@ class WueflEnergyChart extends HTMLElement {
         ];
 
         try {
-            // Reihen mit fertigen Punkten (Geld, Prognose) brauchen keine Abfrage
-            const dbStats = idsToFetch.size
-                ? await this.#hass.callWS({
-                    type: 'recorder/statistics_during_period',
-                    start_time: start.toISOString(), end_time: end.toISOString(),
-                    statistic_ids: Array.from(idsToFetch), period, types: ['change', 'mean', 'max', 'min'],
-                })
-                : {};
+            // Reihen mit fertigen Punkten (Geld, Prognose) brauchen keine Abfrage.
+            // Sonst: so fein holen, wie die Quelle diesen Zeitraum wirklich führt.
+            const quelle = await getData(haStats(this.#hass), idsToFetch, start, end, wunsch.ms);
+            const dbStats = quelle?.zeilen ?? {};
+            const bucketInfo = this.#rasterAusQuelle(wunsch, quelle?.stufeMs);
             if (stale()) return;
 
             const processedSeries = this.#config.series.map(s => {
@@ -704,19 +699,16 @@ class WueflEnergyChart extends HTMLElement {
                     `${Number(c.value).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ${c.unit || ''}`.trim();
                 if (c.color) this.#els.chip.style.setProperty('--chip-color', c.color);
             } else if (this.#config.chip) {
-                const spanDays = (end - start) / 86400000;
-                // 5-Minuten-Werte hält der Recorder nur ~10 Tage – ältere Tage stündlich
-                const recent = Date.now() - start < FEIN_MS;
-                const chipPeriod = spanDays <= 1.05 ? (recent ? '5minute' : 'hour') : 'day';
+                // Der Wert oben rechts summiert den ganzen Zeitraum. Dafür
+                // reicht ein gröberes Raster als für die Kurve – nur bei
+                // einem einzelnen Tag darf es fein sein.
+                const spanDays = (end - start) / TAG;
+                const chipWunsch = spanDays <= 1.05 ? 300_000 : TAG;
                 let chipStats = dbStats;
-                if (chipPeriod !== period && idsToFetch.size) {
+                if (chipWunsch !== wunsch.ms && idsToFetch.size) {
                     try {
-                        chipStats = await this.#hass.callWS({
-                            type: 'recorder/statistics_during_period',
-                            start_time: start.toISOString(), end_time: end.toISOString(),
-                            statistic_ids: Array.from(idsToFetch), period: chipPeriod,
-                            types: ['change', 'mean', 'max', 'min'],
-                        });
+                        const c2 = await getData(haStats(this.#hass), idsToFetch, start, end, chipWunsch);
+                        chipStats = c2?.zeilen ?? dbStats;
                     } catch {
                         chipStats = dbStats;
                     }
