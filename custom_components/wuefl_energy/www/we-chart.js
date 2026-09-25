@@ -413,6 +413,24 @@ class WueflEnergyChart extends HTMLElement {
     }
 
     /**
+     * Ab welchem Rückschritt ein Zähler als zurückgesetzt gilt.
+     *
+     * Maßstab ist, was dieser Zähler im Zeitraum normalerweise in einem
+     * Schritt schafft (90. Perzentil der Zuwächse). Ein Leseversatz bleibt
+     * weit darunter, ein kaputter Zählerstand liegt weit darüber. Ohne
+     * brauchbaren Maßstab (zu wenige Werte) wird nichts verschluckt.
+     */
+    #rueckfallGrenze(rows, isMean, onlyPositive) {
+        if (isMean || !onlyPositive) return Infinity;
+        const pos = (rows ?? [])
+            .map((r) => Number(r.change))
+            .filter((v) => Number.isFinite(v) && v > 0)
+            .sort((a, b) => a - b);
+        if (pos.length < 4) return Infinity;
+        return pos[Math.floor(pos.length * 0.9)] * 3;
+    }
+
+    /**
      * Statistikzeilen aufbereiten: Rückschritte verrechnen und verspätete
      * Zählerschritte auf die Nullen davor verteilen.
      *
@@ -431,6 +449,13 @@ class WueflEnergyChart extends HTMLElement {
         // Nulllinie. Der Rückschritt wird deshalb mit den nächsten Schritten
         // verrechnet – die Summe über den Zeitraum bleibt damit dieselbe.
         let carry = 0;
+        // Ein Zählerstand, der um ein Vielfaches eines normalen Schritts
+        // zurückfällt, ist kein Leseversatz mehr, sondern ein Rücksetzen –
+        // etwa nach einem verunglückten Import. Verrechnet man so etwas nach
+        // vorn, frisst es alles Folgende auf: Ein Rückfall um 10 MWh legt bei
+        // einer PV-Anlage Jahre lahm, das Diagramm bleibt dahinter leer. So
+        // ein Sprung wird deshalb nur an seiner Stelle verschluckt.
+        const sprungGrenze = this.#rueckfallGrenze(rows, isMean, onlyPositive);
 
         for (const row of rows ?? []) {
             const t = typeof row.start === 'number' ? row.start : Date.parse(row.start);
@@ -439,6 +464,13 @@ class WueflEnergyChart extends HTMLElement {
             let value = Number(isMean ? (row.mean ?? row.state) : row.change);
             if (!Number.isFinite(value)) continue;
             if (onlyPositive && !isMean) {
+                if (value < -sprungGrenze) {
+                    // Rücksetzen: die Kette beginnt hier neu, offene Schuld
+                    // aus kleinen Rückschritten davor ist damit hinfällig
+                    carry = 0;
+                    out.push([t, 0]);
+                    continue;
+                }
                 value += carry;
                 carry = value < 0 ? value : 0;
                 if (value < 0) value = 0;
