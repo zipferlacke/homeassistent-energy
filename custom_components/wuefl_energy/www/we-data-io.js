@@ -837,8 +837,13 @@ class WueflDataIo extends HTMLElement {
           <span class="note">Löscht die <b>gesamte</b> Langzeitstatistik der gewählten Zähler – auch das,
             was Home Assistant selbst aufgezeichnet hat. Gedacht für den Fall, dass in der Summenkette
             Sprünge aus früheren Importen stecken: Die lassen sich nicht stückweise heilen, weil ein Import
-            immer nur seinen eigenen Bereich überschreibt. Danach alles in einem Zug neu importieren,
-            ältestes Jahr zuerst.</span>
+            immer nur seinen eigenen Bereich überschreibt. Danach alles neu importieren,
+            <b>jüngstes Jahr zuerst</b>.</span>
+          <span class="note">Die Reihenfolge ist wichtig: Ein Import hängt sich immer an die nächsten
+            vorhandenen Werte <i>danach</i> an. Home Assistant zeichnet nebenher weiter auf, nach dem
+            Leeren steht also schon wieder etwas bei „heute“. Von hinten nach vorn ist der Nachbar jedes
+            Blocks der Block davor – von vorn nach hinten hängen sich dagegen alle an dieselbe Stelle bei
+            heute, und zwischen den Jahren klafft danach genau der Sprung, den man loswerden wollte.</span>
           <span class="note danger">Vorher exportieren! Was hier gelöscht wird, ist weg –
             der Export oben ist die einzige Sicherung.</span>
           <div class="list wipe-list"></div>
@@ -1153,7 +1158,7 @@ class WueflDataIo extends HTMLElement {
       box.hidden = false;
       setMsg(msg, gesamt ? 'err' : 'ok');
       msg.textContent = gesamt
-        ? 'Jede Stelle ist eine Naht. Heilen lässt sie sich nur, indem der Zähler geleert und in einem Zug neu importiert wird – ein Import über einen Teilbereich setzt die Naht nur an seinen eigenen Rand.'
+        ? 'Jede Stelle ist eine Naht. Ein Import über einen Teilbereich schiebt sie nur an seinen eigenen Rand – weg geht sie, indem der Zähler geleert und neu importiert wird, jüngstes Jahr zuerst.'
         : 'Keine Nahtstellen gefunden. Fehlt trotzdem etwas im Diagramm, liegt es nicht an der Summenkette.';
     } catch (err) {
       setMsg(msg, 'err');
@@ -1183,7 +1188,7 @@ class WueflDataIo extends HTMLElement {
       this.#els.go.hidden = true;
       this.#els.wipeList.querySelectorAll('input:checked').forEach((c) => { c.checked = false; });
       setMsg(msg, 'ok');
-      msg.textContent = `Geleert: ${namen.join(', ')}. Jetzt neu importieren, ältestes Jahr zuerst.`;
+      msg.textContent = `Geleert: ${namen.join(', ')}. Jetzt neu importieren – jüngstes Jahr zuerst.`;
     } catch (err) {
       setMsg(msg, 'err');
       msg.textContent = `Leeren fehlgeschlagen: ${err?.message ?? err}`;
