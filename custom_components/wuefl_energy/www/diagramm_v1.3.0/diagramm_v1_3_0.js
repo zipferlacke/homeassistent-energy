@@ -840,12 +840,12 @@ export class Diagramm {
       el.style.setProperty('--dg-chip-color', farbe(this.#host, c.color, reihe?.farbe ?? ''));
       const einheit = c.unit ?? reihe?.einheit ?? achsen[0]?.unit ?? '';
       el.hidden = false;
-      // `icon` wird als Markup eingesetzt – ein UTF-8-Zeichen genauso wie
-      // <span class="msr">bolt</span> oder <ha-icon icon="mdi:flash">. Die
-      // Beschriftung bleibt Text, damit ein Name aus den Daten nichts
-      // ausführen kann.
-      el.innerHTML = (c.icon ? `<span class="dg_chip_icon">${c.icon}</span>` : '')
-        + (c.label ? `<span class="dg_chip_label">${html(c.label)}</span>` : '')
+      // Die Beschriftung wird als Markup eingesetzt. So steckt ein Icon
+      // einfach mit drin – '☀ Erzeugt' genauso wie
+      // '<span class="msr">bolt</span> Netz'. Ein eigenes Feld dafür braucht
+      // es nicht. Was hier hineingeht, schreibt die Konfiguration; käme es
+      // aus den Daten, müsste der Aufrufer es vorher entschärfen.
+      el.innerHTML = (c.label ? `<span class="dg_chip_label">${c.label}</span>` : '')
         + `${html(nf(wert, c.decimals ?? 2))}${einheit ? ` ${html(einheit)}` : ''}`;
     });
   }

@@ -76,7 +76,7 @@
   padding: 3px 11px;
   white-space: nowrap;
 }
-.dg_chip_label { font-weight: 500; opacity: .85; }
+.dg_chip_label { align-items: center; display: inline-flex; font-weight: 500; gap: .3em; opacity: .85; }
 
 .dg_btn {
   align-items: center;
@@ -312,7 +312,3 @@
 .dg.dg_nackt > .dg_plot { padding: 0; }
 .dg.dg_nackt > .dg_note { padding: 4px 0 0; }
 
-/* Icon im Chip – als Markup übergeben, damit auch eine Icon-Schrift oder ein
-   eigenes Element hineinpasst. */
-.dg_chip_icon { align-items: center; display: inline-flex; font-size: 1.15em; line-height: 1; }
-.dg_chip_icon:empty { display: none; }
