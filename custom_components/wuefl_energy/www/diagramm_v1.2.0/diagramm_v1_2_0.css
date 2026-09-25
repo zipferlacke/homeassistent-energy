@@ -210,25 +210,33 @@
   justify-content: space-between;
 }
 
+/* Der Umschalter benutzt dieselben Variablen wie die Eingabefelder von
+   wuefl-libs (css/components/_inputs.css). Ist das Stilblatt der Bibliothek
+   geladen, fügt er sich von selbst ein; ohne sie greifen die Rückfallwerte
+   und er sieht trotzdem ordentlich aus. */
 .dgp_stufen { display: flex; gap: 2px; }
 .dgp_stufe {
-  background: none;
-  border: 1px solid var(--dg-line, #e0e0e0);
-  color: var(--dg-text-soft, #5f6368);
+  appearance: none;
+  background-color: var(--bg-input, color-mix(in srgb, currentColor 7%, transparent));
+  border: 0;
+  color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: .875rem;
-  padding: 5px 12px;
+  font-size: var(--fs-input, .875rem);
+  height: clamp(min-content, var(--input-height, auto), 100%);
+  outline: none;
+  padding: .25rem 1rem;
+  text-align: center;
 }
-.dgp_stufe:first-child { border-radius: 999px 0 0 999px; }
-.dgp_stufe:last-child { border-radius: 0 999px 999px 0; }
-.dgp_stufe + .dgp_stufe { border-left: 0; }
-.dgp_stufe:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.dgp_stufe:first-child { border-radius: var(--br-input, 999px) 0 0 var(--br-input, 999px); }
+.dgp_stufe:last-child { border-radius: 0 var(--br-input, 999px) var(--br-input, 999px) 0; }
+.dgp_stufe:hover { background-color: var(--clr-primary-100, color-mix(in srgb, currentColor 14%, transparent)); }
+.dgp_stufe:focus-visible { outline: 1px solid var(--clr-primary-900, currentColor); }
 .dgp_stufe[aria-pressed="true"] {
-  background: color-mix(in srgb, currentColor 14%, transparent);
-  color: var(--dg-text, #1c1c1c);
+  background-color: var(--clr-primary-400, color-mix(in srgb, currentColor 20%, transparent));
   font-weight: 600;
 }
+.dgp_stufe[aria-pressed="true"]:hover { background-color: var(--clr-primary-300, color-mix(in srgb, currentColor 24%, transparent)); }
 
 .dgp_nav { align-items: center; display: flex; gap: 2px; }
 .dgp_btn {
@@ -239,20 +247,43 @@
 .dgp_btn:disabled { cursor: default; opacity: .3; }
 
 .dgp_label {
-  background: none; border: 0; border-radius: 8px; color: inherit; cursor: pointer;
-  font: inherit; font-weight: 600; min-width: 12ch; padding: 5px 10px; text-align: center;
+  background: none; border: 0; border-radius: var(--br-input, 8px); color: inherit;
+  cursor: pointer; font: inherit; font-weight: 600; min-width: 12ch;
+  padding: .25rem .6rem; text-align: center;
 }
 .dgp_label:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
 
 .dgp_felder { align-items: center; display: flex; gap: 6px; }
 .dgp_felder input {
-  background: none; border: 1px solid var(--dg-line, #e0e0e0); border-radius: 8px;
-  color: inherit; font: inherit; font-size: .875rem; padding: 4px 8px;
+  appearance: none;
+  background-color: var(--bg-input, color-mix(in srgb, currentColor 7%, transparent));
+  border: 0;
+  border-radius: var(--br-input, 8px);
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-input, .875rem);
+  height: clamp(min-content, var(--input-height, auto), 100%);
+  outline: none;
+  padding: .25rem 1rem;
+  text-align: center;
 }
+.dgp_felder input:hover { background-color: var(--clr-primary-100, color-mix(in srgb, currentColor 14%, transparent)); }
 .dgp_bis { color: var(--dg-text-soft, #5f6368); }
+/* Übernimmt der Kalender die Felder, bringt er seinen eigenen Auslöser mit –
+   unser Trennstrich zwischen den beiden Feldern hat dann nichts mehr zu
+   trennen. Nur ohne Kalender bleibt er stehen. */
+.dgp_felder:not(.dgp_schlicht) .dgp_bis { display: none; }
 /* Hängt der Kalender aus wuefl-libs daran, versteckt er die Felder selbst.
    Ohne ihn bleiben sie sichtbar – schlicht, aber vollständig bedienbar. */
 
 .dgp_ov { height: var(--dgp-ov-height); width: 100%; }
 .dgp_ov[hidden] { display: none; }
 .dgp_ov .dg_canvas { height: 100%; width: 100%; }
+
+/* Ohne Kachel: kein Hintergrund, kein Rand, kein Innenabstand – das Diagramm
+   sitzt dann nackt in dem, was es umgibt (`card: false`). */
+.dg.dg_nackt { background: none; }
+.dg.dg_nackt > .dg_head { padding: 0 0 4px; }
+.dg.dg_nackt > .dg_legend { padding: 4px 0; }
+.dg.dg_nackt > .dg_plot { padding: 0; }
+.dg.dg_nackt > .dg_note { padding: 4px 0 0; }

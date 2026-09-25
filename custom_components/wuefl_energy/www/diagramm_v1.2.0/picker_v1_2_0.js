@@ -26,7 +26,7 @@
  * folgen alle angehängten Diagramme.
  */
 
-import { getData } from './diagramm_v1_1_0.js';
+import { getData, mitAlpha } from './diagramm_v1_2_0.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Verzeichnis: wer hört auf welche id
@@ -117,10 +117,19 @@ export function beschriftung(stufe, start, end) {
 const html = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export class Zeitpicker {
+  /** Eine DatePicker-Instanz je Klasse, für alle Picker der Seite. */
+  static #instanzen = new WeakMap();
+  static #instanz(Klasse) {
+    if (!Zeitpicker.#instanzen.has(Klasse)) {
+      try { Zeitpicker.#instanzen.set(Klasse, new Klasse()); } catch { return null; }
+    }
+    return Zeitpicker.#instanzen.get(Klasse);
+  }
+
   #host; #els = {}; #hoerer = new Set();
   #stufe = 'day'; #anker = new Date(); #start; #end;
   #min = null; #max = null;
-  #dp = null; #datePicker = null;
+  #dp = null; #datePicker = null; #dpOpts = null;
   #ov = null; #ovGriff = null; #ovCfg = null; #renderer = null; #source = null;
   #id = null; #seq = 0;
 
@@ -128,7 +137,10 @@ export class Zeitpicker {
    * @param {Element} host
    * @param {object}  opts
    * @param {string}  opts.id                Name, unter dem Diagramme sich anhängen
-   * @param {object}  [opts.datePicker]      DatePicker aus wuefl-libs (optional)
+   * @param {object}  [opts.datePicker]      DatePicker aus wuefl-libs (Klasse
+   *        oder Instanz, optional)
+   * @param {object}  [opts.datePickerOptions] wird an dessen create() gereicht –
+   *        etwa eine eigene Schnellwahl (`quick`)
    * @param {string}  [opts.granularity]     day | week | month | year
    * @param {Date}    [opts.min] [opts.max]  Grenzen der Auswahl
    * @param {object}  [opts.overview]        { keys, renderer, source, height, color }
@@ -138,6 +150,7 @@ export class Zeitpicker {
     this.#host = host;
     this.#id = opts.id ?? null;
     this.#datePicker = opts.datePicker ?? null;
+    this.#dpOpts = opts.datePickerOptions ?? null;
     this.#stufe = opts.granularity ?? 'day';
     this.#min = opts.min ? new Date(opts.min) : null;
     this.#max = opts.max ? new Date(opts.max) : null;
@@ -184,10 +197,27 @@ export class Zeitpicker {
     this.#melden();
   }
 
+  /**
+   * Welche Reihen die Übersicht zeigt – nachreichbar.
+   *
+   * Oft steht erst nach einer Abfrage fest, welche Bezeichner es überhaupt
+   * gibt. Ohne Übersicht in den Optionen tut die Methode nichts.
+   */
+  setOverviewKeys(keys) {
+    if (!this.#ovCfg) return;
+    this.#ovCfg = { ...this.#ovCfg, keys: [...(keys ?? [])] };
+    this.#uebersicht();
+  }
+
   /** Grenzen nachreichen, z. B. sobald bekannt ist, ab wann es Daten gibt. */
   setBounds(min, max) {
     this.#min = min ? new Date(min) : null;
     this.#max = max ? new Date(max) : null;
+    // Der Kalender bekommt die Grenzen erst beim Erstellen mit – kommen sie
+    // später, muss er sie nachgereicht bekommen.
+    if (this.#dp) {
+      try { this.#dp.min = this.#min; this.#dp.max = this.#max; } catch { /* ältere Fassung */ }
+    }
     this.#klemmen();
     this.#zeichnen();
     if (this.#ovCfg) this.#uebersicht();
@@ -264,11 +294,18 @@ export class Zeitpicker {
     von.addEventListener('change', uebernehmen);
     zu.addEventListener('change', uebernehmen);
 
-    if (this.#datePicker?.create) {
+    // Übergeben werden darf beides: die Klasse DatePicker oder eine fertige
+    // Instanz davon. create() ist eine Methode der Instanz, also wird die
+    // Klasse hier einmal angelegt – eine pro Seite reicht.
+    const bausatz = this.#datePicker?.create
+      ? this.#datePicker
+      : (typeof this.#datePicker === 'function' ? Zeitpicker.#instanz(this.#datePicker) : null);
+    if (bausatz) {
       try {
-        this.#dp = this.#datePicker.create([von, zu], {
+        this.#dp = bausatz.create([von, zu], {
           outputFormat: 'iso', showDate: true, showTime: false,
           min: this.#min, max: this.#max,
+          ...this.#dpOpts,
         });
       } catch { this.#dp = null; }   // dann eben die Felder des Browsers
     }
@@ -332,9 +369,11 @@ export class Zeitpicker {
   /**
    * Die kleine Kurve über den ganzen Zeitraum, mit dem Ausschnitt als Fenster.
    *
-   * Gezeichnet wird mit demselben Renderer wie die großen Diagramme – das
-   * Fenster ist ECharts' Schieberegler, der kann ziehen und aufziehen von
-   * Haus aus. Was er meldet, geht als neuer Zeitraum an alle Hörer.
+   * Der Schieberegler von ECharts zeichnet die Kurve selbst als Schatten in
+   * seinem Hintergrund – eine zweite Kurve darüber wäre dieselbe Linie
+   * doppelt. Die eigentliche Reihe bleibt deshalb unsichtbar und liefert nur
+   * die Zahlen für den Schatten. Der Regler füllt den ganzen Streifen; seine
+   * Höhe kommt aus `overview.height`.
    */
   async #uebersicht() {
     const cfg = this.#ovCfg;
@@ -342,6 +381,9 @@ export class Zeitpicker {
     const seq = ++this.#seq;
     const von = this.#min ?? new Date(Date.now() - 365 * 86_400_000);
     const bis = this.#max ?? new Date();
+    // Ohne Bezeichner gibt es nichts zu zeigen – dann auch keinen leeren
+    // Streifen, der nur Platz wegnimmt.
+    if (!cfg.keys?.length) { this.#els.ov.hidden = true; return; }
     this.#els.ov.hidden = false;
     if (cfg.height) this.#els.ov.style.setProperty('--dgp-ov-height', `${cfg.height}px`);
 
@@ -349,7 +391,7 @@ export class Zeitpicker {
       this.#ovGriff = this.#renderer.mount(this.#els.ov);
       this.#renderer.on?.(this.#ovGriff, 'datazoom', () => this.#ausFenster());
     }
-    const keys = cfg.keys ?? [];
+    const keys = cfg.keys;
     const daten = await getData(this.#source, keys, von, bis, 86_400_000);
     if (seq !== this.#seq) return;
 
@@ -363,21 +405,30 @@ export class Zeitpicker {
     }
     punkte.sort((a, b) => a[0] - b[0]);
 
+    const hoehe = cfg.height ?? 64;
+    const f = cfg.color ?? '#888';
     this.#renderer.draw(this.#ovGriff, {
       animation: false,
-      grid: { left: 2, right: 2, top: 4, bottom: 20 },
-      xAxis: [{ type: 'time', min: +von, max: +bis, axisLabel: { show: false },
-        axisTick: { show: false }, axisLine: { show: false } }],
+      grid: { left: 0, right: 0, top: 0, bottom: 0, height: 0 },
+      xAxis: [{ type: 'time', min: +von, max: +bis, show: false }],
       yAxis: [{ type: 'value', show: false, min: 0 }],
       tooltip: { show: false },
       dataZoom: [{
         type: 'slider', xAxisIndex: 0, showDetail: false, brushSelect: false,
-        height: 18, bottom: 0, borderColor: 'transparent',
+        showDataShadow: true, top: 2, height: hoehe - 4,
+        borderColor: 'transparent', backgroundColor: 'transparent',
+        fillerColor: mitAlpha(f, 0.22),
+        dataBackground: { lineStyle: { color: f, width: 1, opacity: .7 },
+          areaStyle: { color: f, opacity: .22 } },
+        selectedDataBackground: { lineStyle: { color: f, width: 1.5 },
+          areaStyle: { color: f, opacity: .5 } },
+        handleStyle: { color: f, borderColor: f },
+        moveHandleStyle: { color: f, opacity: .5 },
         startValue: +this.#start, endValue: +this.#end,
       }],
-      series: [{ type: 'line', data: punkte, symbol: 'none', smooth: true,
-        lineStyle: { width: 1, color: cfg.color ?? '#888' },
-        areaStyle: { color: cfg.color ?? '#888', opacity: 0.2 } }],
+      // Unsichtbar – sie liefert nur die Zahlen für den Schatten im Regler
+      series: [{ type: 'line', data: punkte, symbol: 'none', silent: true,
+        lineStyle: { opacity: 0 }, itemStyle: { opacity: 0 } }],
     });
     this.#renderer.resize?.(this.#ovGriff);
   }

@@ -52,7 +52,7 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
-import { onPicker } from './picker_v1_1_0.js';
+import { onPicker } from './picker_v1_2_0.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
@@ -442,8 +442,8 @@ function farbe(el, wert, rueckfall = '#888888') {
   return c || '#888888';
 }
 
-/** Farbe mit Deckkraft – über canvas, damit auch Namen und hsl() gehen. */
-function mitAlpha(c, alpha) {
+/** Farbe mit Deckkraft – über canvas, damit auch Namen, hsl() und oklch() gehen. */
+export function mitAlpha(c, alpha) {
   try {
     const ctx = document.createElement('canvas').getContext('2d');
     ctx.fillStyle = c;
@@ -789,6 +789,9 @@ export class Diagramm {
    */
   #kopf() {
     const cfg = this.#cfg;
+    // `card: false` nimmt dem Diagramm Hintergrund, Rand und Innenabstand –
+    // dann sitzt es nackt in dem, was es umgibt.
+    this.#host.classList.toggle('dg_nackt', cfg.card === false);
     this.#els.title.textContent = cfg.title ?? '';
     this.#els.tools.replaceChildren();
     // Platzhalter für die Chips – Farbe und Inhalt kommen mit den Daten
