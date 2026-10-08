@@ -91,8 +91,38 @@ selbst: Sie traegt sie nach dem Start in `automations.yaml` ein und haelt sie
 bei jedem Update aktuell – dafuer ist nichts zu tun. Eine alte Kopie unter
 `config/packages/wuefl_automation.yaml` benennt sie in
 `wuefl_automation.yaml.alt` um, damit nicht doppelt geregelt wird.
-*Nur lesen für alle* in der Zuordnung pausiert die Automation: Solange es an
-ist, wird nichts geschrieben; danach regelt sie sofort wieder.
+*Nur lesen für alle* in der Zuordnung gibt die Anlage frei: Beim Einschalten
+setzt die Automation einmal alles zurueck, was sie schreiben kann – je
+Wallbox voller Ladestrom, Laden erlaubt und 3-phasig, der Hausakku geht in
+den Normalbetrieb. Danach schreibt sie nichts mehr, andere Steuerungen
+(Wechselrichter, Wallbox-App, eigene Automationen) haben freie Hand. Ein
+angestecktes Auto laedt dann so, wie die Wallbox es von sich aus tut. Nach
+dem Ausschalten regelt die Automation sofort wieder.
+
+**Mehrere Wallboxen:** Jede Wallbox hat ihren eigenen Lademodus und wird
+einzeln geregelt. *Schnell* laedt mit voller Leistung. Den Solarueberschuss
+bekommen die Wallboxen in der Reihenfolge der Zuordnung: die erste zuerst,
+was uebrig bleibt, geht an die naechste. Was eine Wallbox nach zwei Minuten
+nicht abnimmt (Auto voll oder laedt nur 1-phasig), bleibt fuer die naechste.
+Ist eine Wallbox nicht erreichbar, regelt die Automation die anderen und den
+Hausakku trotzdem weiter.
+
+**Hausakku beim Laden:** Ohne *Hausakku-Freigabe* sperrt die Automation das
+Entladen, solange ein Auto laedt. Mit Freigabe darf der Akku bis zur
+Batteriereserve mitladen; als Beitrag rechnet die Automation 10 % weniger als
+seine hoechste Entladeleistung ein (Zuordnung → Hausbatterie → *Hardware &
+Grenzen*: feste Zahl in Watt oder die Zahl-Entitaet der Entladegrenze, deren
+Obergrenze gilt). Ohne Angabe gibt es keinen festen Beitrag – der Akku wird
+dann nur nicht gesperrt. Reicht der Beitrag allein fuer die Mindestleistung
+der Wallbox, laedt *Solar* mit Freigabe auch ohne Sonne aus dem Akku, bis die
+Reserve erreicht ist.
+
+**Notstrom:** Wird nicht eigens geregelt. Im Notstrombetrieb gilt, was im
+Akku ist – eine Reserve dafuer haelt die Automation nicht zurueck.
+
+Im Trace der Automation (Einstellungen → Automationen → *wuefl – Wallbox &
+Energiemanagement* → Traces) stehen die Messwerte je Wallbox unter `boxen`
+und die Zielwerte unter `plan`.
 
 **Nur ansehen fuer einzelne Personen:** In der Zuordnung oben lassen sich
 HA-Benutzer auswaehlen, die das Dashboard nur ansehen duerfen – fuer sie sind

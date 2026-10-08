@@ -40,6 +40,20 @@ class WueflNumber(NumberEntity, RestoreEntity):
         self._attr_native_unit_of_measurement = spec.get("unit")
         self._attr_native_value = spec.get("default", spec["min"])
 
+    def update_spec(self, spec: dict) -> None:
+        """Grenzen und Name aus der Zuordnung nachziehen (z. B. neue
+        Maximalleistung der Wallbox) – sonst gälte die alte Obergrenze bis zum
+        Neustart und höhere Vorgaben der Automation schlügen fehl."""
+        new = (spec["name"], spec["min"], spec["max"], spec["step"])
+        old = (self._attr_name, self._attr_native_min_value, self._attr_native_max_value, self._attr_native_step)
+        if new == old:
+            return
+        self._attr_name, self._attr_native_min_value, self._attr_native_max_value, self._attr_native_step = new
+        if self._attr_native_value is not None:
+            self._attr_native_value = min(max(self._attr_native_value, spec["min"]), spec["max"])
+        if self.hass is not None:
+            self.async_write_ha_state()
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_state()

@@ -281,6 +281,9 @@ async def async_sync_entities(hass: HomeAssistant) -> None:
         new_entities = []
         for unique_id, spec in wanted.items():
             if unique_id in current:
+                update = getattr(current[unique_id], "update_spec", None)
+                if update is not None:
+                    update(spec)
                 continue
             entity = _build_entity(platform, spec)
             if entity is None:

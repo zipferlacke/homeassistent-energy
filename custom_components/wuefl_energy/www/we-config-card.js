@@ -222,6 +222,15 @@ const BLOCKS = [
       { name: 'color_in', selector: color() },
       {
         type: 'expandable',
+        name: 'more',
+        title: 'Hardware & Grenzen',
+        schema: [
+          { name: 'max_discharge_value', selector: number(0, 50000, 100) },
+          { name: 'max_discharge', selector: { entity: { filter: [{ domain: 'number' }, { domain: 'input_number' }] } } },
+        ],
+      },
+      {
+        type: 'expandable',
         name: 'control',
         title: 'Hausakku Lade-/Entladesperre',
         schema: [
@@ -381,6 +390,8 @@ const LABELS = {
     temperatur: 'Batterietemperatur',
     color: 'Farbe Entladen',
     color_in: 'Farbe Laden',
+    max_discharge_value: 'Höchste Entladeleistung (W)',
+    max_discharge: 'Höchste Entladeleistung aus Entität',
     mode_stop_discharging: 'Aktion: Entladen stoppen (Einfrieren)',
     mode_start_charging: 'Aktion: Zwangsladen (Aus dem Netz laden)',
     normal_mode: 'Aktion: Normalbetrieb (Standard)',
@@ -472,6 +483,8 @@ const HELPERS = {
     temperatur: 'Temperatursensor des Akkus.',
     color: 'Farbe fürs Entladen in Grafik und Diagrammen. Leer = Farbe aus dem Theme.',
     color_in: 'Farbe fürs Laden. Leer = Farbe aus dem Theme.',
+    max_discharge_value: 'Was der Akku höchstens abgeben kann, in Watt. Mit „Hausakku-Freigabe“ rechnet die Automation 10 % weniger davon als Beitrag zum Laden des Autos ein. Leer oder 0 = kein fester Beitrag, der Akku wird dann nur nicht gesperrt.',
+    max_discharge: 'Alternativ zur festen Zahl: Zahl-Entität der Entladegrenze – es gilt ihre Obergrenze (max), nicht der gerade eingestellte Wert. Für Sungrow (mkaiser): "number.battery_max_discharge_power".',
     mode_stop_discharging: 'Sperrt die Akku-Entladung (z. B. beim Auto-Schnellladen). Für Sungrow (mkaiser): "scene.self_consumption_mode_no_battery_discharge".',
     mode_start_charging: 'Erzwingt das Laden aus dem Netz (z. B. bei extrem billigem Strom). Für Sungrow (mkaiser): "scene.battery_forced_charge".',
     normal_mode: 'Versetzt den Wechselrichter wieder in den normalen Eigenverbrauchsmodus. Für Sungrow (mkaiser): "scene.self_consumption_mode_max_battery_discharge".',
@@ -977,7 +990,7 @@ class WueflEnergyConfigCard extends HTMLElement {
           <div class="colors-done edit-only" id="colors-done" hidden>${icon('mdi:check-circle-outline')}<span></span></div>
 
           <div class="tool-row ro sep" id="ro-row">
-            <span class="tool-info">${icon('mdi:lock-outline')}<span><b>Nur lesen für alle</b> – sperrt Regler, Schalter und die Zuordnung. Pausiert auch die Automation – solange es an ist, wird nichts geschrieben.</span></span>
+            <span class="tool-info">${icon('mdi:lock-outline')}<span><b>Nur lesen für alle</b> – sperrt Regler, Schalter und die Zuordnung. Die Automation gibt beim Einschalten einmal alles frei (Wallboxen: voller Strom, Laden erlaubt; Hausakku: Normalbetrieb) und schreibt danach nichts mehr.</span></span>
             <span class="ro-cell"><button class="switch" id="ro-switch" role="switch" aria-checked="false" aria-label="Nur lesen für alle" type="button"><span></span></button></span>
           </div>
           <div class="ro-users-box" id="ro-users-row">

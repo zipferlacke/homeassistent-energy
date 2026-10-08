@@ -951,7 +951,8 @@ export function moreInfo(node, entityId) {
 /* ------------------------------------------------------------------ *
  * Nur-Lesen-Modus
  *
- * settings.read_only gilt für alle und pausiert zusätzlich die Automation.
+ * settings.read_only gilt für alle; die Automation gibt dann einmal alles
+ * frei, was sie schreiben kann, und schreibt danach nichts mehr.
  * settings.read_only_users sind HA-Benutzer (id), die nur ansehen dürfen –
  * für sie sperren die Karten die Bedienung, die Automation regelt weiter.
  * Ist der Modus an, sperren alle Karten ihre Bedienelemente und schicken

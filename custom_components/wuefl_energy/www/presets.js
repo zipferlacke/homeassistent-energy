@@ -72,6 +72,10 @@ export const PRESETS = {
                 in_total: 'sensor.total_battery_charge',
                 out_total: 'sensor.total_battery_discharge',
                 temperatur: 'sensor.battery_temperature',
+                // Obergrenze der Zahl = was der Akku höchstens abgibt
+                more: {
+                    max_discharge: 'number.battery_max_discharge_power',
+                },
                 control: {
                     normal_mode: 'scene.self_consumption_mode_max_battery_discharge',
                     mode_stop_discharging: 'scene.self_consumption_mode_no_battery_discharge',
