@@ -52,7 +52,7 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
-import { onPicker } from './picker_v1_7_0.js';
+import { onPicker, getPicker, Zeitpicker } from './picker_v1_7_0.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
@@ -719,7 +719,7 @@ export class Diagramm {
   #host; #renderer; #source; #els = {}; #griff = null;
   #cfg = {}; #reihen = []; #aus = new Set(); #seq = 0; #ro = null; #fs = null; #heimat = null;
   #voll = false; #zoomAn = false; #ausserhalb = null;
-  #pickerAb = null; #pickerRange = null; #picker = null;
+  #pickerAb = null; #pickerRange = null; #picker = null; #fsPicker = null;
   #schema = null; #schemaNeu = null;
 
   /**
@@ -1084,7 +1084,8 @@ export class Diagramm {
     this.#heimat = { eltern: this.#host.parentNode, platz, vor: this.#host.nextSibling };
     this.#heimat.eltern?.insertBefore(platz, this.#host);
 
-    this.#fs.replaceChildren(this.#host);
+    const pickerBox = this.#fsPickerBauen();
+    this.#fs.replaceChildren(...(pickerBox ? [pickerBox] : []), this.#host);
     this.#voll = true;
     this.#fsKnopf();
     this.#fs.showModal();
@@ -1104,10 +1105,42 @@ export class Diagramm {
       h.platz.remove();
     }
     this.#heimat = null;
+    this.#fsPicker?.destroy();
+    this.#fsPicker = null;
     if (this.#fs?.open) this.#fs.close();
     this.#fsKnopf();
     this.refresh();
     this.#nachmessen();
+  }
+
+  /**
+   * Zeitraum-Auswahl oben im Vollbild (`fullscreen_picker`).
+   *
+   * Hängt das Diagramm an einem Picker, ist es dessen Spiegel: Die Auswahl
+   * ruft den Haupt-Picker auf, der lädt wie immer, und der Zeitraum gilt nach
+   * dem Schließen weiter. `true` nimmt den Picker aus `picker`, ein Text
+   * einen anderen per id – gibt es den nicht, bleibt die Auswahl weg. Ohne
+   * jeden Picker (`true` ohne `picker`) wählt sie den Zeitraum nur für
+   * dieses Diagramm.
+   */
+  #fsPickerBauen() {
+    const wahl = this.#cfg.fullscreen_picker;
+    if (!wahl || wertAchse(this.#cfg)) return null;
+    const id = wahl === true ? this.#cfg.picker : String(wahl);
+    const haupt = id ? getPicker(id) : null;
+    if (id && !haupt) return null;
+    const box = document.createElement('div');
+    box.className = 'dg_fspicker';
+    if (haupt) {
+      this.#fsPicker = haupt.mirror(box);
+    } else {
+      const { start, end } = this.#pickerRange ?? zeitraum(this.#cfg.range, this.#cfg.start, this.#cfg.end);
+      const p = new Zeitpicker(box, {});
+      p.setRange(start, end);
+      p.on((r) => { this.#pickerRange = r; this.refresh(); });
+      this.#fsPicker = p;
+    }
+    return box;
   }
 
   /** Die eigenen Reihen an den Picker melden, für dessen Übersicht. */

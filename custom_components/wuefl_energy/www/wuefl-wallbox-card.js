@@ -171,6 +171,7 @@ details.history {
 }
 
 /* Aufklapper und Hinweis kommen aus BASE_CSS (details.fold, .info) */
+.soc-hint { margin: 0 0 .4rem; }
 .card > .info { margin-top: .8rem; }
 
 .slider {
@@ -402,7 +403,9 @@ class WueflWallboxCard extends HTMLElement {
 
       <div class="info">
         ${icon('mdi:information-outline')}
-        <div class="txt">Hausakku-Freigabe, Reserve und Preisgrenze gelten für alle Wallboxen –
+        <div class="txt">
+          <p class="soc-hint" hidden></p>
+          Hausakku-Freigabe, Reserve und Preisgrenze gelten für alle Wallboxen –
           <button type="button" class="link open-settings">in den Einstellungen</button>.</div>
       </div>
       <div class="stats"></div>
@@ -427,6 +430,7 @@ class WueflWallboxCard extends HTMLElement {
       adv: q('details.adv'),
       history: q('.history'), chart: q('we-chart'),
       openSettings: q('.open-settings'),
+      socHint: q('.soc-hint'),
       stats: q('.stats'),
     };
 
@@ -695,8 +699,11 @@ class WueflWallboxCard extends HTMLElement {
         : 'Ohne Ladestand des Autos kann die Automation nicht beim Ladeziel aufhören. Bitte in der Zuordnung unter Wallboxen „Fahrzeug Akku %“ zuordnen, z. B. aus der Integration des Autos.')
       : '';
     this.#els.track.hidden = soc === null;
-    this.#els.scale.hidden = !(soc !== null ? est.note : ohneSoc);
-    if (soc === null) this.#els.scaleNote.textContent = ohneSoc;
+    // Fehlt der Ladestand, steht der Hinweis unten im blauen Kasten – oben
+    // stand er mitten im Weg
+    this.#els.scale.hidden = soc === null || !est.note;
+    this.#els.socHint.hidden = !ohneSoc;
+    this.#els.socHint.textContent = ohneSoc;
     if (soc !== null) {
       this.#els.fill.style.width = `${Math.max(0, Math.min(100, soc))}%`;
       this.#els.markTarget.style.left = `${Math.max(0, Math.min(100, goal))}%`;

@@ -167,6 +167,7 @@ export class Zeitpicker {
   #dp = null; #datePicker = null; #dpOpts = null;
   #ov = null; #ovGriff = null; #ovCfg = null; #renderer = null; #source = null;
   #id = null; #seq = 0;
+  #opts = {}; #spiegel = new Set(); #abbau = null;
 
   /**
    * @param {Element} host
@@ -192,6 +193,7 @@ export class Zeitpicker {
   constructor(host, opts = {}) {
     if (!host) throw new Error('[picker] Ohne Host-Element geht es nicht.');
     this.#host = host;
+    this.#opts = opts;
     this.#id = opts.id ?? null;
     this.#datePicker = opts.datePicker ?? null;
     this.#dpOpts = opts.datePickerOptions ?? null;
@@ -231,12 +233,53 @@ export class Zeitpicker {
 
   /** Zeitraum von außen setzen. `stufe` optional, sonst "custom". */
   setRange(start, end, stufe = 'custom') {
+    // Nichts geändert – nichts melden (verhindert Echos zwischen Spiegeln)
+    if (+start === +this.#start && +end === +this.#end && stufe === this.#stufe) return;
     this.#start = new Date(start);
     this.#end = new Date(end);
     this.#stufe = stufe;
     this.#anker = new Date(this.#start);
     this.#zeichnen();
     this.#melden();
+  }
+
+  /**
+   * Zweite Bedienoberfläche für diesen Picker – etwa oben im Vollbild.
+   *
+   * Der Spiegel hat keinen eigenen Zustand: Was man in ihm wählt, ruft
+   * setRange() dieses Pickers auf, und was dieser Picker meldet, zeigt der
+   * Spiegel an. Daten fordern also weiter nur die Hörer dieses Pickers an,
+   * und nach dem Schließen des Spiegels gilt der gewählte Zeitraum einfach
+   * weiter. Grenzen und gesperrte Bereiche wandern mit.
+   *
+   * @param {Element} host
+   * @returns {Zeitpicker} der Spiegel – mit destroy() wieder abbauen
+   */
+  mirror(host) {
+    const o = this.#opts;
+    const sp = new Zeitpicker(host, {
+      datePicker: o.datePicker, datePickerOptions: o.datePickerOptions,
+      granularities: o.granularities, granularity: this.#stufe,
+      min: this.#min, max: this.#max, disabled: this.#sperren,
+    });
+    let still = false;
+    const uebernehmen = (r) => {
+      if (still) return;
+      sp.#start = new Date(r.start); sp.#end = new Date(r.end);
+      sp.#stufe = this.#stufe; sp.#anker = new Date(this.#anker);
+      sp.#zeichnen();
+    };
+    uebernehmen(this.range);
+    // Spiegel → Haupt-Picker; der meldet an alle, auch zurück an den Spiegel
+    sp.on((r, p) => {
+      still = true;
+      try { this.setRange(r.start, r.end, p.granularity); } finally { still = false; }
+      uebernehmen(this.range);
+    });
+    this.on(uebernehmen);
+    this.#spiegel.add(sp);
+    sp.#abbau = () => { this.off(uebernehmen); this.#spiegel.delete(sp); };
+    return sp;
   }
 
   /** Auf eine Stufe wechseln – der bisherige Anker bleibt erhalten. */
@@ -286,6 +329,7 @@ export class Zeitpicker {
    */
   setDisabled(liste) {
     this.#sperren = normSperren(liste);
+    for (const sp of this.#spiegel) sp.setDisabled(liste);
     if (this.#dp) { try { this.#dp.disabled = this.#sperren; } catch { /* ältere Fassung */ } }
     this.#zeichnen();
   }
@@ -294,6 +338,7 @@ export class Zeitpicker {
   setBounds(min, max) {
     this.#min = min ? new Date(min) : null;
     this.#max = max ? new Date(max) : null;
+    for (const sp of this.#spiegel) sp.setBounds(min, max);
     // Der Kalender bekommt die Grenzen erst beim Erstellen mit – kommen sie
     // später, muss er sie nachgereicht bekommen.
     if (this.#dp) {
@@ -305,6 +350,8 @@ export class Zeitpicker {
   }
 
   destroy() {
+    this.#abbau?.();
+    this.#abbau = null;
     clearTimeout(this.#grenzenTimer);
     this.#grenzenTimer = null;
     if (this.#id && REGISTER.get(this.#id) === this) REGISTER.delete(this.#id);
@@ -377,6 +424,10 @@ export class Zeitpicker {
       clearTimeout(wartet);
       wartet = setTimeout(() => {
         if (!von.value || !zu.value) return;
+        // Nur echte Auswahl: Zeigen die Felder schon den aktuellen Zeitraum,
+        // kam die Änderung vom Nachzeichnen (der Kalender meldet auch das).
+        // Sonst schaukelten sich zwei verbundene Picker gegenseitig auf.
+        if (von.value === iso(this.#start) && zu.value === iso(this.#end)) return;
         const a = new Date(`${von.value}T00:00:00`);
         const b = new Date(`${zu.value}T23:59:59.999`);
         if (Number.isNaN(+a) || Number.isNaN(+b) || b < a) return;

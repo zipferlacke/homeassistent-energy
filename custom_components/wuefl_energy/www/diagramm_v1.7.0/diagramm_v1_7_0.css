@@ -189,6 +189,9 @@
    Darum hier eine feste Kette aus Flex-Elementen bis zur Zeichenfläche und
    keine Prozenthöhe, die sich an einer unbekannten Elternhöhe misst. */
 .dg_fs > .dg { border-radius: 0; flex: 1; height: auto; min-height: 0; }
+/* Zeitraum-Auswahl oben im Vollbild (fullscreen_picker) */
+.dg_fspicker { flex-shrink: 0; }
+.dg_fspicker > .dgp { padding: 10px 16px 0; }
 /* Im Vollbild ist das Diagramm immer eine Fläche mit Abstand – auch mit
    card: false / padding: false. Sonst klebte es am Bildschirmrand und die
    Seite schien durch. */

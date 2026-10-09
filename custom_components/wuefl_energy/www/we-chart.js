@@ -140,7 +140,14 @@ class WueflEnergyChart extends HTMLElement {
     // soll darin keinen zweiten Rahmen zeichnen, aber Abstand zum Rand
     // halten – es sei denn, jemand will es ausdrücklich anders (eingebettet
     // in eine andere Karte z. B. padding: false).
-    this.#dg.setConfig({ card: false, padding: true, ...toDiagrammConfig(this.#cfg, this.#hass) });
+    // Im Vollbild oben die Zeitraum-Auswahl – ein Spiegel der Zeitraum-Karte
+    // (Picker "we"). Sie ruft nur deren Funktionen auf; die Karten laden dann
+    // wie immer, und der Zeitraum gilt nach dem Vollbild weiter. Ohne
+    // Zeitraum-Karte auf der Seite bleibt sie weg.
+    this.#dg.setConfig({
+      card: false, padding: true, fullscreen_picker: 'we',
+      ...toDiagrammConfig(this.#cfg, this.#hass),
+    });
   }
 
   connectedCallback() {

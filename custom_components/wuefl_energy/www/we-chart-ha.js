@@ -37,6 +37,9 @@ export function haRenderer(getHass) {
       // und das Diagramm leer.
       const el = document.createElement('ha-chart-base');
       el.style.cssText = 'position: absolute; inset: 0;';
+      // ha-chart-base deckelt sich auf 350 px – im Vollbild blieb das
+      // Diagramm sonst halb leer. Die Höhe bestimmt hier die Hülle.
+      el.style.setProperty('--chart-max-height', 'none');
       el.height = '100%';
       huelle.appendChild(el);
       host.appendChild(huelle);
