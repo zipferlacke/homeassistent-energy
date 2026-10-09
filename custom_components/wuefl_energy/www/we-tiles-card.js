@@ -278,7 +278,17 @@ class WueflEnergyTilesCard extends HTMLElement {
 
     if (kind === 'geld') {
       const titel = { bilanz: 'Bilanz', amortisation: 'Zur Amortisation', gespart: 'Durch PV gespart' };
-      this.#showChart(titel[id] ?? 'Geld', this.#moneySeries(id, used, range), range, '€');
+      const reihen = this.#moneySeries(id, used, range);
+      // Gesamtwert wie auf der Kachel: Bilanz = eingespeist − bezogen, sonst
+      // der letzte Stand der aufgelaufenen Summe
+      const summe = (r) => (r?.data ?? []).reduce((a, [, v]) => a + (Number(v) || 0), 0);
+      const wert = id === 'bilanz'
+        ? summe(reihen[0]) + summe(reihen[1])
+        : (reihen[1]?.data?.at(-1)?.[1] ?? summe(reihen[0]));
+      const chips = reihen.length
+        ? [{ value: Math.round(wert * 100) / 100, unit: '€', decimals: 2, color: reihen[id === 'bilanz' ? 0 : 1]?.color }]
+        : [];
+      this.#showChart(titel[id] ?? 'Geld', reihen, range, '€', chips);
       return;
     }
 
@@ -303,11 +313,17 @@ class WueflEnergyTilesCard extends HTMLElement {
       type: range.overMonth ? 'bar' : 'line',
     })));
 
-    this.#showChart(title, series, range, 'kWh');
+    // Je Reihe ein Chip mit der Summe im Zeitraum – derselbe Wert wie auf der
+    // Kachel; bei mehreren mit Namen davor
+    const chips = series.map((s) => ({
+      key: s.entity, calc: 'sum', unit: 'kWh', decimals: 2,
+      ...(series.length > 1 ? { label: esc(s.name) } : {}),
+    }));
+    this.#showChart(title, series, range, 'kWh', chips);
   }
 
   /** Diagramm einer Kachel im gemeinsamen Fenster zeigen. */
-  #showChart(title, series, range, unit) {
+  #showChart(title, series, range, unit, chips = []) {
     openChartPopup({
       root: this.shadowRoot,
       hass: this.#hass,
@@ -318,6 +334,7 @@ class WueflEnergyTilesCard extends HTMLElement {
         aggregation: range.overYear ? '1m' : range.overMonth ? '1d' : range.overWeek ? '2h' : range.overDay ? '10min' : '5min',
         y_axes: series.some((s) => s.y_axis === 1) ? [{ unit }, { unit }] : [{ unit }],
         legend: [{ hidden: series.length <= 1, position: 'top-center' }],
+        chips,
         series,
       },
     });

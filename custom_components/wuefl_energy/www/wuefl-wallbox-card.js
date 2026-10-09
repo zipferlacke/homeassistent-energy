@@ -758,7 +758,7 @@ class WueflWallboxCard extends HTMLElement {
     const start = new Date(range.start), end = new Date(range.end);
     const mode = historyMode({ start, end });
     const color = cssColor(this, '--w-wallbox', '#22C3D6');
-    const key = [live, total, color, start.getTime(), end.getTime()].join('|');
+    const key = [c.name, live, total, color, start.getTime(), end.getTime()].join('|');
     if (key !== this.#historyKey) {
       this.#historyKey = key;
       const power = (mode.power && live) || !total;
@@ -774,7 +774,9 @@ class WueflWallboxCard extends HTMLElement {
             aggregation: mode.aggregation,
           };
       this.#els.chart.setConfig({
-        title: '',
+        // Mit Namen der Wallbox – im Vollbild steht das Diagramm allein da,
+        // und bei mehreren Wallboxen muss klar sein, welche es ist
+        title: `${c.name ?? 'Wallbox'} · ${power ? 'Ladeleistung' : 'Geladene Energie'}`,
         // Sitzt schon in der Wallbox-Karte – kein zweiter Innenabstand
         padding: false,
         start: start.toISOString(),

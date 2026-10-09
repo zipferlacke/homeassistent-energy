@@ -1700,16 +1700,68 @@ export function periodResolution(range) {
 export async function fetchStats(hass, ids, range, types = ['change']) {
   if (!hass || !ids.length) return {};
   try {
-    return await hass.callWS({
+    const period = periodResolution(range);
+    const stats = await hass.callWS({
       type: 'recorder/statistics_during_period',
       start_time: range.start.toISOString(),
       end_time: range.end.toISOString(),
       statistic_ids: ids,
-      period: periodResolution(range),
+      period,
       types,
     });
+    if (types.includes('change')) await laufendeStunde(hass, stats, ids, range, period);
+    return stats;
   } catch {
     return {};
+  }
+}
+
+/**
+ * Die laufende Stunde nachtragen.
+ *
+ * Stunden-, Tages- und Monatswerte entstehen aus der Stundenstatistik, und
+ * die gibt es erst, wenn die Stunde um ist. Kennzahlen hinkten dadurch bis
+ * zu einer Stunde hinter den Diagrammen her, die mit 5-Minuten-Werten
+ * rechnen. Hier kommt die Änderung seit Stundenbeginn aus den
+ * 5-Minuten-Werten dazu: bei Stundenauflösung als eigene Zeile, sonst in der
+ * letzten Zeile (heute bzw. dieser Monat).
+ */
+async function laufendeStunde(hass, stats, ids, range, period) {
+  const now = Date.now();
+  const stunde = new Date(now); stunde.setMinutes(0, 0, 0);
+  if (+range.end <= +stunde || +range.start > now) return;
+  let fein;
+  try {
+    fein = await hass.callWS({
+      type: 'recorder/statistics_during_period',
+      start_time: new Date(Math.max(+stunde, +range.start)).toISOString(),
+      end_time: new Date(now).toISOString(),
+      statistic_ids: ids,
+      period: '5minute',
+      types: ['change'],
+    });
+  } catch {
+    return;
+  }
+  const zeit = (r) => (typeof r.start === 'number' ? r.start : Date.parse(r.start));
+  for (const id of ids) {
+    const rest = (fein?.[id] ?? []).reduce((a, r) => a + (Number(r.change) || 0), 0);
+    if (!rest) continue;
+    const zeilen = stats[id] ?? (stats[id] = []);
+    const letzte = zeilen[zeilen.length - 1];
+    // Schon enthalten? Dann hat HA die Stunde inzwischen selbst geschrieben.
+    if (letzte && period === 'hour' && zeit(letzte) >= +stunde) continue;
+    if (period === 'hour') {
+      zeilen.push({ start: +stunde, end: +stunde + 3_600_000, change: rest });
+      continue;
+    }
+    // Tag/Monat: zur Zeile von heute bzw. diesem Monat – gibt es die noch
+    // nicht (kurz nach Mitternacht), eine neue statt der von gestern
+    const beginn = period === 'day'
+      ? new Date(stunde.getFullYear(), stunde.getMonth(), stunde.getDate())
+      : new Date(stunde.getFullYear(), stunde.getMonth(), 1);
+    if (letzte && zeit(letzte) >= +beginn) letzte.change = (Number(letzte.change) || 0) + rest;
+    else zeilen.push({ start: +beginn, change: rest });
   }
 }
 
