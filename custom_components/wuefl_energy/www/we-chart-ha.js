@@ -64,6 +64,9 @@ export function haRenderer(getHass) {
       griff.ro?.disconnect();
       griff.ro = null;
       const { series, ...rest } = option;
+      if (rest.tooltip) {
+        rest.tooltip = Array.isArray(rest.tooltip) ? rest.tooltip.map(tooltipAlsElement) : tooltipAlsElement(rest.tooltip);
+      }
       griff.el.hass = getHass();
       griff.el.data = series;
       griff.el.options = rest;
@@ -94,6 +97,26 @@ export function haRenderer(getHass) {
       griff.huelle.remove();
     },
   };
+}
+
+/**
+ * ha-chart-base reicht Tooltip-Funktionen durch Lit (render(ergebnis, …)) –
+ * ein HTML-String landet dort als Text, man sah die Tags. ECharts allein
+ * nimmt ihn als HTML. Darum hier aus dem String ein Element machen.
+ */
+function tooltipAlsElement(tooltip) {
+  const f = tooltip?.formatter;
+  if (typeof f !== 'function' || f.__alsElement) return tooltip;
+  const neu = (...args) => {
+    const html = f(...args);
+    if (html === null || html === undefined || html === '') return null;
+    if (typeof html !== 'string') return html;
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    return el;
+  };
+  neu.__alsElement = true;
+  return { ...tooltip, formatter: neu };
 }
 
 /** Die ECharts-Instanz in ha-chart-base (Name je nach HA-Version). */
