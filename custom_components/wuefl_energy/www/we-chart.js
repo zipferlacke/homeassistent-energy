@@ -5,7 +5,7 @@
  * Hier steht nur noch, was Home Assistant von einer Karte erwartet: setConfig,
  * getCardSize, hass, Registrierung im Kartenkatalog. Alles Fachliche – Titel,
  * Chips, Legende, Vollbild, Auflösung, Töpfe, Einheiten, Tooltip – kommt aus
- * diagramm_v1.6.3 und ist Zeichen für Zeichen dasselbe wie in der Bibliothek.
+ * diagramm_v1.7.0 und ist Zeichen für Zeichen dasselbe wie in der Bibliothek.
  *
  * Vorher lagen dieselben 1000 Zeilen hier und nirgends sonst. Jede Korrektur
  * musste doppelt gemacht werden, sobald etwas davon auch auf einer Webseite
@@ -13,7 +13,7 @@
  * und Chips fehlten und das seine Höhe nie neu maß.
  */
 import { registerCard } from './we-shared.js';
-import { Diagramm, setIcons } from './diagramm_v1.6.3/diagramm_v1_6_3.js';
+import { Diagramm, setIcons } from './diagramm_v1.7.0/diagramm_v1_7_0.js';
 import { haRenderer, haSource, HA_ICONS, toDiagrammConfig } from './we-chart-ha.js';
 
 setIcons(HA_ICONS);
@@ -23,7 +23,7 @@ let cssSheet = null;
 /** Das Stilblatt des Pakets einmal holen – für jeden Schatten-Baum dasselbe. */
 function diagrammCss() {
   if (!cssPromise) {
-    cssPromise = fetch(new URL('./diagramm_v1.6.3/diagramm_v1_6_3.css', import.meta.url))
+    cssPromise = fetch(new URL('./diagramm_v1.7.0/diagramm_v1_7_0.css', import.meta.url))
       .then((r) => (r.ok ? r.text() : ''))
       .catch(() => '')
       .then((css) => {
@@ -46,7 +46,9 @@ ha-card {
   box-sizing: border-box; display: flex; flex: 1; flex-direction: column;
   height: 100%; min-height: 0; overflow: hidden;
 }
-.dg {
+/* Die Farben am Host, nicht an .dg: So erben sie auch der Vollbild-Dialog
+   und alles andere im Schatten-Baum. */
+:host {
   /* Nicht der Systemeinstellung folgen, sondern dem Thema von Home Assistant:
      Wer dort dunkel wählt, soll das Diagramm dunkel sehen, auch wenn das
      Betriebssystem hell steht. Deshalb alle Farben aus HA-Variablen – dann
@@ -60,7 +62,7 @@ ha-card {
   --dg-grid: color-mix(in srgb, var(--divider-color, #e0e0e0) 55%, transparent);
   --dg-title-size: var(--ha-card-header-font-size, 20px);
 }
-.dg_fs { background: var(--card-background-color, var(--primary-background-color)); }
+.dg, .dg_fs { color-scheme: inherit; }
 `;
 
 class WueflEnergyChart extends HTMLElement {
@@ -135,9 +137,10 @@ class WueflEnergyChart extends HTMLElement {
     if (!this.#dg || !this.#hass || !this.#cfg?.series) return;
     this.#letzterAbruf = Date.now();
     // Die Kachel ist in Home Assistant die ha-card drumherum. Das Diagramm
-    // soll darin keinen zweiten Rahmen zeichnen – es sei denn, jemand will
-    // es ausdrücklich anders.
-    this.#dg.setConfig({ card: false, ...toDiagrammConfig(this.#cfg, this.#hass) });
+    // soll darin keinen zweiten Rahmen zeichnen, aber Abstand zum Rand
+    // halten – es sei denn, jemand will es ausdrücklich anders (eingebettet
+    // in eine andere Karte z. B. padding: false).
+    this.#dg.setConfig({ card: false, padding: true, ...toDiagrammConfig(this.#cfg, this.#hass) });
   }
 
   connectedCallback() {

@@ -52,7 +52,7 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
-import { onPicker } from './picker_v1_6_3.js';
+import { onPicker } from './picker_v1_7_0.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
@@ -573,14 +573,14 @@ export function buildOption(reihen, achsen, start, end, raster, cfg, host, zusta
     };
   });
 
-  const textFarbe = tokenFarbe(host, '--dg-text-soft', '#5f6368');
+  const textFarbe = tokenFarbe(host, '--dg-text-soft', 'light-dark(#5f6368, #a5a8ad)');
   // Gitter und Achsen: dasselbe durchscheinende Grau in hell und dunkel (diagramm.css)
   const achsenFarbe = tokenFarbe(host, '--dg-axis', 'rgba(128, 128, 128, 0.5)');
   const gitterFarbe = tokenFarbe(host, '--dg-grid', 'rgba(128, 128, 128, 0.22)');
   // Tooltip in den Farben der Seite – ECharts zeichnete ihn sonst immer weiß mit dunkler Schrift
-  const tipText = tokenFarbe(host, '--dg-text', '#000000');
-  const tipBg = tokenFarbe(host, '--dg-bg', '#ffffff');
-  const tipLine = tokenFarbe(host, '--dg-line', '#d4d6d9');
+  const tipText = tokenFarbe(host, '--dg-text', 'light-dark(#000, #fff)');
+  const tipBg = tokenFarbe(host, '--dg-bg', 'light-dark(#fff, #1c1f24)');
+  const tipLine = tokenFarbe(host, '--dg-line', 'light-dark(#d4d6d9, #3a3f46)');
   const ueberJahre = !xWert && start.getFullYear() !== end.getFullYear();
 
   return {
@@ -909,9 +909,12 @@ export class Diagramm {
    */
   #kopf() {
     const cfg = this.#cfg;
-    // `card: false` nimmt dem Diagramm Hintergrund, Rand und Innenabstand –
-    // dann sitzt es nackt in dem, was es umgibt.
+    // `card: false` nimmt dem Diagramm Hintergrund, Rand und Radius,
+    // `padding: false` den Innenabstand. Ohne Angabe folgt der Abstand der
+    // Kachel – in einer fremden Karte (z. B. ha-card) will man oft beides
+    // getrennt: keinen zweiten Rahmen, aber Luft zum Rand.
     this.#host.classList.toggle('dg_nackt', cfg.card === false);
+    this.#host.classList.toggle('dg_eng', (cfg.padding ?? cfg.card) === false);
     this.#els.title.textContent = cfg.title ?? '';
     this.#els.tools.replaceChildren();
     // Platzhalter für die Chips – Farbe und Inhalt kommen mit den Daten

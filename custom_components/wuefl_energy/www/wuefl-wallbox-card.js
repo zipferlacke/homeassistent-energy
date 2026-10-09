@@ -768,6 +768,8 @@ class WueflWallboxCard extends HTMLElement {
           };
       this.#els.chart.setConfig({
         title: '',
+        // Sitzt schon in der Wallbox-Karte – kein zweiter Innenabstand
+        padding: false,
         start: start.toISOString(),
         end: end.toISOString(),
         legend: { hidden: true },
