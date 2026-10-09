@@ -30,6 +30,17 @@
 # Was eine Wallbox nach zwei Minuten nicht abnimmt (Auto voll oder lädt nur
 # 1-phasig), bleibt für die nächste übrig.
 #
+# Aussetzer: Ist ein Messwert (Netz, Hausakku, Ladeleistung) kurz nicht
+# erreichbar, regelt die Automation weiter wie bisher. Erst wenn er länger
+# als 30 s fehlt, stoppt sie das Solarladen der betroffenen Wallbox (bzw. bei
+# Netz/Akku aller Wallboxen). Den Ladestand des Autos betrifft das nicht –
+# Autos melden sich oft schlafen, dann gilt das Ladeziel einfach nicht.
+#
+# Wolke: Fällt der Überschuss unter die Mindestleistung, lädt eine laufende
+# Wallbox noch bis zu 1 min mit Mindestleistung weiter; der Hausakku
+# überbrückt (er wird dafür nicht gesperrt). Reicht es danach immer noch
+# nicht, stoppt sie. Freigabe-Helfer = 2 heißt "überbrückt gerade".
+#
 # Wallbox-Steuerung: Die Soll-Leistung landet immer in den Helfern der
 # Integration (send_power / activate_station). Ist unter "Steuerung durch
 # die Automation" eine Ladestrom-Vorgabe zugeordnet, schreibt die
@@ -143,6 +154,21 @@ automation:
         {% endfor %}
         {{ ns.s }}
       batt_soc: "{{ states(batt_soc_entity) | float(0) if has_battery else 0 }}"
+      # Wie lange (s) ein Messwert schon fehlt – 0 = alles da. Netz und
+      # Akku-Leistung gelten für alle Wallboxen, der Akku-Ladestand für die
+      # Freigabe.
+      mess_weg_s: >
+        {% set ns = namespace(s=0) %}
+        {% set ids = [grid_power_entity] + batterien | map(attribute='live') | select('string') | list %}
+        {% for e in ids | select | list if not states(e) | is_number %}
+          {% set x = expand(e) | first %}
+          {% set ns.s = [ns.s, (now() - x.last_changed).total_seconds() if x is defined else 9999] | max %}
+        {% endfor %}
+        {{ ns.s | int }}
+      soc_weg_s: >
+        {% set e = batt_soc_entity %}
+        {% if not (has_battery and e) or states(e) | is_number %}0
+        {% else %}{% set x = expand(e) | first %}{{ ((now() - x.last_changed).total_seconds() if x is defined else 9999) | int }}{% endif %}
       # Was der Hausakku höchstens zum Laden beisteuert: 10 % unter seiner
       # höchsten Entladeleistung (Zuordnung → Hausbatterie → Hardware &
       # Grenzen). Dort steht die Leistung in W oder eine Zahl-Entität, deren
@@ -160,6 +186,20 @@ automation:
           {% set ns.s = ns.s + w %}
         {% endfor %}
         {{ (ns.s * 0.9 / 100) | int * 100 }}
+
+      # Welcher Akku-Modus zuletzt aktiviert wurde (Szene: Zeitstempel,
+      # Skript: last_triggered, Schalter: an seit)
+      akku_aktuell: >
+        {% set ns = namespace(best='', t=as_datetime('1970-01-01T00:00:00+00:00')) %}
+        {% for e in [batt_normal_mode, batt_stop_discharging, batt_force_charge] if e %}
+          {% set d = e.split('.')[0] %}
+          {% if d == 'scene' %}{% set t = as_datetime(states(e), none) %}
+          {% elif d == 'script' %}{% set t = state_attr(e, 'last_triggered') %}
+          {% elif is_state(e, 'on') %}{% set t = (expand(e) | first).last_changed %}
+          {% else %}{% set t = none %}{% endif %}
+          {% if t is not none and t > ns.t %}{% set ns.best = e %}{% set ns.t = t %}{% endif %}
+        {% endfor %}
+        {{ ns.best }}
 
       # --- Wallboxen: Zuordnung, Grenzen und Messwerte je Wallbox ----------
       boxen: >
@@ -207,6 +247,15 @@ automation:
           {# Messwerte #}
           {% set k = 1000 if (state_attr(live_e, 'unit_of_measurement') or '') | lower == 'kw' else 1 %}
           {% set laedt = states(act_e) | float(0) > 0 %}
+          {% set ueberbrueckt = states(act_e) | float(0) == 2 %}
+          {# Ladeleistung kurz weg: so tun, als zöge sie die Soll-Leistung #}
+          {% if live_e == '' or states(live_e) | is_number %}
+            {% set power = states(live_e) | float(0) * k %}{% set weg_s = 0 %}
+          {% else %}
+            {% set x = expand(live_e) | first %}
+            {% set weg_s = ((now() - x.last_changed).total_seconds() if x is defined else 9999) | int %}
+            {% set power = states(power_e) | float(0) if laedt else 0 %}
+          {% endif %}
           {% set seit = (now() - (expand(act_e) | first).last_changed).total_seconds() | int
                         if act_e and expand(act_e) | count > 0 else 0 %}
           {# Pausiert? Auswahl: steht auf der Pause-Option; Schalter: aus #}
@@ -219,7 +268,7 @@ automation:
             'ok': mode_e != '' and power_e != '' and act_e != '',
             'power_e': power_e, 'act_e': act_e,
             'modus': modus, 'modus_eff': modus_eff, 'fertig': fertig,
-            'power': states(live_e) | float(0) * k, 'laedt': laedt, 'seit': seit,
+            'power': power, 'weg_s': weg_s, 'laedt': laedt, 'ueberbrueckt': ueberbrueckt, 'seit': seit,
             'phases': phases, 'max_w': max_w, 'min_a': min_a, 'min_w': min_w,
             'min_3ph_w': min_a * 230 * phases, 'a_max': a_max,
             'kann_1ph': kann_1ph,
@@ -239,8 +288,21 @@ automation:
       # Entlädt der Akku, ist das kein Überschuss – außer mit Freigabe
       # (dann darf er bis zur Reserve bis zu battery_max_discharge_w beisteuern).
       # Bei "Auto zuerst" zählt auch, was gerade in den Akku geht.
-      akku_abgabe_moeglich: "{{ has_battery and freigabe and batt_soc > reserve + 3 }}"
+      # Ladestand kurz weg: wie bisher (Akku war nicht gesperrt); länger weg: nein
+      akku_abgabe_moeglich: >
+        {% if not (has_battery and freigabe) %}{{ false }}
+        {% elif soc_weg_s == 0 %}{{ batt_soc > reserve + 3 }}
+        {% elif soc_weg_s <= 30 %}{{ akku_aktuell != batt_stop_discharging or batt_stop_discharging == '' }}
+        {% else %}{{ false }}{% endif %}
       ueberschuss_w: >
+        {% if mess_weg_s > 0 %}
+          {# Netz oder Akku kurz weg: genau so viel, wie gerade verteilt ist #}
+          {% set ns = namespace(s=0) %}
+          {% for b in boxen if b.ok and b.laedt and b.modus_eff != 'Schnell' %}
+            {% set ns.s = ns.s + states(b.power_e) | float(0) %}
+          {% endfor %}
+          {{ ns.s }}
+        {% else %}
         {% set ns = namespace(s=0) %}
         {% for b in boxen if b.ok and not (b.modus_eff == 'Schnell' and not b.fertig) %}
           {% set ns.s = ns.s + b.power %}
@@ -249,15 +311,19 @@ automation:
         {% if has_battery and prio == 'Auto zuerst' %}{% set s = s + [-akku_power, 0] | max %}{% endif %}
         {% if akku_abgabe_moeglich %}{% set s = s + battery_max_discharge_w %}{% endif %}
         {{ [s, 0] | max }}
+        {% endif %}
 
       # --- Zielwerte je Wallbox ---------------------------------------------
-      # w = Soll-Leistung, aktiv = 1/0, phasen_ziel und ampere für die direkte
-      # Steuerung.
+      # w = Soll-Leistung, aktiv = 1 (lädt) / 2 (überbrückt) / 0, phasen_ziel
+      # und ampere für die direkte Steuerung, grund = warum gestoppt.
       plan: >
         {% set ns = namespace(l=[], rest=ueberschuss_w | float(0)) %}
         {% for b in boxen %}
+          {% set aktiv = none %}{% set grund = '' %}
           {% if not b.ok or b.fertig or b.modus_eff in ['Aus', 'unknown', 'unavailable'] %}{% set w = 0 %}
           {% elif b.modus_eff == 'Schnell' %}{% set w = b.max_w %}
+          {% elif b.weg_s > 30 %}{% set w = 0 %}{% set grund = 'Ladeleistung fehlt' %}
+          {% elif mess_weg_s > 30 %}{% set w = 0 %}{% set grund = 'Netz-/Akku-Messwert fehlt' %}
           {% else %}
             {# Hysterese: läuft die Wallbox schon, erst 500 W unter der Mindestleistung stoppen #}
             {% set schwelle = b.min_w - 500 if b.laedt else b.min_w %}
@@ -266,8 +332,15 @@ automation:
               {# Was die Wallbox nach 2 min nicht abnimmt, bleibt für die nächste #}
               {% set nimmt = [w, b.power + 500] | min if b.laedt and b.seit > 120 else w %}
               {% set ns.rest = [ns.rest - nimmt, 0] | max %}
-            {% else %}{% set w = 0 %}{% endif %}
+            {% elif b.laedt and not (b.ueberbrueckt and b.seit >= 60) %}
+              {# Wolke: bis 1 min mit Mindestleistung weiter, der Akku überbrückt #}
+              {% set w = b.min_w %}{% set aktiv = 2 %}
+              {% set ns.rest = 0 %}
+            {% else %}
+              {% set w = 0 %}{% set grund = 'Überschuss reicht nicht' if b.laedt else '' %}
+            {% endif %}
           {% endif %}
+          {% set aktiv = aktiv if aktiv is not none else (1 if w > 0 else 0) %}
           {# Phasen mit Hysterese, damit nicht ständig umgeschaltet wird
              (Schütz im Auto): auf 3 Phasen erst 200 W über, zurück auf 1 erst
              300 W unter der 3-phasigen Mindestleistung. #}
@@ -279,7 +352,7 @@ automation:
           {# volle Leistung = Höchststrom (11000 W / 690 wären abgerundet nur 15 A) #}
           {% elif w >= b.max_w %}{% set a = b.a_max %}
           {% else %}{% set a = [[(w / (230 * ph)) | round(0, 'floor') | int, b.min_a] | max, b.a_max] | min %}{% endif %}
-          {% set ns.l = ns.l + [dict(b, w=w, aktiv=1 if w > 0 else 0, phasen_ziel=ph, ampere=a)] %}
+          {% set ns.l = ns.l + [dict(b, w=w, aktiv=aktiv, phasen_ziel=ph, ampere=a, grund=grund)] %}
         {% endfor %}
         {{ ns.l }}
 
@@ -300,27 +373,15 @@ automation:
       # Reserve. Gilt in jedem Lademodus und für jede Wallbox, denn auch beim
       # Solarladen zieht der Wechselrichter sonst aus dem Akku, sobald eine
       # Wolke kommt.
-      wallbox_laedt: "{{ plan | selectattr('ok') | selectattr('laedt') | list | count > 0 or plan | selectattr('aktiv', 'eq', 1) | list | count > 0 }}"
-      akku_sperren: "{{ wallbox_laedt and not akku_abgabe_moeglich }}"
+      wallbox_laedt: "{{ plan | selectattr('ok') | selectattr('laedt') | list | count > 0 or plan | selectattr('aktiv', 'gt', 0) | list | count > 0 }}"
+      # Überbrückt eine Wallbox gerade eine Wolke, darf der Akku einspringen
+      ueberbrueckung: "{{ plan | selectattr('aktiv', 'eq', 2) | list | count > 0 }}"
+      akku_sperren: "{{ wallbox_laedt and not akku_abgabe_moeglich and not ueberbrueckung }}"
       akku_ziel: >
         {% if not (has_battery and can_control_battery) %}{{ '' }}
         {% elif akku_netzladen and batt_force_charge %}{{ batt_force_charge }}
         {% elif akku_sperren and batt_stop_discharging %}{{ batt_stop_discharging }}
         {% else %}{{ batt_normal_mode }}{% endif %}
-      # Welcher Akku-Modus zuletzt aktiviert wurde (Szene: Zeitstempel,
-      # Skript: last_triggered, Schalter: an seit)
-      akku_aktuell: >
-        {% set ns = namespace(best='', t=as_datetime('1970-01-01T00:00:00+00:00')) %}
-        {% for e in [batt_normal_mode, batt_stop_discharging, batt_force_charge] if e %}
-          {% set d = e.split('.')[0] %}
-          {% if d == 'scene' %}{% set t = as_datetime(states(e), none) %}
-          {% elif d == 'script' %}{% set t = state_attr(e, 'last_triggered') %}
-          {% elif is_state(e, 'on') %}{% set t = (expand(e) | first).last_changed %}
-          {% else %}{% set t = none %}{% endif %}
-          {% if t is not none and t > ns.t %}{% set ns.best = e %}{% set ns.t = t %}{% endif %}
-        {% endfor %}
-        {{ ns.best }}
-
     actions:
       - choose:
           # ---------------------------------------------------------------
@@ -436,12 +497,12 @@ automation:
                       data: { value: "{{ b.w }}" }
                 - if:
                     - condition: template
-                      value_template: "{{ b.aktiv == 1 and states(b.act_e) | float(-1) != 1 }}"
+                      value_template: "{{ b.aktiv > 0 and states(b.act_e) | float(-1) != b.aktiv }}"
                   then:
                     - action: number.set_value
                       continue_on_error: true
                       target: { entity_id: "{{ b.act_e }}" }
-                      data: { value: 1 }
+                      data: { value: "{{ b.aktiv }}" }
 
                 # -----------------------------------------------------------
                 # 1b. Direkte Steuerung (Ladestrom-Vorgabe in A, Pause, Phasen)

@@ -117,6 +117,20 @@ dann nur nicht gesperrt. Reicht der Beitrag allein fuer die Mindestleistung
 der Wallbox, laedt *Solar* mit Freigabe auch ohne Sonne aus dem Akku, bis die
 Reserve erreicht ist.
 
+**Wolken:** Faellt der Ueberschuss unter die Mindestleistung, laedt eine
+laufende Wallbox noch bis zu 1 min mit Mindestleistung weiter, der Hausakku
+ueberbrueckt (auch ohne Freigabe – er wird dafuer nicht gesperrt). Reicht es
+danach immer noch nicht, stoppt sie. Der Freigabe-Helfer der Wallbox steht
+waehrenddessen auf 2.
+
+**Aussetzer:** Ist ein Messwert kurz nicht erreichbar (z. B. Modbus der
+Wallbox), regelt die Automation weiter wie bisher. Fehlt er laenger als 30 s,
+stoppt sie das Solarladen: bei der Ladeleistung nur diese Wallbox, bei Netz-
+oder Akkuleistung alle. *Schnell* laeuft weiter, dafuer braucht es keine
+Messwerte. Fehlt der Akku-Ladestand laenger, gilt die Hausakku-Freigabe als
+nicht erfuellt. Der Ladestand des Autos ist ausgenommen – schlaeft das Auto,
+gilt das Ladeziel einfach nicht.
+
 **Notstrom:** Wird nicht eigens geregelt. Im Notstrombetrieb gilt, was im
 Akku ist – eine Reserve dafuer haelt die Automation nicht zurueck.
 
