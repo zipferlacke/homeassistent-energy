@@ -389,6 +389,14 @@ eigene Zuordnung.
 Die Zuordnung selbst ist eine Ansicht im Dashboard, keine Seite in der
 Seitenleiste mehr.
 
+## Vom Live-Bild zu den Diagrammen
+
+Ein Klick auf ein Objekt im Live-Bild fuehrt zum passenden Diagramm: Solar
+und Batterie zu ihren Diagrammen in der Energie-Ansicht, Netz, Haushalt und
+Waermepumpe zur Verteilung, Wallbox und Auto zur Wallbox-Ansicht. Die
+Geld-Kacheln fuehren zu den Kennzahlen; ihr kleines *i* oben rechts erklaert,
+wie *Durch PV gespart* und *Zur Amortisation* gerechnet werden.
+
 ## Steuert die Karte den Energiefluss?
 
 Nein, und das kann sie auch nicht. Die Reihenfolge PV → Haus → Batterie →

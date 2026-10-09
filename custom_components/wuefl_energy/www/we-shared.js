@@ -1383,6 +1383,15 @@ export const TILE_CSS = `
   padding: 12px; display: flex; align-items: center; min-height: 100%; box-sizing: border-box;
 }
 button.ha-tile { border: 0; cursor: pointer; font: inherit; text-align: left; width: 100%; }
+ha-card.ha-tile { position: relative; }
+.tile-i {
+  align-items: center; background: none; border: 0; border-radius: 50%;
+  color: var(--secondary-text-color, #727272); cursor: pointer; display: flex;
+  height: 26px; justify-content: center; padding: 0;
+  position: absolute; right: 4px; top: 4px; width: 26px; z-index: 1;
+  --mdc-icon-size: 17px;
+}
+.tile-i:hover { background: var(--secondary-background-color, rgba(127,127,127,.12)); color: var(--primary-text-color); }
 .tile-content { display: flex; align-items: center; gap: 12px; width: 100%; }
 .tile-icon-container {
   width: 40px; height: 40px; border-radius: 50%;
@@ -1427,6 +1436,136 @@ export const TOGGLE_CSS = `
 }
 `;
 
+/* ------------------------------------------------------------------ *
+ * Erklärung als Popover direkt am "i"
+ * ------------------------------------------------------------------ */
+
+const POP_CSS = `
+.we-pop {
+  background: var(--card-background-color, #fff);
+  border: 1px solid var(--divider-color, #e0e0e0);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / .18);
+  box-sizing: border-box;
+  color: var(--primary-text-color, #212121);
+  font-size: 14px; line-height: 1.45;
+  inset: auto; margin: 0;
+  max-width: min(340px, calc(100vw - 16px));
+  padding: 10px 14px;
+  position: fixed;
+}
+.we-pop p { margin: 0 0 .5em; }
+.we-pop p:last-child { margin: 0; }
+.we-pop dl { display: grid; gap: .35rem; margin: 0; }
+.we-pop dl > div { display: flex; flex-wrap: wrap; gap: .3rem; }
+.we-pop dt { font-weight: 600; }
+.we-pop dd { color: var(--secondary-text-color, #727272); margin: 0; }
+`;
+let popSheet = null;
+let popOffen = null;
+
+/**
+ * Erklärung als Popover unter `anchor` (rechtsbündig, passt sich an den
+ * Bildschirmrand an). Ein zweiter Klick auf dasselbe "i" schließt es wieder,
+ * ein Klick daneben auch (popover="auto").
+ */
+export function infoPopover(anchor, html) {
+  const vorher = popOffen;
+  if (vorher?.anchor === anchor && (vorher.offen || Date.now() - vorher.zu < 300)) {
+    vorher.el.hidePopover?.();
+    popOffen = null;
+    return;
+  }
+  vorher?.el.hidePopover?.();
+
+  const root = anchor.getRootNode();
+  popSheet ??= (() => { const s = new CSSStyleSheet(); s.replaceSync(POP_CSS); return s; })();
+  const ziel = root instanceof ShadowRoot ? root : document;
+  if (!ziel.adoptedStyleSheets.includes(popSheet)) ziel.adoptedStyleSheets = [...ziel.adoptedStyleSheets, popSheet];
+
+  const el = document.createElement('div');
+  el.className = 'we-pop';
+  el.setAttribute('popover', 'auto');
+  el.innerHTML = html;
+  (root instanceof ShadowRoot ? root : document.body).append(el);
+
+  const zustand = { anchor, el, offen: true, zu: 0 };
+  const platzieren = () => {
+    const r = anchor.getBoundingClientRect();
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+    let top = r.bottom + 6;
+    if (top + h > window.innerHeight - 8 && r.top - h - 6 > 8) top = r.top - h - 6;
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  };
+  const weg = () => {
+    zustand.offen = false;
+    zustand.zu = Date.now();
+    window.removeEventListener('scroll', platzieren, true);
+    window.removeEventListener('resize', platzieren);
+    el.remove();
+  };
+  if (el.showPopover) {
+    el.addEventListener('toggle', (ev) => { if (ev.newState === 'closed') weg(); });
+    el.showPopover();
+  } else {
+    // Ältere Browser: ohne Top-Layer, schließt beim nächsten Klick daneben
+    el.style.zIndex = '1000';
+    el.hidePopover = weg;
+    setTimeout(() => document.addEventListener('click', (ev) => {
+      if (!ev.composedPath().includes(el)) weg();
+    }, { once: true }));
+  }
+  platzieren();
+  window.addEventListener('scroll', platzieren, true);
+  window.addEventListener('resize', platzieren);
+  popOffen = zustand;
+}
+
+/** Erklärungen zu den Geld-Kacheln – dieselben in Live- und Energie-Ansicht. */
+export function geldHilfe(art, kosten) {
+  if (art === 'gespart') {
+    return `<p><strong>Durch PV gespart</strong> ist der Strom, den die Anlage erzeugt
+      und den du <em>selbst verbraucht</em> hast – also Erzeugung minus Einspeisung.
+      Bewertet wird er mit dem Preis, den du sonst fürs Einkaufen bezahlt hättest.</p>
+      <p>Das ist echtes Geld, das nicht abgeflossen ist. Es taucht auf keiner Rechnung auf,
+      deshalb steht es separat und nicht in der Bilanz.</p>`;
+  }
+  if (art === 'amortisation') {
+    return `<p><strong>Zur Amortisation</strong> trägt bei, was die Anlage einbringt: die
+      Ersparnis durch Eigenverbrauch plus die Einspeisevergütung.</p>
+      <p>Gerechnet gegen ${Number.isFinite(kosten) && kosten > 0 ? esc(fmtEuro(kosten, { signed: false })) : 'die'}
+      Anschaffungskosten aus der Zuordnung unter <em>Systemdaten</em>.</p>`;
+  }
+  return '';
+}
+
+/* ------------------------------------------------------------------ *
+ * Aus der Live-Ansicht zu den Diagrammen
+ * ------------------------------------------------------------------ */
+
+let sprungZiel = null;
+
+/**
+ * Zur Ansicht `view` wechseln und dort zur Karte `karte` (Elementname,
+ * z. B. 'we-battery-chart-card') scrollen. Die Karte meldet sich beim
+ * Einhängen über zielAnspringen().
+ */
+export function zuDiagramm(view, karte) {
+  sprungZiel = { karte, bis: Date.now() + 10_000 };
+  navigateToView(view);
+}
+
+/** Aufruf aus connectedCallback/hass der Zielkarten. */
+export function zielAnspringen(el) {
+  const z = sprungZiel;
+  if (!z || z.karte !== el.localName || Date.now() > z.bis || !el.isConnected) return;
+  sprungZiel = null;
+  // Erst wenn die Ansicht steht – sonst verschiebt sie sich noch
+  setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350);
+}
+
 /**
  * Baut eine ha-tile-Kachel: Icon links in einem farbigen Kreis, Titel/Wert/
  * Untertitel daneben. Mit `entity` oder `click` wird daraus ein echter
@@ -1434,7 +1573,7 @@ export const TOGGLE_CSS = `
  * Klick-Logik wie die Erklär-Tiles); ohne beides bleibt es ein reines
  * <ha-card>.
  */
-export function tileHtml({ icon, color, title, value, subtitle, entity, click }) {
+export function tileHtml({ icon, color, title, value, subtitle, entity, click, info }) {
   const style = `--icon-color: ${color}; --icon-bg: color-mix(in srgb, ${color} 18%, transparent);`;
   const inner = `
     <div class="tile-content">
@@ -1446,9 +1585,13 @@ export function tileHtml({ icon, color, title, value, subtitle, entity, click })
       </div>
     </div>`;
   const attr = entity ? `data-entity="${esc(entity)}"` : click ? `data-click="${esc(click)}"` : '';
+  // Kleines "i" oben rechts – neben dem Knopf, nicht darin (kein Knopf im Knopf)
+  const i = info
+    ? `<button type="button" class="tile-i" data-info="${esc(info)}" aria-label="Erklärung" title="Erklärung"><ha-icon icon="mdi:information-outline"></ha-icon></button>`
+    : '';
   return attr
-    ? `<ha-card class="ha-tile"><button type="button" class="ha-tile" style="background:none;border:0;width:100%;padding:0" ${attr}>${inner}</button></ha-card>`
-    : `<ha-card class="ha-tile">${inner}</ha-card>`;
+    ? `<ha-card class="ha-tile">${i}<button type="button" class="ha-tile" style="background:none;border:0;width:100%;padding:0" ${attr}>${inner}</button></ha-card>`
+    : `<ha-card class="ha-tile">${i}${inner}</ha-card>`;
 }
 
 /* ------------------------------------------------------------------ *

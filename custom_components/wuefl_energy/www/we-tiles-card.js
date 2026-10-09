@@ -9,6 +9,7 @@ import {
   asList, fmtEnergy, fmtEuro, esc, registerCard, centralConfig, WueflFormEditor, sel,
   TILE_CSS, GRID_CSS, getPeriod, onPeriodChange, fetchStats, colorOf,
   tileHtml, cssColor, fetchPriceMeans, moneyRows, moneySums, fmtShare,
+  infoPopover, geldHilfe, zielAnspringen,
 } from './we-shared.js';
 
 const SERIES = [
@@ -65,6 +66,7 @@ class WueflEnergyTilesCard extends HTMLElement {
 
   // An- und Abmelden wandert mit dem Ein- und Aushängen der Karte mit
   connectedCallback() {
+    zielAnspringen(this);
     if (!this.#hass) return;
     this.#listen();
     this.#refresh();
@@ -178,13 +180,13 @@ class WueflEnergyTilesCard extends HTMLElement {
     if (Number.isFinite(cost) && cost > 0) {
       tiles.push(tileHtml({
         icon: 'mdi:cash-clock', color: cssColor(this, '--w-batt-out', '#2BB673'),
-        title: 'Zur Amortisation', value: fmtEuro(beitrag, { signed: false }), click: 'geld:amortisation',
+        title: 'Zur Amortisation', value: fmtEuro(beitrag, { signed: false }), click: 'geld:amortisation', info: 'amortisation',
         subtitle: `<span class="sub-item">${esc(fmtShare(beitrag, cost))}</span>`,
       }));
     } else if (saved !== null) {
       tiles.push(tileHtml({
         icon: 'mdi:solar-power', color: cssColor(this, '--w-solar', '#ff9800'),
-        title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }), click: 'geld:gespart',
+        title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }), click: 'geld:gespart', info: 'gespart',
         subtitle: `<span class="sub-item">${esc('Anschaffungskosten in den Einstellungen ergänzen für die Amortisation')}</span>`,
       }));
     }
@@ -259,6 +261,9 @@ class WueflEnergyTilesCard extends HTMLElement {
     this.#els.grid.innerHTML = html.join('');
     for (const btn of this.#els.grid.querySelectorAll('[data-click]')) {
       btn.addEventListener('click', () => this.#openDetail(btn.dataset.click));
+    }
+    for (const i of this.#els.grid.querySelectorAll('[data-info]')) {
+      i.addEventListener('click', () => infoPopover(i, geldHilfe(i.dataset.info, Number(this.#config.systemdata?.system_cost_value))));
     }
   }
 

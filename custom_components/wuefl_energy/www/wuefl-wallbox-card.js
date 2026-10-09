@@ -12,7 +12,7 @@ import {
   esc, icon, COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, wallboxPower,
   chargeSessions, energyInSpan, patchHtml,
   applyColorVars, colorOf, navigateToView, TOGGLE_CSS, isReadOnly, applyReadOnly,
-  getPeriod, onPeriodChange, loadSolarForecast,
+  getPeriod, onPeriodChange, loadSolarForecast, infoPopover, zielAnspringen,
 } from './we-shared.js';
 import './we-chart.js';
 
@@ -131,14 +131,6 @@ details.history {
   & .note { color: var(--w-text-soft); font-size: var(--w-fs-sm); line-height: 1.45; }
 }
 
-.modehelp {
-  margin: 0 0 .8rem;
-
-  & dl { display: grid; gap: .25rem; margin: 0; }
-  & div { display: flex; flex-wrap: wrap; gap: .3rem; }
-  & dt { font-weight: 600; }
-  & dd { color: var(--w-text-soft); margin: 0; }
-}
 /* Immer eine Zeile, auch am Handy: jeder Modus eine gleich breite Spalte,
    lange Namen ("Solar + günstig") brechen im Knopf um */
 .modes {
@@ -229,6 +221,7 @@ class WueflWallboxCard extends HTMLElement {
   #sessionAt = 0;
   #stopPeriod = null;
   #fc = null;         // PV-Prognose (auch aus dem Energie-Dashboard)
+  #modeHelp = '';     // Inhalt des Popovers am "i"
   #fcAt = 0;
 
   static getConfigElement() { return document.createElement('wuefl-wallbox-card-editor'); }
@@ -240,6 +233,7 @@ class WueflWallboxCard extends HTMLElement {
   }
 
   connectedCallback() {
+    zielAnspringen(this);
     this.#stopPeriod ??= onPeriodChange(() => this.#renderHistory());
     // Zeitraum kann sich geändert haben, während die Karte ausgehängt war
     if (this.#hass) this.#renderHistory();
@@ -366,7 +360,6 @@ class WueflWallboxCard extends HTMLElement {
       <div class="scale" hidden><span class="note"></span></div>
 
       <div class="modes"></div>
-      <div class="info modehelp" hidden></div>
 
       <div class="target" hidden>
         <label for="tgt">Ladeziel</label>
@@ -428,7 +421,6 @@ class WueflWallboxCard extends HTMLElement {
       goalRow: q('.goalrow'), goalLeft: q('.goalrow .left'), goalRight: q('.goalrow .right'),
       scaleNote: q('.scale .note'),
       modes: q('.modes'),
-      modeHelp: q('.modehelp'),
       iHelp: q('.ihelp'),
       target: q('.target'), targetInput: q('.target input'), targetOut: q('.target output'), full: q('.full'),
       cur: q('.slider.cur'),
@@ -445,10 +437,9 @@ class WueflWallboxCard extends HTMLElement {
       if (btn?.dataset.entity) moreInfo(this, btn.dataset.entity);
     });
 
+    // Erklärung der Lademodi als Popover direkt unter dem "i"
     this.#els.iHelp.addEventListener('click', () => {
-      const zu = this.#els.modeHelp.hidden;
-      this.#els.modeHelp.hidden = !zu;
-      this.#els.iHelp.setAttribute('aria-expanded', String(zu));
+      if (this.#modeHelp) infoPopover(this.#els.iHelp, this.#modeHelp);
     });
 
     this.#els.openSettings.addEventListener('click', () => navigateToView('einstellungen'));
@@ -800,7 +791,7 @@ class WueflWallboxCard extends HTMLElement {
     if (!entityId || !this.#hass.states[entityId]) {
       container.replaceChildren();
       this.#els.iHelp.hidden = true;
-      this.#els.modeHelp.hidden = true;
+      this.#modeHelp = '';
       return;
     }
     const st = this.#hass.states[entityId];
@@ -828,18 +819,12 @@ class WueflWallboxCard extends HTMLElement {
 
   /** Erklärung zu genau den Modi, die diese Wallbox anbietet. */
   #renderModeHelp(options) {
-    const box = this.#els.modeHelp;
     const zeilen = options
       .map((opt) => [opt, MODE_HELP[modeInfo(opt).kind]])
       .filter(([, text]) => text)
       .map(([opt, text]) => `<div><dt>${esc(opt)}</dt><dd>${esc(text)}</dd></div>`);
     this.#els.iHelp.hidden = !zeilen.length;
-    if (!zeilen.length) {
-      box.hidden = true;
-      return;
-    }
-    // Ohne eigenes Symbol im Kasten: das eine "i" über den Knöpfen genügt
-    box.innerHTML = `<div class="txt"><dl>${zeilen.join('')}</dl></div>`;
+    this.#modeHelp = zeilen.length ? `<dl>${zeilen.join('')}</dl>` : '';
   }
 
   #syncSlider(key, entityId, fallback) {

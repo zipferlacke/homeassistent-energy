@@ -12,6 +12,7 @@ import {
   fetchStats, fetchPriceMeans, moneyRows, moneySums, fmtShare,
   COLORS, WueflFormEditor, sel, cssColor, TILE_CSS, tileHtml, GRID_CSS, applyColorVars,
   loadSolarForecast, forecastFactor, surplusWindows, roundQuarter, fmtClock, patchHtml,
+  infoPopover, geldHilfe, zuDiagramm,
 } from './we-shared.js';
 
 /*
@@ -24,6 +25,17 @@ const SAMPLE_KEEP_MS = 40 * 60_000;
 
 // Relativ zum Modul, damit die Grafik aus demselben versionierten Pfad kommt.
 const SVG_URL = new URL('./energieflow.svg', import.meta.url).href;
+
+/** Was ein Klick auf ein Objekt der Grafik öffnet: [Selektor, Ansicht, Karte]. */
+const ZIELE = [
+  ['#label-solar', 'energie', 'we-solar-chart-card'],
+  ['#label-batterie', 'energie', 'we-battery-chart-card'],
+  ['#label-wallbox', 'wallbox', 'wuefl-wallbox-card'],
+  ['#carport', 'wallbox', 'wuefl-wallbox-card'],
+  ['#label-netz', 'energie', 'we-history-chart-card'],
+  ['#label-haushalt', 'energie', 'we-history-chart-card'],
+  ['#label-waermepumpe', 'energie', 'we-history-chart-card'],
+];
 
 const PARTS = {
   solar: { label: 'label-solar', cable: '#kabel-solar', device: '#solar' },
@@ -111,6 +123,7 @@ ${TILE_CSS}
 
   & #solar-surface { transition: opacity .3s ease; }
 
+  & .to-chart { cursor: pointer; }
   & .flow, & .flow-fat {
     animation: dots var(--dur, 1.4s) linear infinite;
     fill: none;
@@ -150,7 +163,6 @@ ${TILE_CSS}
   margin-top: .75rem;
 }
 
-.explain { margin-top: .6rem; }
 
 .surplus {
   align-items: center;
@@ -199,7 +211,6 @@ class WueflEnergyLiveCard extends HTMLElement {
   #els = {};
   #forecast = null;
   #watch = [];
-  #explain = null;
   #today = {};
   #todayTimer = null;
   #money = [];
@@ -404,7 +415,6 @@ class WueflEnergyLiveCard extends HTMLElement {
       <div class="scene"><div class="state">Grafik wird geladen …</div></div>
       <div class="surplus" hidden></div>
       <div class="money"></div>
-      <div class="explain info" hidden></div>
       <dialog class="fc">
         <header><h3>Wettervorhersage</h3>
           <button class="close" type="button" aria-label="Schließen">${icon('mdi:close')}</button>
@@ -424,7 +434,6 @@ class WueflEnergyLiveCard extends HTMLElement {
       fcBody: card.querySelector('.fc-body'),
       scene: card.querySelector('.scene'),
       money: card.querySelector('.money'),
-      explainBox: card.querySelector('.explain'),
       surplus: card.querySelector('.surplus'),
     };
 
@@ -437,8 +446,10 @@ class WueflEnergyLiveCard extends HTMLElement {
     // Einmal am Behälter, nicht je Kachel: die Kacheln werden beim
     // Aktualisieren getauscht, ein Zuhörer je Kachel käme doppelt.
     this.#els.money.addEventListener('click', (ev) => {
-      const btn = ev.target?.closest?.('[data-click]');
-      if (btn) this.#toggleExplain(btn.dataset.click);
+      const i = ev.target?.closest?.('[data-info]');
+      if (i) { infoPopover(i, geldHilfe(i.dataset.info, this.#getSystemCost())); return; }
+      // Kachel selbst: zu den Geld-Diagrammen der Energie-Ansicht
+      if (ev.target?.closest?.('[data-click]')) zuDiagramm('energie', 'we-tiles-card');
     });
 
     this.#built = true;
@@ -465,6 +476,12 @@ class WueflEnergyLiveCard extends HTMLElement {
     svg.style.colorScheme = this.#hass?.themes?.darkMode ? 'dark' : 'light';
 
     this.#els.svg = svg;
+    // Objekte anklicken → passendes Diagramm
+    svg.addEventListener('click', (ev) => {
+      const ziel = ev.target?.closest?.('[id]') && ZIELE.find(([sel]) => ev.target.closest(sel));
+      if (ziel) zuDiagramm(ziel[1], ziel[2]);
+    });
+    for (const [sel] of ZIELE) svg.querySelector(sel)?.classList.add('to-chart');
     this.#prepareFlows();
     this.#svgReady = true;
     this.#render();
@@ -866,7 +883,7 @@ class WueflEnergyLiveCard extends HTMLElement {
     if (saved !== null) {
       tiles.push(tileHtml({
         icon: 'mdi:solar-power', color: cssColor(this, '--w-solar', '#ff9800'),
-        title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }), click: 'saved',
+        title: 'Durch PV gespart', value: fmtEuro(saved, { signed: false }), click: 'saved', info: 'gespart',
       }));
     }
 
@@ -876,39 +893,12 @@ class WueflEnergyLiveCard extends HTMLElement {
       tiles.push(tileHtml({
         icon: 'mdi:cash-clock', color: cssColor(this, '--w-batt-out', '#2BB673'),
         title: 'Zur Amortisation', value: fmtEuro(today, { signed: false }),
-        subtitle: `<span class="sub-item">${esc(fmtShare(today, cost))}</span>`, click: 'payback',
+        subtitle: `<span class="sub-item">${esc(fmtShare(today, cost))}</span>`, click: 'payback', info: 'amortisation',
       }));
     }
 
     // Nur die geänderten Kacheln tauschen – sonst springt die Scroll-Position
     patchHtml(this.#els.money, tiles.join(''));
-    this.#renderExplain();
-  }
-
-  #toggleExplain(key) {
-    this.#explain = this.#explain === key ? null : key;
-    this.#renderExplain();
-  }
-
-  #renderExplain() {
-    const cost = this.#getSystemCost();
-    const texts = {
-      saved: `<p><strong>Durch PV gespart</strong> ist der Strom, den die Anlage heute erzeugt
-        und den du <em>selbst verbraucht</em> hast — also Erzeugung minus Einspeisung.
-        Bewertet wird er mit dem Preis, den du sonst fürs Einkaufen bezahlt hättest.</p>
-        <p>Das ist echtes Geld, das nicht abgeflossen ist. Es taucht auf keiner Rechnung auf,
-        deshalb steht es hier separat und nicht in der Bilanz.</p>`,
-      payback: `<p>Was der heutige Tag zu den Anschaffungskosten beiträgt: die Ersparnis durch
-        Eigenverbrauch plus die Einspeisevergütung.</p>
-        <p>Gerechnet gegen ${Number.isFinite(cost) ? fmtEuro(cost, { signed: false }) : '–'}
-        Gesamtkosten aus den Einstellungen unter <em>Anlage</em>.</p>`,
-    };
-    const el = this.#els.explainBox;
-    if (!el) return;
-    el.hidden = !this.#explain;
-    patchHtml(el, this.#explain
-      ? `${icon('mdi:information-outline')}<div class="txt">${texts[this.#explain] ?? ''}</div>`
-      : '');
   }
 
   /* ---------------- Überschuss für größere Verbraucher -------------- */

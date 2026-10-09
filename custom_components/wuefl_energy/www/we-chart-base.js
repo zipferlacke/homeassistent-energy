@@ -5,7 +5,7 @@
  * Baut aus der zentralen Konfiguration (we-config-card) und den
  * Zeitraum-Vorgaben (we-shared.js) das Konfigurationsobjekt für <we-chart>.
  */
-import { centralConfig, getPeriod, onPeriodChange } from './we-shared.js';
+import { centralConfig, getPeriod, onPeriodChange, zielAnspringen } from './we-shared.js';
 import './we-chart.js';
 
 export class WueflChartWrapper extends HTMLElement {
@@ -34,7 +34,7 @@ export class WueflChartWrapper extends HTMLElement {
     this._hass = hass;
     if (this._chart) this._chart.hass = hass;
     if (first) this._loadCentral();
-    if (this.isConnected) this._listen();
+    if (this.isConnected) { this._listen(); if (first) zielAnspringen(this); }
     if (!this._built) this._build();
   }
 
@@ -44,6 +44,7 @@ export class WueflChartWrapper extends HTMLElement {
    * nach dem ersten Aushängen nie wieder auf den Picker.
    */
   connectedCallback() {
+    zielAnspringen(this);
     if (!this._hass) return;
     this._listen();
     // Zeitraum kann sich geändert haben, während die Karte ausgehängt war
