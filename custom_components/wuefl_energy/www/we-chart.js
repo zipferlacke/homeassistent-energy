@@ -39,7 +39,13 @@ function diagrammCss() {
    werden nur seine Variablen an die Themenfarben von HA gehängt. */
 const CARD_CSS = `
 :host { display: flex; flex-direction: column; height: 100%; }
-ha-card { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+/* height: 100% statt nur flex: 1 – setzt die umgebende Karte <we-chart> auf
+   display: block (wie die Wallbox-Karte), greift flex nicht mehr, und die
+   Karte schrumpfte auf ihren Inhalt */
+ha-card {
+  box-sizing: border-box; display: flex; flex: 1; flex-direction: column;
+  height: 100%; min-height: 0; overflow: hidden;
+}
 .dg {
   /* Nicht der Systemeinstellung folgen, sondern dem Thema von Home Assistant:
      Wer dort dunkel wählt, soll das Diagramm dunkel sehen, auch wenn das

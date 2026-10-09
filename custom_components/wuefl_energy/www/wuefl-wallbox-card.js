@@ -74,16 +74,13 @@ details.history {
   & > summary:hover { background: none; color: var(--w-accent); }
   & > .body { padding-inline: 0; }
   & .hnote { color: var(--secondary-text-color); flex: 0 1 auto; font-size: .8rem; text-align: right; }
-}
-.plot {
-  height: 230px; margin: 0 -8px;
+  & .plot { height: 230px; margin: 0 -8px; }
   /* Das Diagramm bringt ein eigenes ha-card mit – hier ohne zweiten Rahmen */
   & we-chart {
     --ha-card-background: transparent; --ha-card-border-width: 0; --ha-card-box-shadow: none;
     display: block; height: 100%;
   }
 }
-.plot[hidden] { display: none; }
 .card {
   ${GRID_CSS}
 }
@@ -378,11 +375,8 @@ class WueflWallboxCard extends HTMLElement {
           <span class="hnote">Zeitraum oben auf der Seite wählen</span>
           ${icon('mdi:chevron-down', 'class="chev"')}
         </summary>
+        <div class="body"><div class="plot"><we-chart></we-chart></div></div>
       </details>
-      <!-- Das Diagramm steht bewusst neben dem Aufklapper, nicht darin: Den
-           Inhalt von <details> blendet der Browser über content-visibility aus,
-           und ha-chart-base hielt sich dann für unsichtbar und blieb leer. -->
-      <div class="plot" hidden><we-chart></we-chart></div>
 
       <details class="fold adv" hidden>
         <summary>
@@ -431,7 +425,7 @@ class WueflWallboxCard extends HTMLElement {
       target: q('.target'), targetInput: q('.target input'), targetOut: q('.target output'), full: q('.full'),
       cur: q('.slider.cur'),
       adv: q('details.adv'),
-      history: q('.history'), plot: q('.plot'), chart: q('we-chart'),
+      history: q('.history'), chart: q('we-chart'),
       openSettings: q('.open-settings'),
       stats: q('.stats'),
     };
@@ -749,10 +743,9 @@ class WueflWallboxCard extends HTMLElement {
     const box = this.#els.history;
     if (!box) return;
     box.hidden = !live && !total;
-    this.#els.plot.hidden = box.hidden || !box.open;
     // Zugeklappt hat das Diagramm keine Größe – ECharts zeichnete dann ins
     // Leere. Es wird beim Aufklappen gebaut (siehe toggle im Aufbau).
-    if (this.#els.plot.hidden) return;
+    if (box.hidden || !box.open) return;
 
     const range = getPeriod();
     const start = new Date(range.start), end = new Date(range.end);

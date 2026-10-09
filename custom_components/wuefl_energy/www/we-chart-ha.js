@@ -26,13 +26,21 @@
 export function haRenderer(getHass) {
   return {
     mount(host) {
-      const el = document.createElement('ha-chart-base');
       // Dieselbe Klasse wie beim ECharts-Renderer: Daran hängt im Stilblatt
       // des Pakets die Regel, die der Zeichenfläche die volle Höhe gibt.
-      el.className = 'dg_canvas';
+      const huelle = document.createElement('div');
+      huelle.className = 'dg_canvas';
+      huelle.style.position = 'relative';
+      // ha-chart-base absolut in die Hülle: Seine innere Fläche hat
+      // height: 100%, und das löst sich nur gegen eine feste Höhe auf. Als
+      // Flex-Kind galt seine Höhe nicht als fest – die Fläche war 0 px hoch
+      // und das Diagramm leer.
+      const el = document.createElement('ha-chart-base');
+      el.style.cssText = 'position: absolute; inset: 0;';
       el.height = '100%';
-      host.appendChild(el);
-      return { el };
+      huelle.appendChild(el);
+      host.appendChild(huelle);
+      return { el, huelle };
     },
 
     /**
@@ -83,7 +91,7 @@ export function haRenderer(getHass) {
 
     destroy(griff) {
       griff.ro?.disconnect();
-      griff.el.remove();
+      griff.huelle.remove();
     },
   };
 }
