@@ -19,12 +19,18 @@ import { haRenderer, haSource, HA_ICONS, toDiagrammConfig } from './we-chart-ha.
 setIcons(HA_ICONS);
 
 let cssPromise = null;
-/** Das Stilblatt des Pakets einmal holen und in jeden Schatten-Baum legen. */
+let cssSheet = null;
+/** Das Stilblatt des Pakets einmal holen – für jeden Schatten-Baum dasselbe. */
 function diagrammCss() {
   if (!cssPromise) {
     cssPromise = fetch(new URL('./diagramm_v1.6.3/diagramm_v1_6_3.css', import.meta.url))
       .then((r) => (r.ok ? r.text() : ''))
-      .catch(() => '');
+      .catch(() => '')
+      .then((css) => {
+        cssSheet = new CSSStyleSheet();
+        cssSheet.replaceSync(css);
+        return cssSheet;
+      });
   }
   return cssPromise;
 }
@@ -84,11 +90,23 @@ class WueflEnergyChart extends HTMLElement {
    */
   set hass(hass) {
     this.#hass = hass;
-    if (!this.#dg) { this.#bauen(); this.#anwenden(); return; }
+    if (!this.#dg) { this.#bauenWennBereit(); return; }
     if (this.#cfg?.series && Date.now() - this.#letzterAbruf > 60_000) {
       this.#letzterAbruf = Date.now();
       this.#dg?.refresh();
     }
+  }
+
+  /**
+   * Erst bauen, wenn das Stilblatt des Pakets da ist: Ohne es hat die
+   * Zeichenfläche keine Höhe, und ein Diagramm, das bei 0 px gezeichnet
+   * wurde, blieb in ha-chart-base leer.
+   */
+  #bauenWennBereit() {
+    if (cssSheet) { this.#bauen(); this.#anwenden(); return; }
+    diagrammCss().then(() => {
+      if (!this.#dg && this.#hass && this.isConnected) { this.#bauen(); this.#anwenden(); }
+    });
   }
 
   #bauen() {
@@ -99,13 +117,7 @@ class WueflEnergyChart extends HTMLElement {
     const style = document.createElement('style');
     style.textContent = CARD_CSS;
     root.replaceChildren(style, card);
-    // Das Stilblatt des Pakets kommt asynchron; bis dahin steht das Diagramm
-    // schon, es sieht nur eine Zehntelsekunde nackt aus.
-    diagrammCss().then((css) => {
-      const s = new CSSStyleSheet();
-      s.replaceSync(css);
-      root.adoptedStyleSheets = [...root.adoptedStyleSheets, s];
-    });
+    if (!root.adoptedStyleSheets.includes(cssSheet)) root.adoptedStyleSheets = [...root.adoptedStyleSheets, cssSheet];
 
     this.#dg = new Diagramm(this.#box, {
       renderer: haRenderer(() => this.#hass),
@@ -123,7 +135,7 @@ class WueflEnergyChart extends HTMLElement {
   }
 
   connectedCallback() {
-    if (!this.#dg && this.#hass) { this.#bauen(); this.#anwenden(); }
+    if (!this.#dg && this.#hass) this.#bauenWennBereit();
   }
 
   disconnectedCallback() {

@@ -72,6 +72,9 @@ const CSS = `
   padding: 0;
 }
 .dgp_stufe[aria-pressed="true"] { box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+/* Stufen und Datum mittig – auch wenn sie am Handy untereinander stehen */
+.dgp_leiste { justify-content: center; }
+.dgp_stufen { justify-content: center; }
 `;
 
 class WueflEnergyPeriodCard extends HTMLElement {
@@ -116,7 +119,8 @@ class WueflEnergyPeriodCard extends HTMLElement {
       bounds: () => this.#grenzen(),
       datePicker: DatePicker,
       datePickerOptions: { quick: SCHNELLWAHL, forceJsPosition: true },
-      ...(this.#own.overview === false ? {} : {
+      // Übersicht nur auf Wunsch (Kartenoption overview: true)
+      ...(!this.#own.overview ? {} : {
         overview: {
           keys: [],                       // werden mit den Grenzen nachgereicht
           renderer: haRenderer(() => this.#hass),

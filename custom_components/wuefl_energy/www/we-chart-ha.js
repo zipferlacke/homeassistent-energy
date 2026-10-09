@@ -35,23 +35,77 @@ export function haRenderer(getHass) {
       return { el };
     },
 
+    /**
+     * Ohne Höhe nicht zeichnen: ECharts merkte sich sonst die Null und bliebe
+     * leer – etwa wenn das Stilblatt des Pakets erst nach dem ersten Zeichnen
+     * ankommt oder das Diagramm in einem gerade aufgeklappten Bereich sitzt.
+     * Dann wartet die Option, bis resize() eine Größe meldet.
+     */
     draw(griff, option) {
+      if (!griff.el.isConnected || griff.el.clientHeight === 0) {
+        griff.wartet = option;
+        // Selbst auf die Fläche achten – das Paket meldet nur Größenwechsel
+        // seines Rahmens, nicht die der Zeichenfläche darin
+        griff.ro ??= new ResizeObserver(() => {
+          if (griff.wartet && griff.el.clientHeight > 0) this.draw(griff, griff.wartet);
+        });
+        griff.ro.observe(griff.el);
+        return;
+      }
+      griff.wartet = null;
+      griff.ro?.disconnect();
+      griff.ro = null;
       const { series, ...rest } = option;
       griff.el.hass = getHass();
       griff.el.data = series;
       griff.el.options = rest;
+      anhaengen(griff);
     },
 
     resize(griff) {
-      const ec = griff.el?.chart ?? griff.el?._chart;
+      if (griff.wartet) { this.draw(griff, griff.wartet); return; }
+      const ec = echartsVon(griff);
       if (ec?.resize) { ec.resize(); return; }
       window.dispatchEvent(new Event('resize'));
     },
 
+    /**
+     * Ereignisse der ECharts-Instanz, z. B. 'datazoom' für den Schieber der
+     * Übersicht. ha-chart-base legt die Instanz erst beim ersten Zeichnen an –
+     * bis dahin warten die Abonnements und werden dann angehängt.
+     */
+    on(griff, name, cb) {
+      (griff.ereignisse ??= []).push([name, cb]);
+      anhaengen(griff);
+    },
+
+    instance(griff) { return echartsVon(griff) ?? null; },
+
     destroy(griff) {
+      griff.ro?.disconnect();
       griff.el.remove();
     },
   };
+}
+
+/** Die ECharts-Instanz in ha-chart-base (Name je nach HA-Version). */
+const echartsVon = (griff) => griff.el?.chart ?? griff.el?._chart ?? null;
+
+/**
+ * Wartende Ereignisse an die Instanz hängen – auch an eine neue, falls
+ * ha-chart-base sie ersetzt hat. Gibt es noch keine, in den nächsten
+ * Bildern erneut versuchen.
+ */
+function anhaengen(griff, versuche = 60) {
+  if (!griff.ereignisse?.length) return;
+  const ec = echartsVon(griff);
+  if (!ec) {
+    if (versuche > 0) requestAnimationFrame(() => anhaengen(griff, versuche - 1));
+    return;
+  }
+  if (griff.angehaengt === ec) return;
+  griff.angehaengt = ec;
+  for (const [name, cb] of griff.ereignisse) ec.on(name, cb);
 }
 
 /**
