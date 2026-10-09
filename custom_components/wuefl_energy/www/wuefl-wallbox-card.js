@@ -139,12 +139,14 @@ details.history {
   & dt { font-weight: 600; }
   & dd { color: var(--w-text-soft); margin: 0; }
 }
+/* Immer eine Zeile, auch am Handy: jeder Modus eine gleich breite Spalte,
+   lange Namen ("Solar + günstig") brechen im Knopf um */
 .modes {
   background: var(--secondary-background-color, rgba(127, 127, 127, .12));
   border-radius: 12px;
   display: grid;
   gap: 2px;
-  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column;
   margin: .3rem auto .8rem;
   padding: 3px;
 
@@ -152,11 +154,11 @@ details.history {
     background: transparent;
     border-radius: 999px;
     color: var(--secondary-text-color, #727272);
-    flex-direction: column; gap: .2rem; height: auto; padding: .6rem .4rem;
+    flex-direction: column; gap: .2rem; height: auto; min-width: 0; padding: .55rem .2rem;
     transition: all .2s ease;
 
     & ha-icon { --mdc-icon-size: 22px; }
-    & .txt { font-size: var(--w-fs-sm); font-weight: 500; line-height: 1.2; text-align: center; }
+    & .txt { font-size: var(--w-fs-sm); font-weight: 500; hyphens: auto; line-height: 1.2; overflow-wrap: anywhere; text-align: center; }
     &:hover { color: var(--primary-text-color, #212121); }
     &[aria-pressed="true"] {
       background: var(--card-background-color, #fff);
@@ -201,7 +203,7 @@ details.history {
    Text nebeneinander, damit sie auch flacher wird. */
 @media (min-width: 700px) {
   .modes {
-    grid-auto-columns: auto; grid-auto-flow: column; grid-template-columns: none;
+    grid-auto-columns: auto;
     margin-inline: auto; width: fit-content;
 
     & .btn {
@@ -320,6 +322,9 @@ class WueflWallboxCard extends HTMLElement {
       current_entity: current,
       current_actual_entity: current_actual,
       ignore_percent_limit_entity: ignore_limit,
+      // Ohne eigene Tages-Entität ist das der Zähler des Ladevorgangs – der
+      // steht bis zum nächsten Anstecken still und ist nicht "heute"
+      today_is_session: !getEntity(merged.today_energy_entity),
     };
     this.#watch = entityIds(this.#config);
     applyReadOnly(this);
@@ -671,12 +676,15 @@ class WueflWallboxCard extends HTMLElement {
     else label = 'angeschlossen, lädt nicht';
 
     const amps = this.#amps(pw);
-    const today = energy(h, c.today_energy_entity);
+    // "heute" nur aus dem Verlauf von heute – der Zähler des Ladevorgangs
+    // zeigte sonst noch tagelang den letzten Vorgang als heute an
+    const today = this.#sessions ? this.#sessions.heute
+      : c.today_is_session ? null : energy(h, c.today_energy_entity);
     // Beim Laden Strom und Leistung zusätzlich zum Status der Wallbox
     this.#els.state.textContent = [
       rawStatus ?? (charging ? null : label),
       charging ? (amps !== null ? `${amps} · ${fmtPower(pw)}` : fmtPower(pw)) : null,
-      today !== null ? `heute ${fmtEnergy(today)}` : null,
+      today > 0.005 ? `heute ${fmtEnergy(today)}` : null,
     ].filter(Boolean).join(' · ');
 
     const needed = soc === null ? 0 : ((goal - soc) / 100) * (c.capacity ?? 58);
@@ -687,8 +695,17 @@ class WueflWallboxCard extends HTMLElement {
     this.#els.goalLeft.textContent = est.left ?? '';
     this.#els.goalRight.textContent = est.main ?? '';
 
-    this.#els.track.hidden = soc === null || state === 'frei';
-    this.#els.scale.hidden = soc === null || !est.note;
+    // Der Akku des Autos bleibt stehen, auch wenn keins angesteckt ist – er
+    // ist der letzte bekannte Stand und Grundlage für "laden bis x %"
+    const hasTarget = !!c.target_soc_entity && !!h.states[c.target_soc_entity];
+    const ohneSoc = soc === null && hasTarget
+      ? (c.car_soc_entity
+        ? `Ladestand des Autos (${c.car_soc_entity}) gerade nicht verfügbar – bis dahin lädt die Automation ohne Ladeziel.`
+        : 'Ohne Ladestand des Autos kann die Automation nicht beim Ladeziel aufhören. Bitte in der Zuordnung unter Wallboxen „Fahrzeug Akku %“ zuordnen, z. B. aus der Integration des Autos.')
+      : '';
+    this.#els.track.hidden = soc === null;
+    this.#els.scale.hidden = !(soc !== null ? est.note : ohneSoc);
+    if (soc === null) this.#els.scaleNote.textContent = ohneSoc;
     if (soc !== null) {
       this.#els.fill.style.width = `${Math.max(0, Math.min(100, soc))}%`;
       this.#els.markTarget.style.left = `${Math.max(0, Math.min(100, goal))}%`;
@@ -701,7 +718,6 @@ class WueflWallboxCard extends HTMLElement {
 
     this.#renderModes(this.#els.modes, c.mode_entity);
 
-    const hasTarget = !!c.target_soc_entity && !!h.states[c.target_soc_entity];
     this.#els.target.hidden = !hasTarget;
     this.#els.full.setAttribute('aria-pressed', String(isIgnored));
     this.#els.full.textContent = isIgnored
@@ -950,7 +966,13 @@ class WueflWallboxCard extends HTMLElement {
     // "Heute geladen" aus denselben Daten wie das Diagramm; erst wenn die
     // fehlen, der Tageszähler der Wallbox.
     const today = s ? s.heute : energy(h, c.today_energy_entity);
-    if (today !== null) items.push({ e: c.today_energy_entity, icon: 'mdi:calendar-today', color: wbColor, k: 'Heute geladen', v: fmtEnergy(today) });
+    const nurVorgang = !s && c.today_is_session;
+    if (today !== null) {
+      items.push({
+        e: c.today_energy_entity, icon: nurVorgang ? 'mdi:history' : 'mdi:calendar-today', color: wbColor,
+        k: nurVorgang ? 'Letzter Ladevorgang' : 'Heute geladen', v: fmtEnergy(today),
+      });
+    }
     const total = energy(h, c.total_energy_entity);
     if (total !== null) items.push({ e: c.total_energy_entity, icon: 'mdi:counter', color: wbColor, k: 'Gesamt', v: fmtEnergy(total) });
 

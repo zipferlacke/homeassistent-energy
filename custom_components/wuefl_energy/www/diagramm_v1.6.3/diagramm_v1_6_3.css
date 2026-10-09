@@ -17,9 +17,14 @@
   --dg-bg: light-dark(#fff, #1c1f24);
   /* Rand und Trennlinien … */
   --dg-line: light-dark(#d4d6d9, #3a3f46);
-  /* … und getrennt davon das Gitter im Diagramm: hell genug, um hinter den
-     Kurven zu verschwinden, dunkel genug, um Werte ablesen zu können. */
-  --dg-grid: light-dark(#e8eaed, #2c3036);
+  /* … und getrennt davon Gitter und Achsen im Diagramm: ein durchscheinendes
+     Grau, das auf hellem wie auf dunklem Grund leicht grau bleibt – hell
+     genug, um hinter den Kurven zu verschwinden, dunkel genug, um Werte
+     abzulesen. Bewusst kein light-dark(): Die Zeichenfläche bekommt ihre
+     Farben beim Zeichnen als feste Werte; nach einem Wechsel des Themas
+     standen sonst die hellen Linien weiß auf dunklem Grund. */
+  --dg-grid: rgb(128 128 128 / .22);
+  --dg-axis: rgb(128 128 128 / .5);
   --dg-radius: 12px;
   --dg-gap: 8px;
   --dg-title-size: 1.25rem;

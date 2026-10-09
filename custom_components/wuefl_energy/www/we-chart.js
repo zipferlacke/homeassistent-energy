@@ -5,7 +5,7 @@
  * Hier steht nur noch, was Home Assistant von einer Karte erwartet: setConfig,
  * getCardSize, hass, Registrierung im Kartenkatalog. Alles Fachliche – Titel,
  * Chips, Legende, Vollbild, Auflösung, Töpfe, Einheiten, Tooltip – kommt aus
- * diagramm_v1.5.0 und ist Zeichen für Zeichen dasselbe wie in der Bibliothek.
+ * diagramm_v1.6.3 und ist Zeichen für Zeichen dasselbe wie in der Bibliothek.
  *
  * Vorher lagen dieselben 1000 Zeilen hier und nirgends sonst. Jede Korrektur
  * musste doppelt gemacht werden, sobald etwas davon auch auf einer Webseite
@@ -13,7 +13,7 @@
  * und Chips fehlten und das seine Höhe nie neu maß.
  */
 import { registerCard } from './we-shared.js';
-import { Diagramm, setIcons } from './diagramm_v1.5.0/diagramm_v1_5_0.js';
+import { Diagramm, setIcons } from './diagramm_v1.6.3/diagramm_v1_6_3.js';
 import { haRenderer, haSource, HA_ICONS, toDiagrammConfig } from './we-chart-ha.js';
 
 setIcons(HA_ICONS);
@@ -22,7 +22,7 @@ let cssPromise = null;
 /** Das Stilblatt des Pakets einmal holen und in jeden Schatten-Baum legen. */
 function diagrammCss() {
   if (!cssPromise) {
-    cssPromise = fetch(new URL('./diagramm_v1.5.0/diagramm_v1_5_0.css', import.meta.url))
+    cssPromise = fetch(new URL('./diagramm_v1.6.3/diagramm_v1_6_3.css', import.meta.url))
       .then((r) => (r.ok ? r.text() : ''))
       .catch(() => '');
   }
@@ -73,16 +73,19 @@ class WueflEnergyChart extends HTMLElement {
   }
 
   /**
-   * HA setzt hass bei jeder Zustandsänderung irgendeiner Entität neu. Die
-   * Statistik ändert sich aber höchstens alle fünf Minuten – deshalb nur dann
-   * neu abfragen. Zeitraum- und Konfigurationswechsel laden sofort.
+   * HA setzt hass bei jeder Zustandsänderung irgendeiner Entität neu. Neu
+   * abgefragt wird höchstens jede Minute – die Statistik selbst kommt nur alle
+   * fünf, die Minuten dazwischen ergänzt die Quelle aus dem Verlauf.
+   * Zeitraum- und Konfigurationswechsel laden sofort.
+   *
+   * Ohne Diagramm (erstes Mal oder nach dem Aushängen, z. B. beim Wechsel der
+   * Ansicht) wird es neu gebaut und bekommt die Konfiguration gleich mit –
+   * sonst bliebe es leer, bis jemand den Zeitraum ändert.
    */
   set hass(hass) {
-    const ersteMal = !this.#hass;
     this.#hass = hass;
-    if (!this.#dg) this.#bauen();
-    if (ersteMal) { this.#anwenden(); return; }
-    if (this.#cfg?.series && Date.now() - this.#letzterAbruf > 300_000) {
+    if (!this.#dg) { this.#bauen(); this.#anwenden(); return; }
+    if (this.#cfg?.series && Date.now() - this.#letzterAbruf > 60_000) {
       this.#letzterAbruf = Date.now();
       this.#dg?.refresh();
     }
@@ -117,6 +120,10 @@ class WueflEnergyChart extends HTMLElement {
     // soll darin keinen zweiten Rahmen zeichnen – es sei denn, jemand will
     // es ausdrücklich anders.
     this.#dg.setConfig({ card: false, ...toDiagrammConfig(this.#cfg, this.#hass) });
+  }
+
+  connectedCallback() {
+    if (!this.#dg && this.#hass) { this.#bauen(); this.#anwenden(); }
   }
 
   disconnectedCallback() {

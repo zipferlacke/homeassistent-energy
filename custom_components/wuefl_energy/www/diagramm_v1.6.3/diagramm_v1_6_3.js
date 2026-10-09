@@ -52,7 +52,7 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
-import { onPicker } from './picker_v1_5_0.js';
+import { onPicker } from './picker_v1_6_3.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
@@ -182,7 +182,12 @@ const zeitVon = (r) => (typeof r.start === 'number' ? r.start : Date.parse(r.sta
  * Woche liegen für die letzten zwei Tage feine Werte vor und davor nichts.
  * Die Antwort wäre nicht leer, aber fünf Siebtel der Woche fehlten.
  */
-function abdeckung(antwort, start, end, stufeMs) {
+function abdeckung(antwort, start, end, stufeMs, now = Date.now()) {
+  // Nur bis jetzt: Für "heute" um 14 Uhr gibt es noch keine Werte bis
+  // Mitternacht. Gezählt bis Tagesende wären das 58 % – zu wenig, und das
+  // Diagramm wiche auf Tageswerte aus: ein einziger Punkt statt einer Kurve.
+  end = Math.min(+end, Math.max(+start, now));
+  if (+end <= +start) return 1;
   const spanne = Math.max(1, +end - +start);
   let beste = 0;
   for (const zeilen of Object.values(antwort ?? {})) {
@@ -516,6 +521,7 @@ const nf = (v, stellen = 2) => Number(v).toLocaleString(undefined, { maximumFrac
  */
 export function buildOption(reihen, achsen, start, end, raster, cfg, host, zustand = {}) {
   const { voll = false, zoom = false } = zustand;
+  const xWert = wertAchse(cfg);
   const gesamt = reihen.length;
   const balken = reihen.some((s) => (s.type || cfg.type || 'line') === 'bar');
 
@@ -568,9 +574,14 @@ export function buildOption(reihen, achsen, start, end, raster, cfg, host, zusta
   });
 
   const textFarbe = tokenFarbe(host, '--dg-text-soft', '#5f6368');
-  const achsenFarbe = tokenFarbe(host, '--dg-line', '#e0e0e0');
-  const gitterFarbe = tokenFarbe(host, '--dg-grid', '#e8eaed');
-  const ueberJahre = start.getFullYear() !== end.getFullYear();
+  // Gitter und Achsen: dasselbe durchscheinende Grau in hell und dunkel (diagramm.css)
+  const achsenFarbe = tokenFarbe(host, '--dg-axis', 'rgba(128, 128, 128, 0.5)');
+  const gitterFarbe = tokenFarbe(host, '--dg-grid', 'rgba(128, 128, 128, 0.22)');
+  // Tooltip in den Farben der Seite – ECharts zeichnete ihn sonst immer weiß mit dunkler Schrift
+  const tipText = tokenFarbe(host, '--dg-text', '#000000');
+  const tipBg = tokenFarbe(host, '--dg-bg', '#ffffff');
+  const tipLine = tokenFarbe(host, '--dg-line', '#d4d6d9');
+  const ueberJahre = !xWert && start.getFullYear() !== end.getFullYear();
 
   return {
     animation: false,
@@ -582,7 +593,13 @@ export function buildOption(reihen, achsen, start, end, raster, cfg, host, zusta
     grid: cfg.axis_width
       ? { left: cfg.axis_width, right: 8, top: achsen.some((a) => a.unit) ? 28 : 12, bottom: 22 }
       : { left: 8, right: 8, top: achsen.some((a) => a.unit) ? 28 : 12, bottom: 4, containLabel: true },
-    xAxis: [{
+    xAxis: [xWert ? {
+      type: 'value', min: +start, max: +end,
+      axisLine: { lineStyle: { color: achsenFarbe } },
+      axisTick: { lineStyle: { color: achsenFarbe } },
+      axisLabel: { color: textFarbe, hideOverlap: true, formatter: (v) => wertText(v, xWert) },
+      splitLine: { show: !!xWert.grid, lineStyle: { color: gitterFarbe } },
+    } : {
       type: 'time', min: +start, max: +end,
       axisLine: { lineStyle: { color: achsenFarbe } },
       axisTick: { lineStyle: { color: achsenFarbe } },
@@ -607,6 +624,7 @@ export function buildOption(reihen, achsen, start, end, raster, cfg, host, zusta
     tooltip: {
       trigger: 'axis',
       confine: true,
+      backgroundColor: tipBg, borderColor: tipLine, textStyle: { color: tipText },
       axisPointer: { type: balken ? 'shadow' : 'line' },
       // In einer Karte ist wenig Platz: Der Kasten sitzt an der Linie am
       // oberen oder unteren Rand – auf der Seite, wo der Finger nicht ist.
@@ -619,9 +637,37 @@ export function buildOption(reihen, achsen, start, end, raster, cfg, host, zusta
             punkt[1] > h / 2 ? 0 : Math.max(0, h - kh)];
         },
       }),
-      formatter: (params) => tooltip(params, reihen, raster, achsen),
+      formatter: (params) => tooltip(params, reihen, raster, achsen, xWert),
     },
     series,
+  };
+}
+
+/**
+ * Werte-Achse statt Zeit – etwa Kilometer unter einem Höhenprofil.
+ *
+ * `x_axis: { type: 'value', unit: 'km' }` schaltet um. Die Reihen bringen
+ * ihre Punkte dann als `data: [[x, wert], …]` selbst mit; eine Quelle wird
+ * dafür nicht gefragt, Töpfe gibt es keine.
+ */
+const wertAchse = (cfg) => (cfg?.x_axis?.type === 'value' ? cfg.x_axis : null);
+
+const wertText = (v, achse) => `${nf(v, achse.decimals ?? 1)}${achse.unit ? ` ${achse.unit}` : ''}`;
+
+/** Spanne der Werte-Achse: feste Grenzen oder das, was die Reihen belegen. */
+function wertSpanne(cfg) {
+  const achse = wertAchse(cfg);
+  let min = Infinity, max = -Infinity;
+  for (const s of cfg.series ?? []) {
+    for (const [x] of s.data ?? []) {
+      if (!Number.isFinite(x)) continue;
+      if (x < min) min = x;
+      if (x > max) max = x;
+    }
+  }
+  return {
+    start: achse.min ?? (Number.isFinite(min) ? min : 0),
+    end: achse.max ?? (Number.isFinite(max) ? max : 1),
   };
 }
 
@@ -634,26 +680,31 @@ function zeitFormat(raster, ueberJahre) {
 }
 
 /** Tooltip mit Zeitspanne des Topfs und Summe darunter. */
-function tooltip(params, reihen, raster, achsen) {
+function tooltip(params, reihen, raster, achsen, xWert = null) {
   const liste = Array.isArray(params) ? params : [params];
   if (!liste.length) return '';
   const t = liste[0].value?.[0] ?? liste[0].axisValue;
-  const von = new Date(t);
-  const bis = new Date(naechsterTopf(+von, raster));
-  const lang = raster.ms >= TAG;
-  const kopf = lang
-    ? (raster.unit === 'm'
-      ? von.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-      : von.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }))
-    : `${von.toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} – `
-      + `${bis.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+  let kopf;
+  if (xWert) {
+    kopf = wertText(t, { ...xWert, decimals: xWert.decimals ?? 2 });
+  } else {
+    const von = new Date(t);
+    const bis = new Date(naechsterTopf(+von, raster));
+    const lang = raster.ms >= TAG;
+    kopf = lang
+      ? (raster.unit === 'm'
+        ? von.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+        : von.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }))
+      : `${von.toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} – `
+        + `${bis.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+  }
 
   const zeilen = liste.filter((p) => p.value?.[1] !== null && p.value?.[1] !== undefined).map((p) => {
     const s = reihen.find((r) => (r.legend_group || r.name || r.key) === p.seriesName);
     const einheit = s?.einheit ?? achsen[s?.y_axis || 0]?.unit ?? '';
     const punkt = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:9px;height:9px;background:${p.color}"></span>`;
     return `<div style="display:flex;gap:10px;justify-content:space-between">
-      <span>${punkt}${p.seriesName}</span><b>${nf(Math.abs(p.value[1]))} ${einheit}</b></div>`;
+      <span>${punkt}${p.seriesName}</span><b>${nf(Math.abs(p.value[1]), s?.decimals ?? 2)} ${einheit}</b></div>`;
   });
   return `<div style="font-weight:600;margin-bottom:4px">${kopf}</div>${zeilen.join('')}`;
 }
@@ -669,6 +720,7 @@ export class Diagramm {
   #cfg = {}; #reihen = []; #aus = new Set(); #seq = 0; #ro = null; #fs = null; #heimat = null;
   #voll = false; #zoomAn = false; #ausserhalb = null;
   #pickerAb = null; #pickerRange = null; #picker = null;
+  #schema = null; #schemaNeu = null;
 
   /**
    * @param {Element} host      Element, in das gezeichnet wird
@@ -721,6 +773,12 @@ export class Diagramm {
       if (e?.contentRect?.height > 0) this.#renderer.resize?.(this.#griff);
     });
     this.#ro.observe(this.#els.plot);
+
+    // Hell ↔ dunkel: Die Zeichenfläche kennt nur feste Farben (Beschriftung der
+    // Achsen) – wechselt das Thema, neu zeichnen, sonst bleiben die alten stehen.
+    this.#schema = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
+    this.#schemaNeu = () => { if (this.#cfg?.series?.length) this.refresh(); };
+    this.#schema?.addEventListener?.('change', this.#schemaNeu);
   }
 
   /* ── Öffentliche Schnittstelle ──────────────────────────────────────────── */
@@ -772,7 +830,8 @@ export class Diagramm {
     const cfg = this.#cfg;
     if (!cfg?.series?.length) return;
 
-    const { start, end } = this.#pickerRange ?? zeitraum(cfg.range, cfg.start, cfg.end);
+    const { start, end } = wertAchse(cfg) ? wertSpanne(cfg)
+      : (this.#pickerRange ?? zeitraum(cfg.range, cfg.start, cfg.end));
     const wunsch = rasterAus(cfg.aggregation, cfg.range);
     const achsen = Array.isArray(cfg.y_axes) && cfg.y_axes.length
       ? cfg.y_axes : [{ unit: cfg.y_axis_unit || '' }];
@@ -819,9 +878,20 @@ export class Diagramm {
   /** Läuft das Diagramm gerade im Vollbild? */
   get fullscreen() { return this.#voll; }
 
+  /**
+   * Ereignis der Zeichenfläche abonnieren, z. B. 'updateAxisPointer' – so
+   * kann eine Karte die Stelle zeigen, über der gerade der Zeiger steht.
+   * Braucht einen Renderer mit `on()`; sonst geschieht nichts.
+   */
+  on(name, cb) { this.#renderer.on?.(this.#griff, name, cb); return this; }
+
+  /** Die Zeicheninstanz selbst, sofern der Renderer sie herausgibt. */
+  get instance() { return this.#renderer.instance?.(this.#griff) ?? null; }
+
   destroy() {
     this.#seq += 1;
     this.#ro?.disconnect();
+    this.#schema?.removeEventListener?.('change', this.#schemaNeu);
     if (this.#ausserhalb) window.removeEventListener('pointerdown', this.#ausserhalb);
     this.#picker?.meldeReihen?.(this, null);
     this.#pickerAb?.();
@@ -855,13 +925,31 @@ export class Diagramm {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'dg_btn dg_fsbtn';
-      btn.title = 'Vollbild';
-      btn.setAttribute('aria-label', 'Diagramm im Vollbild öffnen');
-      btn.innerHTML = `<span class="dg_glyph" data-dg-ico="fullscreen">${ICO.fullscreen}</span>`;
-      btn.addEventListener('click', () => this.toggleFullscreen(true));
+      btn.innerHTML = '<span class="dg_glyph" data-dg-ico="fullscreen"></span>';
       this.#els.tools.appendChild(btn);
+      // setConfig() baut den Kopf auch im Vollbild neu – der Knopf zeigt den Zustand von jetzt
+      this.#fsKnopf();
     }
     this.#els.head.hidden = !cfg.title && !this.#els.tools.children.length;
+  }
+
+  /**
+   * Vollbild-Knopf auf den Zustand stellen: öffnen oder verlassen.
+   *
+   * Nur `onclick`, kein addEventListener: Mit beidem liefen nach dem ersten
+   * Schließen zwei Handler im selben Klick – das Vollbild ging auf und
+   * sofort wieder zu.
+   */
+  #fsKnopf() {
+    const btn = this.#els.tools.querySelector('.dg_fsbtn');
+    if (!btn) return;
+    const voll = this.#voll, ico = voll ? 'fullscreenExit' : 'fullscreen';
+    btn.title = voll ? 'Vollbild verlassen' : 'Vollbild';
+    btn.setAttribute('aria-label', voll ? 'Vollbild verlassen' : 'Diagramm im Vollbild öffnen');
+    const glyph = btn.querySelector('[data-dg-ico]');
+    glyph.dataset.dgIco = ico;
+    glyph.innerHTML = ICO[ico];
+    btn.onclick = () => this.toggleFullscreen(!voll);
   }
 
   /** `chips: [...]`, `chip: {...}` – beides erlaubt, beliebig viele. */
@@ -993,18 +1081,12 @@ export class Diagramm {
     this.#heimat = { eltern: this.#host.parentNode, platz, vor: this.#host.nextSibling };
     this.#heimat.eltern?.insertBefore(platz, this.#host);
 
-    const btn = this.#els.tools.querySelector('.dg_fsbtn');
-    if (btn) {
-      btn.title = 'Vollbild verlassen';
-      btn.setAttribute('aria-label', 'Vollbild verlassen');
-      btn.querySelector('[data-dg-ico]').dataset.dgIco = 'fullscreenExit';
-      btn.querySelector('[data-dg-ico]').innerHTML = ICO.fullscreenExit;
-      btn.onclick = () => this.toggleFullscreen(false);
-    }
-
     this.#fs.replaceChildren(this.#host);
     this.#voll = true;
+    this.#fsKnopf();
     this.#fs.showModal();
+    // Neu zeichnen: Im Vollbild gilt anderes (Zoomen, Tooltip folgt dem Zeiger)
+    this.refresh();
     this.#nachmessen();
     this.#fs.requestFullscreen?.().catch(() => {});
   }
@@ -1020,14 +1102,8 @@ export class Diagramm {
     }
     this.#heimat = null;
     if (this.#fs?.open) this.#fs.close();
-    const btn = this.#els.tools.querySelector('.dg_fsbtn');
-    if (btn) {
-      btn.title = 'Vollbild';
-      btn.setAttribute('aria-label', 'Diagramm im Vollbild öffnen');
-      btn.querySelector('[data-dg-ico]').dataset.dgIco = 'fullscreen';
-      btn.querySelector('[data-dg-ico]').innerHTML = ICO.fullscreen;
-      btn.onclick = () => this.toggleFullscreen(true);
-    }
+    this.#fsKnopf();
+    this.refresh();
     this.#nachmessen();
   }
 
@@ -1043,13 +1119,14 @@ export class Diagramm {
   /**
    * Darf gerade gezoomt werden?
    *
-   * `zoom: false` schaltet es ganz ab, `zoom: true` immer an. Ohne Angabe
-   * erst nach einem Klick ins Diagramm – im Vollbild sofort, da ist die
-   * Geste eindeutig.
+   * `zoom: false` schaltet es ganz ab, `zoom: true` immer an,
+   * `zoom: 'fullscreen'` nur im Vollbild. Ohne Angabe erst nach einem Klick
+   * ins Diagramm – im Vollbild sofort, da ist die Geste eindeutig.
    */
   #zoomBereit() {
     if (this.#cfg.zoom === false) return false;
     if (this.#cfg.zoom === true) return true;
+    if (this.#cfg.zoom === 'fullscreen') return this.#voll;
     return this.#voll || this.#zoomAn;
   }
 

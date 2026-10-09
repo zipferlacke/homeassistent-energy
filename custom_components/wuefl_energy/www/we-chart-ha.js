@@ -65,7 +65,7 @@ export function haSource(getHass, types = ['change', 'mean', 'max', 'min']) {
   return async (keys, start, end, stufe) => {
     const hass = getHass();
     if (!hass) return {};
-    return hass.callWS({
+    const stats = await hass.callWS({
       type: 'recorder/statistics_during_period',
       start_time: new Date(start).toISOString(),
       end_time: new Date(end).toISOString(),
@@ -73,7 +73,71 @@ export function haSource(getHass, types = ['change', 'mean', 'max', 'min']) {
       period: stufe,
       types,
     });
+    if (stufe === '5minute') await liveNachtragen(hass, stats, keys, +new Date(start), +new Date(end));
+    return stats;
   };
+}
+
+const FUENF_MIN = 300_000;
+
+/**
+ * Echtzeit für Leistungskurven: Die 5-Minuten-Statistik entsteht erst nach
+ * Ablauf jedes Fünf-Minuten-Fensters (und ein paar Sekunden später). Bis
+ * dahin fehlen die letzten 5–10 Minuten. Die werden hier aus dem Verlauf
+ * nachgetragen – als zeitgewichteter Mittelwert je Fenster, das jüngste
+ * Fenster bis jetzt. Nur für Messwerte (mean), Zählerstände bleiben bei der
+ * Statistik.
+ */
+async function liveNachtragen(hass, stats, keys, start, end) {
+  const now = Date.now();
+  if (end < now - 2 * FUENF_MIN) return;
+  const offen = keys.filter((k) => {
+    const st = hass.states?.[k];
+    return st && Number.isFinite(Number(st.state)) && st.attributes?.state_class === 'measurement';
+  });
+  if (!offen.length) return;
+
+  // Ab dem Ende der letzten Statistik-Zeile, höchstens 15 min zurück
+  const ab = (k) => {
+    const zeilen = stats[k] ?? [];
+    const letzte = zeilen[zeilen.length - 1];
+    const t = letzte ? Number(letzte.end ?? (Number(letzte.start) + FUENF_MIN)) : 0;
+    return Math.max(start, t, Math.floor((now - 3 * FUENF_MIN) / FUENF_MIN) * FUENF_MIN);
+  };
+  const von = Math.min(...offen.map(ab));
+  let hist;
+  try {
+    hist = await hass.callWS({
+      type: 'history/history_during_period',
+      start_time: new Date(von).toISOString(),
+      end_time: new Date(now).toISOString(),
+      entity_ids: offen,
+      minimal_response: true,
+      no_attributes: true,
+      significant_changes_only: false,
+    });
+  } catch {
+    return;
+  }
+
+  for (const k of offen) {
+    // Stufenfunktion: Wert gilt ab seinem Zeitstempel bis zum nächsten
+    const punkte = (hist?.[k] ?? [])
+      .map((r) => [typeof r.lu === 'number' ? r.lu * 1000 : Date.parse(r.last_updated ?? r.last_changed), Number(r.s ?? r.state)])
+      .filter(([t, v]) => Number.isFinite(t) && Number.isFinite(v));
+    if (!punkte.length) continue;
+    const zeilen = stats[k] ?? (stats[k] = []);
+    for (let f = ab(k); f < Math.min(now, end); f += FUENF_MIN) {
+      const bis = Math.min(f + FUENF_MIN, now);
+      let summe = 0, dauer = 0;
+      for (let i = 0; i < punkte.length; i += 1) {
+        const a = Math.max(punkte[i][0], f);
+        const b = Math.min(punkte[i + 1]?.[0] ?? now, bis);
+        if (b > a) { summe += punkte[i][1] * (b - a); dauer += b - a; }
+      }
+      if (dauer > 0) zeilen.push({ start: f, end: f + FUENF_MIN, mean: summe / dauer });
+    }
+  }
 }
 
 /** Icons des Diagramms und des Pickers als mdi – wie im Rest der Integration. */
