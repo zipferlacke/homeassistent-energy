@@ -1067,6 +1067,9 @@ export async function todayTotals(hass, ids) {
       period: 'day',
       types: ['change'],
     });
+    // Wie im Energieverlauf: die laufende Stunde dazu, sonst hinkt die
+    // Live-Ansicht bis zu einer Stunde hinterher
+    await laufendeStunde(hass, res, wanted, { start, end: new Date(+start + 86_400_000) }, 'day');
     const out = {};
     for (const [id, rows] of Object.entries(res ?? {})) {
       out[id] = asList(rows).reduce((a, r) => a + (Number(r.change) || 0), 0);
