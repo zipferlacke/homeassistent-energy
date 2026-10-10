@@ -40,7 +40,7 @@ class PickerBase {
     }
 
     injectCss() {
-        const url = new URL('./datepicker_v2_1_3.css', import.meta.url);
+        const url = new URL('./datepicker_v2_1_4.css', import.meta.url);
         if (document.querySelector(`link[href="${url.href}"]`)) return;
         document.head.insertAdjacentHTML('beforeend', `<link rel="stylesheet" href="${url.href}">`);
     }
@@ -1659,11 +1659,15 @@ export class DatePicker extends PickerBase {
     // ── Global Click ───────────────────────────────────────────────────────────
 
     #handleGlobalClick(e) {
+        // Über den Pfad statt über e.target: Sitzt der Picker in einem Shadow-DOM,
+        // zeigt e.target am document nur noch auf den Host – der Klick auf den
+        // Auslöser wurde dann nicht erkannt und der Kalender blieb zu.
+        const path = e.composedPath();
         for (const inst of this.activePickers) {
-            const inPop     = inst.popover?.isConnected && e.composedPath().includes(inst.popover);
-            const inTrigger = inst.triggerElm?.contains(e.target);
-            const inFrom    = inst.fromInput?.contains(e.target);
-            const inTo      = inst.toInput?.contains(e.target);
+            const inPop     = inst.popover?.isConnected && path.includes(inst.popover);
+            const inTrigger = !!inst.triggerElm && path.includes(inst.triggerElm);
+            const inFrom    = !!inst.fromInput && path.includes(inst.fromInput);
+            const inTo      = !!inst.toInput && path.includes(inst.toInput);
 
             if (!inPop && !inTrigger && !inFrom && !inTo) {
                 if (inst.isOpen) inst.close();
