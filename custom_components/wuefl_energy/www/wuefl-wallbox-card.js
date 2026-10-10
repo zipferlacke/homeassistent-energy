@@ -74,7 +74,7 @@ details.history {
   & > summary:hover { background: none; color: var(--w-accent); }
   & > .body { padding-inline: 0; }
   & .hnote { color: var(--secondary-text-color); flex: 0 1 auto; font-size: .8rem; text-align: right; }
-  & .plot { height: 230px; margin: 0 -8px; }
+  & .plot { height: 230px; }
   /* Das Diagramm bringt ein eigenes ha-card mit – hier ohne zweiten Rahmen */
   & we-chart {
     --ha-card-background: transparent; --ha-card-border-width: 0; --ha-card-box-shadow: none;
