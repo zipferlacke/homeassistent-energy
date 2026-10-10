@@ -24,6 +24,12 @@
 # ändert – kein Dauerfeuer auf Modbus/Wechselrichter. Im Trace stehen die
 # Messwerte je Wallbox unter "boxen", die Zielwerte unter "plan".
 #
+# Auffrischen: Alle 5 min schreibt die Automation Ladestrom, Laden/Pause und
+# den Akku-Modus noch einmal, auch wenn sich nichts geändert hat – falls ein
+# Gerät den Wert verloren hat oder jemand anderes ihn überschrieben hat.
+# Die Phasen werden dabei nicht neu gesetzt (manche Wallboxen unterbrechen
+# dafür das Laden). Bei "Nur lesen" wird auch nicht aufgefrischt.
+#
 # Mehrere Wallboxen: Jede hat ihren eigenen Lademodus. "Schnell" lädt mit
 # voller Leistung. Den Solarüberschuss bekommen die Wallboxen in der
 # Reihenfolge der Zuordnung – die erste zuerst, der Rest geht an die nächste.
@@ -65,6 +71,10 @@ automation:
     trigger:
       - trigger: time_pattern
         seconds: "/30"
+      # Alle 5 min alles noch einmal schreiben (siehe "Auffrischen" oben)
+      - trigger: time_pattern
+        minutes: "/5"
+        id: auffrischen
       # Globale Helfer haben feste Namen – Änderungen sofort umsetzen
       - trigger: state
         entity_id:
@@ -108,6 +118,8 @@ automation:
           {% set alt = (t.from_state.attributes.get('config') or {}).get('settings') or {} %}
           {{ not (alt.get('read_only') or false) }}
         {% else %}{{ false }}{% endif %}
+
+      auffrischen: "{{ trigger is defined and trigger.id == 'auffrischen' }}"
 
       # --- Entitäten (leer = nicht zugeordnet) ------------------------------
       grid_power_entity: "{{ grid.get('live', '') }}"
@@ -519,7 +531,7 @@ automation:
                           sequence:
                             - if:
                                 - condition: template
-                                  value_template: "{{ b.stop_e != '' and not b.pausiert }}"
+                                  value_template: "{{ b.stop_e != '' and (not b.pausiert or auffrischen) }}"
                               then:
                                 - if:
                                     - condition: template
@@ -535,7 +547,7 @@ automation:
                                       target: { entity_id: "{{ b.stop_e }}" }
                             - if:
                                 - condition: template
-                                  value_template: "{{ b.pause_ueber_strom and states(b.cur_e) | float(-1) != 0 }}"
+                                  value_template: "{{ b.pause_ueber_strom and (states(b.cur_e) | float(-1) != 0 or auffrischen) }}"
                               then:
                                 - action: "{{ b.cur_e.split('.')[0] }}.set_value"
                                   continue_on_error: true
@@ -553,7 +565,7 @@ automation:
                               data: { option: "{{ (b.ph1 if b.phasen_ziel | int == 1 else b.ph3) | string }}" }
                         - if:
                             - condition: template
-                              value_template: "{{ states(b.cur_e) | float(-1) != b.ampere | float }}"
+                              value_template: "{{ states(b.cur_e) | float(-1) != b.ampere | float or auffrischen }}"
                           then:
                             - action: "{{ b.cur_e.split('.')[0] }}.set_value"
                               continue_on_error: true
@@ -561,7 +573,7 @@ automation:
                               data: { value: "{{ b.ampere }}" }
                         - if:
                             - condition: template
-                              value_template: "{{ b.stop_e != '' and b.pausiert }}"
+                              value_template: "{{ b.stop_e != '' and (b.pausiert or auffrischen) }}"
                           then:
                             - if:
                                 - condition: template
@@ -577,11 +589,11 @@ automation:
                                   target: { entity_id: "{{ b.stop_e }}" }
 
           # ---------------------------------------------------------------
-          # 2. HAUSAKKU (Szene/Skript/Schalter nur bei Wechsel auslösen)
+          # 2. HAUSAKKU (Szene/Skript/Schalter bei Wechsel und beim Auffrischen)
           # ---------------------------------------------------------------
           - if:
               - condition: template
-                value_template: "{{ akku_ziel != '' and akku_ziel != akku_aktuell }}"
+                value_template: "{{ akku_ziel != '' and (akku_ziel != akku_aktuell or auffrischen) }}"
             then:
               - action: homeassistant.turn_on
                 continue_on_error: true

@@ -131,6 +131,12 @@ Messwerte. Fehlt der Akku-Ladestand laenger, gilt die Hausakku-Freigabe als
 nicht erfuellt. Der Ladestand des Autos ist ausgenommen – schlaeft das Auto,
 gilt das Ladeziel einfach nicht.
 
+**Auffrischen:** Geschrieben wird sonst nur, was sich aendert. Alle 5 min
+schreibt die Automation Ladestrom, Laden/Pause und den Akku-Modus trotzdem
+noch einmal – falls ein Geraet den Wert verloren hat oder eine andere
+Steuerung ihn ueberschrieben hat. Die Phasen bleiben dabei unberuehrt, bei
+*Nur lesen* wird nicht aufgefrischt.
+
 **Notstrom:** Wird nicht eigens geregelt. Im Notstrombetrieb gilt, was im
 Akku ist – eine Reserve dafuer haelt die Automation nicht zurueck.
 
@@ -335,6 +341,14 @@ und Ladezustand aus der Modbus-Einbindung. Zwei Dinge zum Wissen:
   Restzeit deshalb aus.
 * Fuer das Solarladen ist `number.mennekes_hems_stromvorgabe` (Register 1000)
   der Stellwert; 0 A bedeutet Pause.
+* Die Wallbox beantwortet je Verbindung nur eine Anfrage. Das Paket holt
+  deshalb alle 30 s vier Bloecke (Zaehler, Status, Ladevorgang,
+  Stromvorgabe) und rechnet die einzelnen Sensoren daraus, statt jeden Wert
+  einzeln abzufragen.
+* Umstieg von der aelteren Fassung: Die Sensoren heissen gleich, kommen aber
+  jetzt aus Templates. Nach dem Neustart die nicht mehr bereitgestellten
+  Mennekes-Sensoren unter *Einstellungen → Entitaeten* loeschen und bei den
+  neuen das `_2` entfernen.
 
 ### Sungrow
 

@@ -12,6 +12,18 @@
 # Die Vorlage trägt sie in der Zuordnung unter "Steuerung durch die
 # Automation" ein – die W-Energie-Automation schreibt den Ladestrom dann
 # selbst dorthin, ein eigenes Umrechnungs-Paket ist nicht mehr nötig.
+#
+# Wenig Verkehr: Die Wallbox beantwortet je Verbindung eine Anfrage und legt
+# dann auf. Deshalb holt HA alle 30 s nur vier Blöcke (Zähler, Status,
+# Ladevorgang, Stromvorgabe) statt jeden Wert einzeln; die einzelnen Sensoren
+# rechnen die Template-Sensoren weiter unten daraus.
+#
+# Umstieg von der Fassung mit einzelnen Modbus-Sensoren: Die Sensoren heißen
+# gleich, kommen jetzt aber aus "template" statt aus "modbus". HA behält die
+# alten Einträge und hängt den neuen sonst "_2" an – daher nach dem Neustart
+# unter Einstellungen → Entitäten die nicht mehr bereitgestellten
+# Mennekes-Sensoren löschen und bei den neuen das "_2" entfernen.
+#
 # Basierend auf der Spezifikation: https://www.mennekes.de/fileadmin/MEN-Deutschland/emobility/01_documents/04_installer/ECU_modbus_tcp_server_spec_rev_1.07.pdf
 # Lokal "mennekes_modbus_charge_controll.pdf"
 # ==============================================================================
@@ -21,192 +33,53 @@ modbus:
     type: tcp
     host: !secret mennekes_modbus_host_ip
     port: !secret mennekes_modbus_port
-    delay: 15
-    timeout: 50
+    delay: 2
+    timeout: 5
     retries: 3
     message_wait_milliseconds: !secret mennekes_modbus_wait_milliseconds
 
     sensors:
-      # --- ENERGIE (in Wh vom Modbus, skaliert auf kWh) ---
-      - name: "Mennekes Gesamtenergie"
-        unique_id: mennekes_total_energy
-        address: 218
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        scale: 0.001 
-        precision: 2
-        unit_of_measurement: "kWh"
-        device_class: energy
-        state_class: total_increasing
-        scan_interval: &scan_fast 15
-
-      # --- LEISTUNG (in W vom Modbus) ---
-      - name: "Mennekes aktuelle Ladeleistung"
-        unique_id: mennekes_current_power
-        address: 220
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        unit_of_measurement: "W"
-        device_class: power
-        state_class: measurement
-        scan_interval: *scan_fast
-
-      - name: "Mennekes Leistung L1"
-        unique_id: mennekes_leistung_l1
+      # --- BLOCK ZÄHLER: Register 206–227, elf 32-Bit-Werte ---
+      # Leistung L1–L3 (W), Strom L1–L3 (mA), Gesamtenergie (Wh),
+      # Ladeleistung (W), Spannung L1–L3 (V)
+      - name: "Mennekes Block Zähler"
+        unique_id: mennekes_block_zaehler
         address: 206
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
-        data_type: uint32
-        unit_of_measurement: "W"
-        device_class: power
-        state_class: measurement
-        scan_interval: &scan_medium 40
+        data_type: custom
+        count: 22
+        structure: ">11L"
+        scan_interval: &scan 30
 
-      - name: "Mennekes Leistung L2"
-        unique_id: mennekes_leistung_l2
-        address: 208
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        unit_of_measurement: "W"
-        device_class: power
-        state_class: measurement
-        scan_interval: *scan_medium
-
-      - name: "Mennekes Leistung L3"
-        unique_id: mennekes_leistung_l3
-        address: 210
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        unit_of_measurement: "W"
-        device_class: power
-        state_class: measurement
-        scan_interval: *scan_medium
-
-      # --- STROM (in mA vom Modbus, skaliert auf A) ---
-      - name: "Mennekes Strom L1"
-        unique_id: mennekes_strom_l1
-        address: 212
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        scale: 0.001 
-        precision: 1
-        unit_of_measurement: "A"
-        device_class: current
-        state_class: measurement
-        scan_interval: *scan_medium
-        
-      - name: "Mennekes Strom L2"
-        unique_id: mennekes_strom_l2
-        address: 214
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        scale: 0.001 
-        precision: 1
-        unit_of_measurement: "A"
-        device_class: current
-        state_class: measurement
-        scan_interval: *scan_medium
-
-      - name: "Mennekes Strom L3"
-        unique_id: mennekes_strom_l3
-        address: 216
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        scale: 0.001 
-        precision: 1
-        unit_of_measurement: "A"
-        device_class: current
-        state_class: measurement
-        scan_interval: *scan_medium
-
-      # --- SPANNUNG (in V vom Modbus) ---
-      - name: "Mennekes Spannung L1"
-        unique_id: mennekes_spannung_l1
-        address: 222
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        unit_of_measurement: "V"
-        device_class: voltage
-        state_class: measurement
-        scan_interval: *scan_medium
-
-      - name: "Mennekes Spannung L2"
-        unique_id: mennekes_spannung_l2
-        address: 224
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        unit_of_measurement: "V"
-        device_class: voltage
-        state_class: measurement
-        scan_interval: *scan_medium
-
-      - name: "Mennekes Spannung L3"
-        unique_id: mennekes_spannung_l3
-        address: 226
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        unit_of_measurement: "V"
-        device_class: voltage
-        state_class: measurement
-        scan_interval: *scan_medium
-
-      # --- STATUS-REGISTER (Rohwerte) ---
-      - name: "Mennekes OCPP Status Raw"
-        unique_id: mennekes_ocpp_status_raw
+      # --- BLOCK STATUS: Register 104–152 ---
+      # 104 OCPP-Status, 122 Fahrzeugstatus, 124 Verfügbarkeit,
+      # 131 sicherer Strom, 132 Verbindungsfrist, 152 Steckerverriegelung
+      # (x = Register dazwischen überspringen)
+      - name: "Mennekes Block Status"
+        unique_id: mennekes_block_status
         address: 104
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
-        data_type: uint16
-        scan_interval: *scan_fast
+        data_type: custom
+        count: 49
+        structure: ">H34xH2xH12xHH38xH"
+        scan_interval: *scan
 
-      - name: "Mennekes Fahrzeugstatus Raw"
-        unique_id: mennekes_fahrzeugstatus_raw
-        address: 122
+      # --- BLOCK LADEVORGANG: Register 706–717 ---
+      # 706 signalisierter Strom, 715 Höchststrom Fahrzeug,
+      # 716 Energie des Ladevorgangs (Wh, 32 Bit)
+      - name: "Mennekes Block Ladevorgang"
+        unique_id: mennekes_block_ladevorgang
+        address: 706
         device_address: !secret mennekes_modbus_device_address
         input_type: holding
-        data_type: uint16
-        scan_interval: *scan_fast
+        data_type: custom
+        count: 12
+        structure: ">H16xHL"
+        scan_interval: *scan
 
-      - name: "Mennekes CP Verfügbarkeit Raw"
-        unique_id: mennekes_cp_verfuegbarkeit_raw
-        address: 124
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint16
-        scan_interval: *scan_medium
-
-      - name: "Mennekes Steckerverriegelung Raw"
-        unique_id: mennekes_steckerverriegelung_raw
-        address: 152
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint16
-        scan_interval: *scan_fast
-        
-      - name: "Mennekes Energie Aktueller Ladevorgang"
-        unique_id: mennekes_energie_aktueller_ladevorgang
-        address: 716
-        device_address: !secret mennekes_modbus_device_address
-        input_type: holding
-        data_type: uint32
-        scale: 0.001
-        precision: 2
-        unit_of_measurement: "kWh"
-        device_class: energy
-        state_class: total
-        scan_interval: *scan_medium
-
-    # --- STEUERUNG (Rückmeldung) ---
+      # --- STEUERUNG (Rückmeldung) ---
       # HEMS-Stromvorgabe lesen. Geschrieben wird über die Template-Zahl
       # "Mennekes HEMS Stromvorgabe" weiter unten – die Modbus-Integration von
       # HA kennt keine Zahlen-Entitäten (kein "numbers:").
@@ -217,10 +90,147 @@ modbus:
         input_type: holding
         data_type: uint16
         unit_of_measurement: "A"
-        scan_interval: *scan_fast
+        scan_interval: *scan
 
 
 template:
+  # ---------------------------------------------------------------------------
+  # Einzelwerte aus den Modbus-Blöcken. Fällt ein Block aus, sind seine Werte
+  # nicht verfügbar – es wird nichts geraten.
+  # ---------------------------------------------------------------------------
+  - sensor:
+    # --- Block Zähler ---
+    - name: "Mennekes Leistung L1"
+      unique_id: mennekes_leistung_l1
+      state: "{{ states('sensor.mennekes_block_zahler').split(',')[0] | int }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[0] | is_number }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Mennekes Leistung L2"
+      unique_id: mennekes_leistung_l2
+      state: "{{ states('sensor.mennekes_block_zahler').split(',')[1] | int }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[1] | is_number }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Mennekes Leistung L3"
+      unique_id: mennekes_leistung_l3
+      state: "{{ states('sensor.mennekes_block_zahler').split(',')[2] | int }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[2] | is_number }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Mennekes Strom L1"
+      unique_id: mennekes_strom_l1
+      state: "{{ (states('sensor.mennekes_block_zahler').split(',')[3] | float * 0.001) | round(1) }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[3] | is_number }}"
+      unit_of_measurement: "A"
+      device_class: current
+      state_class: measurement
+    - name: "Mennekes Strom L2"
+      unique_id: mennekes_strom_l2
+      state: "{{ (states('sensor.mennekes_block_zahler').split(',')[4] | float * 0.001) | round(1) }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[4] | is_number }}"
+      unit_of_measurement: "A"
+      device_class: current
+      state_class: measurement
+    - name: "Mennekes Strom L3"
+      unique_id: mennekes_strom_l3
+      state: "{{ (states('sensor.mennekes_block_zahler').split(',')[5] | float * 0.001) | round(1) }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[5] | is_number }}"
+      unit_of_measurement: "A"
+      device_class: current
+      state_class: measurement
+    - name: "Mennekes Gesamtenergie"
+      unique_id: mennekes_total_energy
+      state: "{{ (states('sensor.mennekes_block_zahler').split(',')[6] | float * 0.001) | round(2) }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[6] | is_number }}"
+      unit_of_measurement: "kWh"
+      device_class: energy
+      state_class: total_increasing
+    - name: "Mennekes aktuelle Ladeleistung"
+      unique_id: mennekes_current_power
+      state: "{{ states('sensor.mennekes_block_zahler').split(',')[7] | int }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[7] | is_number }}"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+    - name: "Mennekes Spannung L1"
+      unique_id: mennekes_spannung_l1
+      state: "{{ states('sensor.mennekes_block_zahler').split(',')[8] | int }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[8] | is_number }}"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+    - name: "Mennekes Spannung L2"
+      unique_id: mennekes_spannung_l2
+      state: "{{ states('sensor.mennekes_block_zahler').split(',')[9] | int }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[9] | is_number }}"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+    - name: "Mennekes Spannung L3"
+      unique_id: mennekes_spannung_l3
+      state: "{{ states('sensor.mennekes_block_zahler').split(',')[10] | int }}"
+      availability: "{{ states('sensor.mennekes_block_zahler').split(',') | count == 11 and states('sensor.mennekes_block_zahler').split(',')[10] | is_number }}"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+    # --- Block Status (Rohwerte) ---
+    - name: "Mennekes OCPP Status Raw"
+      unique_id: mennekes_ocpp_status_raw
+      state: "{{ states('sensor.mennekes_block_status').split(',')[0] | int }}"
+      availability: "{{ states('sensor.mennekes_block_status').split(',') | count == 6 and states('sensor.mennekes_block_status').split(',')[0] | is_number }}"
+    - name: "Mennekes Fahrzeugstatus Raw"
+      unique_id: mennekes_fahrzeugstatus_raw
+      state: "{{ states('sensor.mennekes_block_status').split(',')[1] | int }}"
+      availability: "{{ states('sensor.mennekes_block_status').split(',') | count == 6 and states('sensor.mennekes_block_status').split(',')[1] | is_number }}"
+    - name: "Mennekes CP Verfügbarkeit Raw"
+      unique_id: mennekes_cp_verfuegbarkeit_raw
+      state: "{{ states('sensor.mennekes_block_status').split(',')[2] | int }}"
+      availability: "{{ states('sensor.mennekes_block_status').split(',') | count == 6 and states('sensor.mennekes_block_status').split(',')[2] | is_number }}"
+    - name: "Mennekes sicherer Strom"
+      unique_id: mennekes_sicherer_strom
+      state: "{{ states('sensor.mennekes_block_status').split(',')[3] | int }}"
+      availability: "{{ states('sensor.mennekes_block_status').split(',') | count == 6 and states('sensor.mennekes_block_status').split(',')[3] | is_number }}"
+      unit_of_measurement: "A"
+      device_class: current
+    - name: "Mennekes Verbindungsfrist"
+      unique_id: mennekes_verbindungsfrist
+      state: "{{ states('sensor.mennekes_block_status').split(',')[4] | int }}"
+      availability: "{{ states('sensor.mennekes_block_status').split(',') | count == 6 and states('sensor.mennekes_block_status').split(',')[4] | is_number }}"
+      unit_of_measurement: "s"
+    - name: "Mennekes Steckerverriegelung Raw"
+      unique_id: mennekes_steckerverriegelung_raw
+      state: "{{ states('sensor.mennekes_block_status').split(',')[5] | int }}"
+      availability: "{{ states('sensor.mennekes_block_status').split(',') | count == 6 and states('sensor.mennekes_block_status').split(',')[5] | is_number }}"
+    # --- Block Ladevorgang ---
+    # Was die Wallbox dem Auto wirklich signalisiert. Liegt das unter der
+    # HEMS-Vorgabe, begrenzt die Wallbox selbst (Kabel, Lastmanagement oder
+    # der Rückfall nach einem Verbindungsausfall).
+    - name: "Mennekes signalisierter Strom"
+      unique_id: mennekes_signalisierter_strom
+      state: "{{ states('sensor.mennekes_block_ladevorgang').split(',')[0] | int }}"
+      availability: "{{ states('sensor.mennekes_block_ladevorgang').split(',') | count == 3 and states('sensor.mennekes_block_ladevorgang').split(',')[0] | is_number }}"
+      unit_of_measurement: "A"
+      device_class: current
+      state_class: measurement
+    # Was Auto und Kabel höchstens können
+    - name: "Mennekes Höchststrom Fahrzeug"
+      unique_id: mennekes_hoechststrom_fahrzeug
+      state: "{{ states('sensor.mennekes_block_ladevorgang').split(',')[1] | int }}"
+      availability: "{{ states('sensor.mennekes_block_ladevorgang').split(',') | count == 3 and states('sensor.mennekes_block_ladevorgang').split(',')[1] | is_number }}"
+      unit_of_measurement: "A"
+      device_class: current
+    - name: "Mennekes Energie Aktueller Ladevorgang"
+      unique_id: mennekes_energie_aktueller_ladevorgang
+      state: "{{ (states('sensor.mennekes_block_ladevorgang').split(',')[2] | float * 0.001) | round(2) }}"
+      availability: "{{ states('sensor.mennekes_block_ladevorgang').split(',') | count == 3 and states('sensor.mennekes_block_ladevorgang').split(',')[2] | is_number }}"
+      unit_of_measurement: "kWh"
+      device_class: energy
+      state_class: total
+
   # ---------------------------------------------------------------------------
   # HEMS-Stromvorgabe als einstellbare Zahl: 0 A = Pause, 6–16 A = Ladestrom.
   # Liest Register 1000 über den Raw-Sensor und schreibt per modbus.write_register.
