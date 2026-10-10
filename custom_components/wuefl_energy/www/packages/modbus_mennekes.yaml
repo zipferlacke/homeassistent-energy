@@ -13,17 +13,6 @@
 # Automation" ein – die W-Energie-Automation schreibt den Ladestrom dann
 # selbst dorthin, ein eigenes Umrechnungs-Paket ist nicht mehr nötig.
 #
-# Wenig Verkehr: Die Wallbox beantwortet je Verbindung eine Anfrage und legt
-# dann auf. Deshalb holt HA alle 30 s nur vier Blöcke (Zähler, Status,
-# Ladevorgang, Stromvorgabe) statt jeden Wert einzeln; die einzelnen Sensoren
-# rechnen die Template-Sensoren weiter unten daraus.
-#
-# Umstieg von der Fassung mit einzelnen Modbus-Sensoren: Die Sensoren heißen
-# gleich, kommen jetzt aber aus "template" statt aus "modbus". HA behält die
-# alten Einträge und hängt den neuen sonst "_2" an – daher nach dem Neustart
-# unter Einstellungen → Entitäten die nicht mehr bereitgestellten
-# Mennekes-Sensoren löschen und bei den neuen das "_2" entfernen.
-#
 # Basierend auf der Spezifikation: https://www.mennekes.de/fileadmin/MEN-Deutschland/emobility/01_documents/04_installer/ECU_modbus_tcp_server_spec_rev_1.07.pdf
 # Lokal "mennekes_modbus_charge_controll.pdf"
 # ==============================================================================
