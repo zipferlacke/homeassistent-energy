@@ -52,7 +52,7 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
-import { onPicker, getPicker, Zeitpicker } from './picker_v1_7_1.js';
+import { onPicker, getPicker, Zeitpicker } from './picker_v1_7_2.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
@@ -990,6 +990,7 @@ export class Diagramm {
     const rows = zeilen?.[c.key] ?? [];
     if (!rows.length) return null;
     const art = c.calc ?? c.stat_type ?? 'sum';
+    if (art === 'integral') return this.#chipIntegral(c, rows);
     const werte = rows
       .map((r) => Number(art === 'sum' ? r.change : (r[art] ?? r.mean ?? r.change)))
       .filter(Number.isFinite);
@@ -1000,6 +1001,30 @@ export class Diagramm {
     if (art === 'min') return Math.min(...werte);
     if (art === 'last') return werte[werte.length - 1];
     return null;
+  }
+
+  /**
+   * Fläche unter einer Leistungskurve: Mittelwert mal Dauer, Zeile für Zeile.
+   * So kommt aus W bzw. kW die Energie des Zeitraums – aus genau den Werten,
+   * die auch gezeichnet werden. Lücken zählen einfach nicht mit.
+   * Umgerechnet wird von "<Einheit der Reihe>h" in die Einheit des Chips.
+   */
+  #chipIntegral(c, rows) {
+    const zeit = (v) => (typeof v === 'number' ? v : Date.parse(v));
+    let summe = 0, treffer = 0;
+    rows.forEach((r, i) => {
+      const wert = Number(r.mean ?? r.state);
+      const von = zeit(r.start);
+      // Ohne Ende gilt der Abstand zur nächsten Zeile
+      const bis = r.end !== undefined ? zeit(r.end) : zeit(rows[i + 1]?.start);
+      if (!Number.isFinite(wert) || !Number.isFinite(von) || !Number.isFinite(bis) || bis <= von) return;
+      summe += wert * (bis - von) / 3_600_000;
+      treffer++;
+    });
+    if (!treffer) return null;
+    const reihe = (this.#cfg.series ?? []).find((s) => (s.key ?? s.entity) === c.key);
+    const von = c.source_unit ?? reihe?.unit;
+    return summe * (von && c.unit ? skalierung(`${von}h`, c.unit) : 1);
   }
 
   /* ── Reihen und Legende ─────────────────────────────────────────────────── */

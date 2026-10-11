@@ -26,7 +26,7 @@
  * folgen alle angehängten Diagramme.
  */
 
-import { getData, mitAlpha, getIcons } from './diagramm_v1_7_1.js';
+import { getData, mitAlpha, getIcons } from './diagramm_v1_7_2.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Verzeichnis: wer hört auf welche id

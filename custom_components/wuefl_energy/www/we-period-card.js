@@ -18,9 +18,9 @@
 import { registerCard, setPeriod, WueflFormEditor, sel, GRID_CSS,
   addSheet, centralConfig, energyTargets } from './we-shared.js';
 import { DatePicker } from './datepicker_v2.1.4/datepicker_v2_1_4.js';
-import { Zeitpicker } from './diagramm_v1.7.1/picker_v1_7_1.js';
+import { Zeitpicker } from './diagramm_v1.7.2/picker_v1_7_2.js';
 import { haRenderer, haSource, HA_ICONS } from './we-chart-ha.js';
-import { setIcons } from './diagramm_v1.7.1/diagramm_v1_7_1.js';
+import { setIcons } from './diagramm_v1.7.2/diagramm_v1_7_2.js';
 
 setIcons(HA_ICONS);
 
@@ -34,7 +34,7 @@ const holen = (pfad, cache) => {
   return cache.p;
 };
 const datePickerCss = () => holen('./datepicker_v2.1.4/datepicker_v2_1_4.css', dpCss ??= {});
-const diagrammCss = () => holen('./diagramm_v1.7.1/diagramm_v1_7_1.css', dgCss ??= {});
+const diagrammCss = () => holen('./diagramm_v1.7.2/diagramm_v1_7_2.css', dgCss ??= {});
 
 /**
  * Schnellwahl im Kalender. Beim Daten-Ansehen sind das andere Vorschläge als

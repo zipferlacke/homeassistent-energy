@@ -783,7 +783,13 @@ class WueflWallboxCard extends HTMLElement {
         end: end.toISOString(),
         legend: { hidden: true },
         ...chartCfg,
-        ...(total ? { chip: { entity: total, unit: 'kWh', stat_type: 'change', calc_type: 'sum', color } } : {}),
+        // Die Pille rechnet aus dem, was gezeichnet wird: bei der Ladekurve
+        // die Fläche darunter, bei den Balken deren Summe. So steht auch dann
+        // ein Wert da, wenn der Zähler fehlt oder Lücken hat – die Summe der
+        // vorhandenen Daten.
+        chip: power
+          ? { entity: live, unit: 'kWh', calc_type: 'integral', color }
+          : { entity: total, unit: 'kWh', stat_type: 'change', calc_type: 'sum', color },
       });
     }
     this.#els.chart.hass = this.#hass;
