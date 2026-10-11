@@ -175,7 +175,7 @@ template:
       unique_id: mennekes_fahrzeugstatus_raw
       state: "{{ states('sensor.mennekes_block_status').split(',')[1] | int }}"
       availability: "{{ states('sensor.mennekes_block_status').split(',') | count == 6 and states('sensor.mennekes_block_status').split(',')[1] | is_number }}"
-    - name: "Mennekes CP Verfügbarkeit Raw"
+    - name: "Mennekes CP Verfuegbarkeit Raw"   # ue statt ü: daraus wird sensor.mennekes_cp_verfuegbarkeit_raw
       unique_id: mennekes_cp_verfuegbarkeit_raw
       state: "{{ states('sensor.mennekes_block_status').split(',')[2] | int }}"
       availability: "{{ states('sensor.mennekes_block_status').split(',') | count == 6 and states('sensor.mennekes_block_status').split(',')[2] | is_number }}"
