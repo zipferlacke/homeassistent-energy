@@ -79,6 +79,9 @@
   padding: 3px 11px;
   white-space: nowrap;
 }
+/* display: inline-flex oben schlägt sonst das hidden-Attribut – ein Chip
+   ohne Wert stand als leere Pille im Kopf */
+.dg_chip[hidden] { display: none; }
 .dg_chip_label { align-items: center; display: inline-flex; font-weight: 500; gap: .3em; opacity: .85; }
 
 .dg_btn {

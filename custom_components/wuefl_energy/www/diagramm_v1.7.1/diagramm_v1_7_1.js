@@ -52,7 +52,7 @@
  *   setIcons({ fullscreen: '<ha-icon icon="mdi:fullscreen"></ha-icon>' });
  */
 
-import { onPicker, getPicker, Zeitpicker } from './picker_v1_7_0.js';
+import { onPicker, getPicker, Zeitpicker } from './picker_v1_7_1.js';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Icons
