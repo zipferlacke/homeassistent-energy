@@ -89,7 +89,7 @@ export const PRESETS = {
         label: 'MENNEKES AMTRON Charge Control',
         group: 'Ladesäule',
         source: 'Modbus-Paket',
-        hint: 'Paket nach config/packages/ kopieren, Zugangsdaten in secrets.yaml eintragen, HA neu starten. In der Wallbox Modbus TCP/HEMS freischalten. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
+        hint: 'Paket in deinen Paket-Ordner kopieren (meist config/packages/ – siehe packages: in der configuration.yaml), Zugangsdaten in secrets.yaml eintragen, HA neu starten. In der Wallbox Modbus TCP/HEMS freischalten. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
         links: [
             { label: 'Paket herunterladen', download: 'modbus_mennekes.yaml' },
             { label: 'Modbus-Spezifikation (Mennekes)', url: 'https://www.mennekes.de/fileadmin/MEN-Deutschland/emobility/01_documents/04_installer/ECU_modbus_tcp_server_spec_rev_1.07.pdf' },

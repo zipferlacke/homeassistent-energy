@@ -339,6 +339,9 @@ und Ladezustand aus der Modbus-Einbindung. Zwei Dinge zum Wissen:
 * Die AMTRON meldet **keinen Ladestand des Fahrzeugs** — Modbus gibt nur den
   Zustand A–E her. Ohne eine Fahrzeug-Integration bleiben Ladeziel und
   Restzeit deshalb aus.
+* Das Paket gehoert in den Ordner, auf den die `packages:`-Zeile deiner
+  `configuration.yaml` zeigt (meist `config/packages/`); ist die Datei dort
+  einzeln eingebunden, zum Abschalten diese Zeile auskommentieren.
 * Fuer das Solarladen ist `number.mennekes_hems_stromvorgabe` (Register 1000)
   der Stellwert; 0 A bedeutet Pause.
 * Die Wallbox beantwortet je Verbindung nur eine Anfrage. Das Paket holt
@@ -349,6 +352,26 @@ und Ladezustand aus der Modbus-Einbindung. Zwei Dinge zum Wissen:
   jetzt aus Templates. Nach dem Neustart die nicht mehr bereitgestellten
   Mennekes-Sensoren unter *Einstellungen → Entitaeten* loeschen und bei den
   neuen das `_2` entfernen.
+
+### go-e Charger
+
+Vorlage vorhanden (Gemini, Gemini flex, HOMEfix …). Sie braucht kein eigenes
+Paket, sondern die HACS-Integration *go-eCharger API v2* von marq24.
+Inbetriebnahme:
+
+1. In der go-e App unter *Einstellungen → Verbindung* die **HTTP API v2**
+   einschalten.
+2. In HACS *go-eCharger API v2* installieren, HA neu starten und die
+   Integration mit der IP-Adresse des Chargers einrichten.
+3. In der Ansicht *Zuordnung* eine Wallbox anlegen und die Vorlage
+   *go-e Charger* anwenden; unter *Hardware & Grenzen* die Ladeleistung
+   (11 oder 22 kW) pruefen.
+
+Danach schreibt die Automation Ladestrom, Laden/Pause und die
+Phasenumschaltung (1-/3-phasig) direkt an den Charger. Den Ladestand des
+Fahrzeugs liefert auch der go-e nicht – dafuer eine Fahrzeug-Integration
+zuordnen. Stand: Die Vorlage ist nach der Dokumentation der Integration
+gebaut und noch nicht an einem echten go-e erprobt.
 
 ### Sungrow
 
