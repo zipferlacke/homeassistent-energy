@@ -40,11 +40,12 @@ sie selbst einbindest:
 
 ```yaml
 homeassistant:
-  packages: !include_dir_named packages
+  packages: !include_dir_named packages   # ← "packages" ist der Ordnername
 ```
 
-Der Ordnername ist frei; HA liest jede `.yaml`-Datei aus dem Ordner, auf den
-diese Zeile zeigt (hier `config/packages/`). Ist eine Datei stattdessen
+Das Wort hinter `!include_dir_named` ist der Ordner, relativ zu `config/`.
+Hier also `config/packages/`; mit `!include_dir_named integrations` wäre es
+`config/integrations/`. HA liest jede `.yaml`-Datei aus diesem Ordner. Ist eine Datei stattdessen
 einzeln eingebunden (`mennekes: !include …`), schaltest du sie ab, indem du
 diese Zeile auskommentierst – eine einzeln eingebundene Datei umzubenennen
 lässt die Konfiguration ungültig werden.
@@ -371,7 +372,8 @@ und Ladezustand aus der Modbus-Einbindung. Zum Wissen (Einbinden siehe *Geräte-
 
 ### go-e Charger
 
-Vorlage vorhanden (Gemini, Gemini flex, HOMEfix …). Sie braucht kein eigenes
+Vorlage vorhanden für die Wallboxen von go-e – *Gemini*, *Gemini flex* und
+*HOMEfix* sind die Modellnamen ihrer aktuellen Geräte. Sie braucht kein eigenes
 Paket, sondern die HACS-Integration *go-eCharger API v2* von marq24.
 Inbetriebnahme:
 
