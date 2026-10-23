@@ -21,48 +21,67 @@ Die Karten liegen in der Integration selbst und werden von ihr ausgeliefert —
 **ein einziger Ordner zu kopieren, keine Lovelace-Ressource von Hand
 einzutragen.**
 
-## Was gehoert wohin
+## Geräte-Pakete (YAML) für Wechselrichter und Wallbox
 
-| Aus dem Paket | Ziel in Home Assistant |
-|---|---|
-| `custom_components/wuefl_energy/` | `config/custom_components/wuefl_energy/` |
-| `custom_components/wuefl_energy/www/packages/*.yaml` | Geräte-Pakete (Sungrow, Mennekes) nach `config/packages/`, in der Ansicht *Zuordnung* per Klick herunterladbar; die Automation installiert die Integration selbst |
-| `preview.html` | nirgendwo, nur zum Anschauen im Browser |
+Manche Geräte bringen keine eigene Integration mit, sondern werden per Modbus
+über ein YAML-Paket eingebunden. Zwei liegen bei:
 
-Kein separater `www/`-Ordner mehr, kein Dashboard-YAML — beides entsteht
-automatisch.
+| Paket | Gerät | Vorlage in der Zuordnung |
+|---|---|---|
+| `modbus_sungrow.yaml` | Sungrow SH-Wechselrichter mit Akku (Paket von [mkaiser](https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant)) | *Sungrow* |
+| `modbus_mennekes.yaml` | Mennekes AMTRON Charge Control | *MENNEKES AMTRON Charge Control* |
 
-## Installation
+Die Dateien kommen mit der Integration (auch über HACS) unter
+`custom_components/wuefl_energy/www/packages/` mit und lassen sich in der
+Ansicht *Zuordnung* per Klick herunterladen. Aktiv werden sie erst, wenn du
+sie selbst einbindest:
 
-### Option A: über HACS (empfohlen)
+**1. Paket-Ordner einrichten** (einmalig) – in der `configuration.yaml`:
 
-Wenn dieses Paket in einem eigenen GitHub-Repository liegt, laesst es sich als
-**benutzerdefiniertes Repository** in HACS eintragen — die `hacs.json` im
-Wurzelverzeichnis macht das moeglich. Danach ist eine neue Version nur noch
-ein Klick auf "Neu herunterladen" statt Dateien von Hand zu kopieren.
+```yaml
+homeassistant:
+  packages: !include_dir_named packages
+```
 
-**1. Herunterladen**
+Der Ordnername ist frei; HA liest jede `.yaml`-Datei aus dem Ordner, auf den
+diese Zeile zeigt (hier `config/packages/`). Ist eine Datei stattdessen
+einzeln eingebunden (`mennekes: !include …`), schaltest du sie ab, indem du
+diese Zeile auskommentierst – eine einzeln eingebundene Datei umzubenennen
+lässt die Konfiguration ungültig werden.
 
-Auf den ersten Knopf ganz oben in diesem README klicken – öffnet HACS direkt
-mit dem Repository. Dort **Herunterladen**. Oder von Hand: HACS → drei Punkte
-oben rechts → **Benutzerdefinierte Repositories** → URL eintragen, Kategorie
-**Integration**, dann "W-Energie Dashboard" suchen und herunterladen.
+**2. Paket kopieren** – die Datei in diesen Ordner legen.
 
-Da alles — Integration und Karten — in `custom_components/wuefl_energy/`
-liegt, reicht die Kategorie *Integration* fuer beides.
+**3. Zugangsdaten in `config/secrets.yaml`** eintragen. Die Pakete lesen
+IP-Adresse, Port und Modbus-Adresse von dort. Vorlage:
+[`secrets.example.yaml`](custom_components/wuefl_energy/www/packages/secrets.example.yaml)
 
-**2. Home Assistant neu starten**
+```yaml
+# Sungrow Wechselrichter
+sungrow_modbus_host_ip: 192.168.1.20
+sungrow_modbus_port: 502
+sungrow_modbus_device_address: 1
+sungrow_modbus_sbr_device_address: 200
+sungrow_modbus_wait_milliseconds: 20
+sungrow_modbus_battery_max_power: 5000
 
-Erst danach kennt Home Assistant die Integration; vorher meldet der Knopf aus
-Schritt 3, dass es sie nicht gibt.
+# Mennekes AMTRON Charge Control
+mennekes_modbus_host_ip: 192.168.1.30
+mennekes_modbus_port: 502
+mennekes_modbus_device_address: 1
+mennekes_modbus_wait_milliseconds: 100
+```
 
-**3. Integration hinzufuegen**
+**4. HA neu starten**, dann in der *Zuordnung* die passende Vorlage
+anwenden.
 
-Auf den zweiten Knopf oben klicken und **Absenden**. Oder von Hand:
-Einstellungen → Geraete & Dienste → **+ Integration hinzufuegen** →
-**"W-Energie Dashboard"**. Es gibt nichts einzustellen.
+Updates: Eine neue Fassung eines Pakets kommt mit dem HACS-Update der
+Integration mit, deine Kopie im Paket-Ordner bleibt aber unverändert – dort
+die Datei von Hand ersetzen und neu starten. Die Ladeautomatik ist davon
+ausgenommen, die hält die Integration selbst aktuell (siehe *Ladeautomatik*).
 
-**4. Dashboard – entsteht von selbst**
+## Erste Schritte
+
+**Dashboard – entsteht von selbst**
 
 Beim ersten Einrichten legt die Integration das Dashboard **Energie** mit
 einer Rakete als Symbol in der Seitenleiste an und installiert die
@@ -79,12 +98,12 @@ strategy:
   type: custom:we
 ```
 
-**5. Zuordnen**
+**Zuordnen**
 
 Im neuen Dashboard die Ansicht **Zuordnung** oeffnen und die Entitaeten
 eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 
-**6. Ladeautomatik**
+## Ladeautomatik
 
 Die W-Energie Automation (Wallbox und Hausakku) installiert die Integration
 selbst: Sie traegt sie nach dem Start in `automations.yaml` ein und haelt sie
@@ -334,14 +353,11 @@ Liefert dein Sensor nur **Rohzahlen**, ist "3" nicht eindeutig — dann unter
 ### Mennekes AMTRON
 
 Vorlage vorhanden. Sie belegt Leistung, Zaehler, aktuelle Ladung, Ladestrom
-und Ladezustand aus der Modbus-Einbindung. Zwei Dinge zum Wissen:
+und Ladezustand aus der Modbus-Einbindung. Zum Wissen (Einbinden siehe *Geräte-Pakete* oben):
 
 * Die AMTRON meldet **keinen Ladestand des Fahrzeugs** — Modbus gibt nur den
   Zustand A–E her. Ohne eine Fahrzeug-Integration bleiben Ladeziel und
   Restzeit deshalb aus.
-* Das Paket gehoert in den Ordner, auf den die `packages:`-Zeile deiner
-  `configuration.yaml` zeigt (meist `config/packages/`); ist die Datei dort
-  einzeln eingebunden, zum Abschalten diese Zeile auskommentieren.
 * Fuer das Solarladen ist `number.mennekes_hems_stromvorgabe` (Register 1000)
   der Stellwert; 0 A bedeutet Pause.
 * Die Wallbox beantwortet je Verbindung nur eine Anfrage. Das Paket holt
@@ -528,15 +544,36 @@ Maße und Schriftgrößen hängen an `--w-radius`, `--w-pad`, `--w-input-h` und
   nicht gegen eine echte, laufende Home-Assistant-Instanz. Melde dich, falls
   beim ersten Start etwas nicht wie beschrieben erscheint.
 
-## Manuelle Installation, ohne HACS
+## Installation im Detail
+
+### HACS von Hand
+
+Falls der erste Knopf ganz oben nicht geht: HACS → drei Punkte oben rechts →
+**Benutzerdefinierte Repositories** → URL dieses Repositorys eintragen,
+Kategorie **Integration**, dann „W-Energie Dashboard" suchen und
+herunterladen. Integration und Karten liegen beide in
+`custom_components/wuefl_energy/`, die Kategorie *Integration* reicht also
+für alles. Danach weiter wie oben: neu starten, Integration hinzufügen.
+
+### Ohne HACS
 
 Gleicher Ablauf wie oben, nur ohne HACS-Verwaltung:
+
+| Aus dem Paket | Ziel in Home Assistant |
+|---|---|
+| `custom_components/wuefl_energy/` | `config/custom_components/wuefl_energy/` |
+| `custom_components/wuefl_energy/www/packages/modbus_*.yaml` | nach Bedarf in deinen Paket-Ordner (siehe *Geräte-Pakete*) |
+| `custom_components/wuefl_energy/www/packages/wuefl_automation.yaml` | nirgendwohin – trägt die Integration selbst ein |
+| `preview.html` | nirgendwo, nur zum Anschauen im Browser |
+
+Kein separater `www/`-Ordner, kein Dashboard-YAML – beides entsteht
+automatisch.
 
 **1. Integration kopieren**
 
 `custom_components/wuefl_energy/` nach `config/custom_components/` kopieren.
 Danach entweder über Einstellungen → Geraete & Dienste → Integration
-hinzufuegen (wie oben, Schritt 3) einrichten, oder klassisch per YAML — in
+hinzufuegen (zweiter Knopf ganz oben) einrichten, oder klassisch per YAML — in
 `configuration.yaml` auf oberster Ebene ergaenzen, nicht in einem Package:
 
 ```yaml
@@ -548,8 +585,7 @@ automatisch selbst an.
 
 **2. Neu starten, Dashboard anlegen, Zuordnen, Helfer (optional)**
 
-Identisch zu den Schritten 4–6 oben.
+Wie unter *Erste Schritte* oben.
 
 **Nachteil gegenueber HACS:** jedes Update bedeutet, den Ordner erneut von
 Hand zu ersetzen, statt "Neu herunterladen" zu klicken.
-
