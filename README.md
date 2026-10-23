@@ -40,17 +40,19 @@ sie selbst einbindest:
 
 ```yaml
 homeassistant:
-  packages: !include_dir_named packages   # ← "packages" ist der Ordnername
+  packages: !include_dir_named integrations   # ← Ordner config/integrations/
 ```
 
-Das Wort hinter `!include_dir_named` ist der Ordner, relativ zu `config/`.
-Hier also `config/packages/`; mit `!include_dir_named integrations` wäre es
-`config/integrations/`. HA liest jede `.yaml`-Datei aus diesem Ordner. Ist eine Datei stattdessen
-einzeln eingebunden (`mennekes: !include …`), schaltest du sie ab, indem du
-diese Zeile auskommentierst – eine einzeln eingebundene Datei umzubenennen
-lässt die Konfiguration ungültig werden.
+Das Wort hinter `!include_dir_named` ist der Ordner, gerechnet ab `config/` –
+hier also `config/integrations/`. Der Name ist frei wählbar, er muss nur zum
+Ordner passen. HA liest jede `.yaml`-Datei aus diesem Ordner.
 
-**2. Paket kopieren** – die Datei in diesen Ordner legen.
+Ist eine Datei stattdessen einzeln eingebunden (`mennekes: !include
+integrations/modbus_mennekes.yaml`), schaltest du sie ab, indem du diese Zeile
+auskommentierst – eine einzeln eingebundene Datei umzubenennen lässt die
+Konfiguration ungültig werden.
+
+**2. Paket kopieren** – die Datei nach `config/integrations/` legen.
 
 **3. Zugangsdaten in `config/secrets.yaml`** eintragen. Die Pakete lesen
 IP-Adresse, Port und Modbus-Adresse von dort. Vorlage:
