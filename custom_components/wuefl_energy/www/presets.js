@@ -20,7 +20,7 @@ export const PRESETS = {
         label: 'Sungrow Wechselrichter SHx',
         group: 'Wechselrichter',
         source: 'Modbus-Paket von mkaiser',
-        hint: 'Paket nach config/integrations/ kopieren (siehe packages: in der configuration.yaml), Zugangsdaten in secrets.yaml eintragen, HA neu starten. Netzleistung braucht den direkt angeschlossenen Smart Meter.',
+        hint: 'Paket in deinen Paket-Ordner kopieren (siehe packages: in der configuration.yaml), Zugangsdaten in secrets.yaml eintragen, HA neu starten. Netzleistung braucht den direkt angeschlossenen Smart Meter.',
         links: [
             { label: 'Paket herunterladen', download: 'modbus_sungrow.yaml' },
             { label: 'Anleitung & neueste Version (mkaiser)', url: 'https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant' },
@@ -89,7 +89,7 @@ export const PRESETS = {
         label: 'MENNEKES AMTRON Charge Control',
         group: 'Ladesäule',
         source: 'Modbus-Paket',
-        hint: 'Paket nach config/integrations/ kopieren (siehe packages: in der configuration.yaml), Zugangsdaten in secrets.yaml eintragen, HA neu starten. In der Wallbox Modbus TCP/HEMS freischalten. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
+        hint: 'Paket in deinen Paket-Ordner kopieren (siehe packages: in der configuration.yaml), Zugangsdaten in secrets.yaml eintragen, HA neu starten. In der Wallbox Modbus TCP/HEMS freischalten. Den Fahrzeug-Ladestand liefert die Wallbox nicht – bitte aus der Auto-Integration zuordnen.',
         links: [
             { label: 'Paket herunterladen', download: 'modbus_mennekes.yaml' },
             { label: 'Modbus-Spezifikation (Mennekes)', url: 'https://www.mennekes.de/fileadmin/MEN-Deutschland/emobility/01_documents/04_installer/ECU_modbus_tcp_server_spec_rev_1.07.pdf' },

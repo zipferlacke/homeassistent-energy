@@ -13,14 +13,6 @@ lassen sich unter Einstellungen → Dashboards ändern.
 Drei Karten (Live-Energiefluss, Energiebilanz, Wallbox) plus eine kleine
 Integration, die alle Entitäten an einer zentralen Stelle zuordnet.
 
-Keine externen Abhängigkeiten: keine Bibliothek, kein Font, kein Build-Schritt.
-Farben und Maße kommen aus dem aktiven Home-Assistant-Theme, Icons aus dem
-mitgelieferten Material-Design-Icons-Satz.
-
-Die Karten liegen in der Integration selbst und werden von ihr ausgeliefert —
-**ein einziger Ordner zu kopieren, keine Lovelace-Ressource von Hand
-einzutragen.**
-
 ## Geräte-Pakete (YAML) für Wechselrichter und Wallbox
 
 Manche Geräte bringen keine eigene Integration mit, sondern werden per Modbus
@@ -36,23 +28,39 @@ Die Dateien kommen mit der Integration (auch über HACS) unter
 Ansicht *Zuordnung* per Klick herunterladen. Aktiv werden sie erst, wenn du
 sie selbst einbindest:
 
+**Wo was liegt.** `config/` ist der Konfigurationsordner von Home Assistant –
+der Ordner, in dem die `configuration.yaml` liegt (mit dem Studio Code Server
+oder File editor der oberste Ordner, auf HA OS über Samba die Freigabe
+`config`). Darin:
+
+```
+config/
+├── configuration.yaml        ← hier wird der Paket-Ordner eingebunden
+├── secrets.yaml              ← Zugangsdaten für die Pakete
+├── ordner_name/              ← dein Paket-Ordner, Name frei wählbar
+│   ├── modbus_sungrow.yaml
+│   └── modbus_mennekes.yaml
+└── custom_components/
+    └── wuefl_energy/         ← die Integration (macht HACS)
+```
+
 **1. Paket-Ordner einrichten** (einmalig) – in der `configuration.yaml`:
 
 ```yaml
 homeassistant:
-  packages: !include_dir_named integrations   # ← Ordner config/integrations/
+  packages: !include_dir_named ordner_name   # ← Name deines Paket-Ordners
 ```
 
-Das Wort hinter `!include_dir_named` ist der Ordner, gerechnet ab `config/` –
-hier also `config/integrations/`. Der Name ist frei wählbar, er muss nur zum
-Ordner passen. HA liest jede `.yaml`-Datei aus diesem Ordner.
+`ordner_name` ersetzt du durch den Namen deines Ordners, z. B. `packages`
+oder `integrations`. Er wird ab `config/` gerechnet. HA liest jede
+`.yaml`-Datei aus diesem Ordner.
 
 Ist eine Datei stattdessen einzeln eingebunden (`mennekes: !include
-integrations/modbus_mennekes.yaml`), schaltest du sie ab, indem du diese Zeile
+ordner_name/modbus_mennekes.yaml`), schaltest du sie ab, indem du diese Zeile
 auskommentierst – eine einzeln eingebundene Datei umzubenennen lässt die
 Konfiguration ungültig werden.
 
-**2. Paket kopieren** – die Datei nach `config/integrations/` legen.
+**2. Paket kopieren** – die Datei nach `config/ordner_name/` legen.
 
 **3. Zugangsdaten in `config/secrets.yaml`** eintragen. Die Pakete lesen
 IP-Adresse, Port und Modbus-Adresse von dort. Vorlage:

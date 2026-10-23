@@ -2,8 +2,8 @@
 # MENNEKES AMTRON CHARGE CONTROL
 #
 # Import:
-#   1. Datei nach config/integrations/ kopieren
-#      (configuration.yaml: homeassistant: packages: !include_dir_named integrations)
+#   1. Datei in deinen Paket-Ordner kopieren, z. B. config/packages/
+#      (configuration.yaml: homeassistant: packages: !include_dir_named packages)
 #   2. In secrets.yaml: mennekes_modbus_host_ip, mennekes_modbus_port,
 #      mennekes_modbus_device_address, mennekes_modbus_wait_milliseconds
 #   3. HA neu starten, im W-Energie Dashboard unter Zuordnung die Vorlage
