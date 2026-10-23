@@ -108,9 +108,7 @@ eintragen. Danach erscheinen die uebrigen Ansichten von selbst.
 
 Die W-Energie Automation (Wallbox und Hausakku) installiert die Integration
 selbst: Sie traegt sie nach dem Start in `automations.yaml` ein und haelt sie
-bei jedem Update aktuell – dafuer ist nichts zu tun. Eine alte Kopie unter
-`config/packages/wuefl_automation.yaml` benennt sie in
-`wuefl_automation.yaml.alt` um, damit nicht doppelt geregelt wird.
+bei jedem Update aktuell – dafuer ist nichts zu tun.
 *Nur lesen für alle* in der Zuordnung gibt die Anlage frei: Beim Einschalten
 setzt die Automation einmal alles zurueck, was sie schreiben kann – je
 Wallbox voller Ladestrom, Laden erlaubt und 3-phasig, der Hausakku geht in
@@ -243,8 +241,8 @@ Fuer jede Groesse brauchst du **zwei** Angaben, mehr nicht:
   liest die Karte aus dem Vorzeichen
 * den **Gesamtzaehler** in kWh, der immer weiterlaeuft
 
-In der Zuordnung steht das jetzt auch so an jedem Feld: Name oben, darunter
-klein die Einheit und ob es der Live-Wert oder ein Gesamt-Zaehler ist.
+In der Zuordnung steht an jedem Feld der Name, darunter klein die Einheit
+und ob es der Live-Wert oder ein Gesamt-Zaehler ist.
 
 Was heute, diese Woche oder dieses Jahr zusammengekommen ist, rechnen die
 Karten aus der Langzeitstatistik von Home Assistant. Einen zweiten Sensor
@@ -304,10 +302,9 @@ Entitäten, Suche "wuefl") oder sie in der Ansicht *Einstellungen* bedienst.
 Bedienen tust du sie über die Ansicht *Einstellungen* im Dashboard — dort
 musst du nichts zuordnen, nichts anwenden, nichts suchen.
 
-`wuefl_automation.yaml` legt diese sieben nicht mehr an. Die
-mitgelieferte Automation liest sie über ihre neuen, festen Namen; bei
-mehreren Wallboxen findest du die tatsächlichen Namen unter Einstellungen →
-Geräte & Dienste → Entitäten.
+Die Ladeautomatik liest sie über diese festen Namen; bei mehreren Wallboxen
+findest du die tatsächlichen Namen unter Einstellungen → Geräte & Dienste →
+Entitäten.
 
 ## Was eine Wallbox liefern muss
 
@@ -365,10 +362,6 @@ und Ladezustand aus der Modbus-Einbindung. Zum Wissen (Einbinden siehe *Geräte-
   deshalb alle 30 s vier Bloecke (Zaehler, Status, Ladevorgang,
   Stromvorgabe) und rechnet die einzelnen Sensoren daraus, statt jeden Wert
   einzeln abzufragen.
-* Umstieg von der aelteren Fassung: Die Sensoren heissen gleich, kommen aber
-  jetzt aus Templates. Nach dem Neustart die nicht mehr bereitgestellten
-  Mennekes-Sensoren unter *Einstellungen → Entitaeten* loeschen und bei den
-  neuen das `_2` entfernen.
 
 ### go-e Charger
 
@@ -441,8 +434,7 @@ In der Wallbox-Karte bleibt nur, was wirklich je Ladepunkt gilt: Lademodus,
 Ladeziel und der maximale Ladestrom unter *Mehr Optionen* — auch das ohne
 eigene Zuordnung.
 
-Die Zuordnung selbst ist eine Ansicht im Dashboard, keine Seite in der
-Seitenleiste mehr.
+Die Zuordnung selbst ist eine Ansicht im Dashboard.
 
 ## Vom Live-Bild zu den Diagrammen
 
@@ -538,13 +530,6 @@ Maße und Schriftgrößen hängen an `--w-radius`, `--w-pad`, `--w-input-h` und
   `state_class: total_increasing` und müssen vom Recorder erfasst werden.
 * Farben in SVG werden immer über `style="fill: …"` gesetzt, nie über
   `fill="…"`: Browser werten `var()` in Präsentationsattributen nicht aus.
-* Die Helfer-Entitäten (Lademodus, Laderegler) laufen seit dieser Version über
-  einen Config Entry statt der älteren Discovery-Methode (`async_load_platform`),
-  weil diese in der Praxis zuverlässig in ein Timeout lief, unabhängig davon,
-  wie lange gewartet wurde. Der neue Weg wurde in einer selbstgebauten
-  Testumgebung geprüft, die eigens `async_forward_entry_setups` nachbildet,
-  nicht gegen eine echte, laufende Home-Assistant-Instanz. Melde dich, falls
-  beim ersten Start etwas nicht wie beschrieben erscheint.
 
 ## Installation im Detail
 
@@ -568,7 +553,7 @@ Gleicher Ablauf wie oben, nur ohne HACS-Verwaltung:
 | `custom_components/wuefl_energy/www/packages/wuefl_automation.yaml` | nirgendwohin – trägt die Integration selbst ein |
 | `preview.html` | nirgendwo, nur zum Anschauen im Browser |
 
-Kein separater `www/`-Ordner, kein Dashboard-YAML – beides entsteht
+Einen `www/`-Ordner oder ein Dashboard-YAML gibt es nicht – beides entsteht
 automatisch.
 
 **1. Integration kopieren**
